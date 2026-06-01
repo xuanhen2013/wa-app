@@ -489,7 +489,18 @@ func (g *actionGateway) nativeEngineForPayload(payload map[string]any) (*NativeE
 }
 
 func actionProxyURL(payload map[string]any) string {
-	return firstNonEmpty(textField(payload, "proxy_url"), textField(objectField(payload, "proxy"), "proxy_url"))
+	if proxyURL := firstNonEmpty(textField(payload, "proxy_url"), textField(objectField(payload, "proxy"), "proxy_url")); proxyURL != "" {
+		return proxyURL
+	}
+	rawState := firstNonEmpty(textField(payload, "proxy_state_json"), textField(payload, "state_json"), textField(objectField(payload, "proxy"), "proxy_state_json"), textField(objectField(payload, "proxy"), "state_json"))
+	if rawState == "" {
+		return ""
+	}
+	state := map[string]any{}
+	if err := json.Unmarshal([]byte(rawState), &state); err != nil {
+		return ""
+	}
+	return firstNonEmpty(textField(state, "_gopay_proxy"), textField(state, "proxy_url"), textField(objectField(state, "proxy"), "proxy_url"))
 }
 
 func (g *actionGateway) nativeEngine() (*NativeEngine, error) {

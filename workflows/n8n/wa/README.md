@@ -36,7 +36,7 @@
 
 代理策略细节：
 
-- 号码探测由 wa-app BFF 直连原子能力并自行申请 1 分钟 proxy-runtime lease；注册 OTP 请求由注册工作流申请独立 proxy-runtime 美国随机动态 IP lease。`wa-app` action gateway 只在内部使用 `proxy_url` 发起 WA 请求。
+- 号码探测由 wa-app BFF 直连原子能力；若上游传入 `proxy_state_json`，注册工作流复用该动态 IP，否则自行申请独立 proxy-runtime 美国随机动态 IP lease。`wa-app` action gateway 只在内部使用 `proxy_url` 发起 WA 请求。
 - 动态 IP 只按 `country_code: "US"` 申请；不做出口 IP、风控、CF 或目标连通性预检，不按 workspace、号码、账号、号码国家或地区绑定代理。
 - 终态分支会调用 `/leases/release` 释放本次 lease。
 - 最终响应只返回 `{ "proxy_mode": "US_RANDOM_DYNAMIC_IP", "country_code": "US" }` 等非敏感摘要，不返回具体代理 URL 或凭据。

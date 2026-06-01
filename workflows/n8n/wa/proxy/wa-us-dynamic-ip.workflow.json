@@ -1,4 +1,5 @@
 {
+  "id": "wa-us-dynamic-ip",
   "name": "WA US Random Dynamic IP",
   "nodes": [
     {
@@ -15,15 +16,63 @@
     {
       "parameters": {
         "mode": "runOnceForAllItems",
-        "jsCode": "\nconst body = $json.body || $json || {};\nconst purpose = String(body.proxy_purpose || body.purpose || 'WA_REGISTRATION').trim();\nconst seed = `${$execution.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`;\nreturn [{ json: {\n  workspace_id: body.workspace_id || 'default',\n  job_id: body.job_id || $execution.id,\n  request_id: body.request_id || $execution.id,\n  purpose,\n  account_id: `wa-us-dyn-${seed}`.slice(0, 120),\n  selection_seed: seed,\n} }];\n"
+        "jsCode": "\nconst body = $json.body || $json || {};\nconst proxy = (body.proxy && typeof body.proxy === 'object') ? body.proxy : {};\nconst purpose = String(body.proxy_purpose || body.purpose || 'WA_REGISTRATION').trim();\nconst seed = `${$execution.id}-${Date.now()}-${Math.random().toString(16).slice(2)}`;\nconst proxyStateJSON = String(body.proxy_state_json || body.state_json || proxy.proxy_state_json || proxy.state_json || '').trim();\nconst proxyURL = String(body.proxy_url || proxy.proxy_url || '').trim();\nreturn [{ json: {\n  workspace_id: body.workspace_id || 'default',\n  job_id: body.job_id || $execution.id,\n  request_id: body.request_id || $execution.id,\n  purpose,\n  account_id: `wa-us-dyn-${seed}`.slice(0, 120),\n  selection_seed: seed,\n  provided_proxy: Boolean(proxyURL || proxyStateJSON),\n  proxy_url: proxyURL,\n  proxy_state_json: proxyStateJSON,\n} }];\n"
       },
       "id": "wa-us-dynamic-ip-normalize",
       "name": "Normalize Dynamic IP Input",
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        240,
+        220,
         0
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 2
+          },
+          "conditions": [
+            {
+              "id": "provided-dynamic-ip",
+              "leftValue": "={{ $json.provided_proxy === true }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "true",
+                "singleValue": true
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "wa-us-dynamic-ip-provided",
+      "name": "Provided Dynamic IP?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2.2,
+      "position": [
+        460,
+        0
+      ]
+    },
+    {
+      "parameters": {
+        "mode": "runOnceForAllItems",
+        "jsCode": "\nfunction parseJSON(value) { try { return JSON.parse(String(value || '{}')); } catch { return {}; } }\nconst input = $('Normalize Dynamic IP Input').first().json;\nconst state = parseJSON(input.proxy_state_json);\nconst proxyURL = input.proxy_url || state._gopay_proxy || state.proxy_url || '';\nconst accountID = state._proxy_runtime_account_id || state.proxy_account_id || input.account_id || '';\nconst leaseID = state._proxy_runtime_lease_id || state.proxy_lease_id || '';\nreturn [{ json: {\n  success: Boolean(proxyURL || input.proxy_state_json),\n  accepted: Boolean(proxyURL || input.proxy_state_json),\n  proxy_mode: 'SHARED_DYNAMIC_IP',\n  country_code: state._gopay_country_code || state.country_code || '',\n  account_id: accountID,\n  lease_id: leaseID,\n  proxy_url: proxyURL,\n  proxy_state_json: input.proxy_state_json,\n} }];\n"
+      },
+      "id": "wa-us-dynamic-ip-use-provided",
+      "name": "Use Provided Dynamic IP",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        720,
+        -120
       ]
     },
     {
@@ -48,8 +97,8 @@
       "type": "n8n-nodes-base.httpRequest",
       "typeVersion": 4.2,
       "position": [
-        480,
-        0
+        720,
+        120
       ]
     },
     {
@@ -62,8 +111,8 @@
       "type": "n8n-nodes-base.code",
       "typeVersion": 2,
       "position": [
-        720,
-        0
+        980,
+        120
       ]
     }
   ],
@@ -81,6 +130,24 @@
     },
     "Normalize Dynamic IP Input": {
       "main": [
+        [
+          {
+            "node": "Provided Dynamic IP?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Provided Dynamic IP?": {
+      "main": [
+        [
+          {
+            "node": "Use Provided Dynamic IP",
+            "type": "main",
+            "index": 0
+          }
+        ],
         [
           {
             "node": "Acquire US Dynamic IP",
@@ -108,7 +175,6 @@
     "saveDataSuccessExecution": "all",
     "saveDataErrorExecution": "all"
   },
-  "active": true,
-  "id": "wa-us-dynamic-ip",
-  "tags": []
+  "tags": [],
+  "active": true
 }
