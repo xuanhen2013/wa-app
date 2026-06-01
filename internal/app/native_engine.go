@@ -387,7 +387,12 @@ func (e *NativeEngine) registerParams(phone *waappv1.PhoneTarget, code string, s
 	if token := e.registrationToken(phone, state); token != "" {
 		params["token"] = token
 	}
-	return params, map[string]struct{}{"id": {}, "backup_token": {}}
+	raw := map[string]struct{}{"id": {}, "backup_token": {}}
+	for key, value := range registerVerificationMap(state, params["method"]) {
+		params[key] = pctBytes([]byte(value))
+		raw[key] = struct{}{}
+	}
+	return params, raw
 }
 
 func (e *NativeEngine) loadState(ctx context.Context, workspaceID string, clientProfileID string) (nativeState, error) {

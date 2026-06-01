@@ -96,6 +96,45 @@ func existDeviceMap(state nativeState) map[string]string {
 	}
 }
 
+func registerVerificationMap(state nativeState, method string) map[string]string {
+	fields := state.Profile.AdditionalMapFields
+	clientMetrics, _ := json.Marshal(struct {
+		Attempts             int    `json:"attempts"`
+		VerifyMethod         string `json:"verify_method"`
+		WasActivatedFromStub bool   `json:"was_activated_from_stub"`
+	}{
+		Attempts:             1,
+		VerifyMethod:         firstNonEmpty(method, "sms"),
+		WasActivatedFromStub: false,
+	})
+	values := map[string]string{
+		"mistyped":                   "7",
+		"reason":                     "",
+		"hasav":                      "2",
+		"client_metrics":             string(clientMetrics),
+		"entered":                    "2",
+		"mcc":                        "",
+		"mnc":                        "",
+		"sim_mcc":                    "",
+		"sim_mnc":                    "",
+		"network_operator_name":      "",
+		"sim_operator_name":          "",
+		"network_radio_type":         "1",
+		"simnum":                     "0",
+		"hasinrc":                    "1",
+		"rc":                         "0",
+		"db":                         "1",
+		"device_ram":                 "3.53",
+		"education_screen_displayed": "false",
+		"prefer_sms_over_flash":      "false",
+		"recaptcha":                  `{"stage":"ABPROP_DISABLED"}`,
+	}
+	for key, value := range fields {
+		values[key] = value
+	}
+	return values
+}
+
 func parseExistProbeResult(data map[string]any) EngineProbeResult {
 	status := responseStatus(data)
 	reason := responseReason(data)
