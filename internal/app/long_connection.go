@@ -137,35 +137,7 @@ func (m *LongConnectionManager) restore(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return nil
 		}
-		runner, err := m.server.longConnectionRunner(ctx)
-		if err != nil {
-			m.recordRestoreFailure(record.WorkspaceID, record.LoginState, err)
-			m.Ensure(ctx, record.WorkspaceID, record.LoginState)
-			continue
-		}
-		resp, err := m.server.checkLoginState(ctx, &waappv1.CheckLoginStateRequest{
-			Context:              &waappv1.RequestContext{WorkspaceId: record.WorkspaceID, RequestId: m.server.ids.NewID("wa-restore_"), CorrelationId: record.LoginState.GetLoginStateId()},
-			LoginStateId:         record.LoginState.GetLoginStateId(),
-			WaAccountId:          record.LoginState.GetWaAccountId(),
-			ClientProfileId:      record.LoginState.GetClientProfileId(),
-			RegisteredIdentityId: record.LoginState.GetRegisteredIdentityId(),
-			RemoteTimeout:        durationpb.New(10 * time.Second),
-		}, runner)
-		if err != nil {
-			m.recordRestoreFailure(record.WorkspaceID, record.LoginState, err)
-			continue
-		}
-		if resp.GetCheck().GetStatus() == waappv1.LoginStateCheckStatus_LOGIN_STATE_CHECK_STATUS_ACTIVE && resp.GetLoginState().GetStatus() == waappv1.LoginStateStatus_LOGIN_STATE_STATUS_ACTIVE {
-			m.Ensure(ctx, record.WorkspaceID, resp.GetLoginState())
-			continue
-		}
-		if resp.GetCheck().GetStatus() == waappv1.LoginStateCheckStatus_LOGIN_STATE_CHECK_STATUS_UNREACHABLE && resp.GetLoginState().GetStatus() == waappv1.LoginStateStatus_LOGIN_STATE_STATUS_ACTIVE {
-			m.Ensure(ctx, record.WorkspaceID, resp.GetLoginState())
-			continue
-		}
-		if resp.GetError() != nil {
-			m.recordRestoreFailure(record.WorkspaceID, record.LoginState, errorFromProto(resp.GetError()))
-		}
+		m.Ensure(ctx, record.WorkspaceID, record.LoginState)
 	}
 	return nil
 }
@@ -288,16 +260,6 @@ func (m *LongConnectionManager) decryptReceivedMessages(ctx context.Context, wor
 			log.Printf("WA long connection decrypt failed: message_id=%s code=%s retryable=%t", msg.GetMessageId(), resp.GetError().GetCode().String(), resp.GetError().GetRetryable())
 		}
 	}
-}
-
-func (m *LongConnectionManager) recordRestoreFailure(workspaceID string, loginState *waappv1.LoginState, err error) {
-	if loginState == nil {
-		return
-	}
-	key := longConnectionKey(workspaceID, loginState)
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	m.entries[key] = &longConnectionEntry{snapshot: &waappv1.LongConnectionState{WorkspaceId: workspaceID, LoginStateId: loginState.GetLoginStateId(), WaAccountId: loginState.GetWaAccountId(), ClientProfileId: loginState.GetClientProfileId(), RegisteredIdentityId: loginState.GetRegisteredIdentityId(), Status: waappv1.LongConnectionStatus_LONG_CONNECTION_STATUS_FAILED, HeartbeatSupported: true, LastError: ToProtoError(err)}}
 }
 
 func (m *LongConnectionManager) recordLoopError(key string, reconnects int32, err error) {

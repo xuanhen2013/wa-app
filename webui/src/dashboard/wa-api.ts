@@ -29,6 +29,12 @@ export type WaWorkflowResponse = {
 };
 
 export type WaConnectionState = LongConnectionState;
+export type WaConnectionFilters = {
+  login_state_id?: string;
+  wa_account_id?: string;
+  client_profile_id?: string;
+  registered_identity_id?: string;
+};
 export type WaAccountProjection = WAAccount;
 
 export type WaHealthResponse = {
@@ -41,15 +47,19 @@ export const waKeys = {
   health: ['wa', 'health'] as const,
   accounts: (workspaceId: string) => ['wa', 'accounts', workspaceId] as const,
   otpMessages: (workspaceId: string, waAccountId: string) => ['wa', 'otp-messages', workspaceId, waAccountId] as const,
-  connections: (workspaceId: string) => ['wa', 'connections', workspaceId] as const
+  connections: (workspaceId: string, filters: WaConnectionFilters = {}) => ['wa', 'connections', workspaceId, filters.login_state_id || '', filters.wa_account_id || '', filters.client_profile_id || '', filters.registered_identity_id || ''] as const
 };
 
 export function getWaHealth() {
   return api<WaHealthResponse>('/api/wa/health');
 }
 
-export function getWaConnections(workspaceId: string) {
-  return api<GetLongConnectionStatusResponse>(`/api/wa/long-connections?workspace_id=${encodeURIComponent(workspaceId || 'default')}`);
+export function getWaConnections(workspaceId: string, filters: WaConnectionFilters = {}) {
+  const params = new URLSearchParams({ workspace_id: workspaceId || 'default' });
+  for (const [key, value] of Object.entries(filters)) {
+    if (value) params.set(key, value);
+  }
+  return api<GetLongConnectionStatusResponse>(`/api/wa/long-connections?${params.toString()}`);
 }
 
 export function getWaAccounts(workspaceId: string, cursor = '') {

@@ -85,8 +85,13 @@ func (s *Server) receiveMessageBatch(ctx context.Context, req *waappv1.ReceiveMe
 	now := s.clock.Now()
 	session.LastSeenAt = timestamppb.New(now)
 	_ = s.runtime.OpenSessionLease(ctx, session.GetMessageSessionId(), 5*time.Minute)
-	if loginState, err := s.store.GetLoginStateByRegisteredIdentity(ctx, workspaceID, session.GetRegisteredIdentityId()); err == nil && loginState.GetStatus() == waappv1.LoginStateStatus_LOGIN_STATE_STATUS_ACTIVE {
+	if loginState, err := s.store.GetLoginStateByRegisteredIdentity(ctx, workspaceID, session.GetRegisteredIdentityId()); err == nil && loginState.GetWaAccountId() == session.GetWaAccountId() && loginState.GetClientProfileId() == session.GetClientProfileId() {
+		if loginState.Audit == nil {
+			loginState.Audit = &waappv1.AuditStamp{CreatedAt: timestamppb.New(now)}
+		}
+		loginState.Status = waappv1.LoginStateStatus_LOGIN_STATE_STATUS_ACTIVE
 		loginState.LastVerifiedAt = timestamppb.New(now)
+		loginState.LastError = nil
 		loginState.Audit.UpdatedAt = timestamppb.New(now)
 		_ = s.store.SaveLoginState(ctx, loginState, workspaceID, "native-db:"+session.GetClientProfileId())
 	}

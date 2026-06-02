@@ -8,6 +8,7 @@ import {
   WorkflowStatusPanel,
   WorkspaceTabbedPanel,
   accountCarrierID,
+  accountId,
   accountSubjectRenderConfig,
   useAccountActionRunner,
   useAccountManagementController,
@@ -16,6 +17,7 @@ import {
   useToastMessage,
   type AccountManagementController,
   type AccountManagementControllerOptions,
+  type AccountRecord,
 } from '@byte-v-forge/common-ui';
 import type { ListWAAccountsResponse } from '../proto/byte/v/forge/waapp/v1/profile';
 import {
@@ -31,6 +33,7 @@ import {
 } from './wa-api';
 import { WaAccountAdd } from './wa-account-add';
 import { waAccountDetailTabs, type WaAccountActionResult } from './wa-account-detail';
+import { WaLongConnectionBadge, useWaLongConnectionIndex } from './wa-long-connection-badge';
 import { WaResultPanel } from './wa-result-panel';
 import { resolveWaPhoneTarget, type WaResolvedPhone } from './wa-utils';
 
@@ -87,7 +90,11 @@ function WaAccountsTab(props: { controller: AccountManagementController<WaAccoun
   const [actionResult, setActionResult] = useState<WaAccountActionResult | null>(null);
   const runner = useAccountActionRunner();
   const busy = props.controller.isLoading || props.controller.actionBusy || runner.busy;
-  const renderConfig = accountSubjectRenderConfig({ icon: () => <Smartphone size={15} /> });
+  const connections = useWaLongConnectionIndex(ACCOUNT_WORKSPACE_ID);
+  const renderConfig = {
+    ...accountSubjectRenderConfig({ icon: () => <Smartphone size={15} /> }),
+    meta: (account: AccountRecord) => <WaLongConnectionBadge connection={connections.byAccount.get(accountId(account))} loading={connections.loading} />,
+  };
   async function deleteAccount(account: WaAccountProjection) {
     const accountID = accountCarrierID(account);
     await props.controller.deleteAccount(account, () => deleteWaAccount(account, ACCOUNT_WORKSPACE_ID), {

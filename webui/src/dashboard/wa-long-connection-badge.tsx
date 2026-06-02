@@ -1,0 +1,78 @@
+import { useMemo } from 'react';
+import { Badge, useQuery } from '@byte-v-forge/common-ui';
+import { LongConnectionStatus, type LongConnectionState } from '../proto/byte/v/forge/waapp/v1/messaging';
+import { getWaConnections, waKeys } from './wa-api';
+
+type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline';
+
+type StatusView = {
+  label: string;
+  variant: BadgeVariant;
+};
+
+export function useWaLongConnectionIndex(workspaceId = 'default') {
+  const query = useQuery({
+    queryKey: waKeys.connections(workspaceId),
+    queryFn: () => getWaConnections(workspaceId),
+    refetchInterval: 5000,
+  });
+  const byAccount = useMemo(() => indexConnections(query.data?.connections || []), [query.data?.connections]);
+  return { byAccount, loading: query.isLoading };
+}
+
+export function WaLongConnectionBadge({ connection, loading }: { connection?: LongConnectionState; loading?: boolean }) {
+  const view = statusView(connection?.status, loading);
+  return <Badge variant={view.variant}>长连接：{view.label}</Badge>;
+}
+
+function indexConnections(connections: LongConnectionState[]) {
+  return connections.reduce((acc, connection) => {
+    const accountID = connection.wa_account_id;
+    if (!accountID) return acc;
+    const current = acc.get(accountID);
+    acc.set(accountID, betterConnection(current, connection));
+    return acc;
+  }, new Map<string, LongConnectionState>());
+}
+
+function betterConnection(current: LongConnectionState | undefined, next: LongConnectionState) {
+  if (!current) return next;
+  return statusRank(next.status) < statusRank(current.status) ? next : current;
+}
+
+function statusView(status: LongConnectionStatus | undefined, loading?: boolean): StatusView {
+  if (loading && !status) return { label: '加载中', variant: 'secondary' };
+  switch (status) {
+    case LongConnectionStatus.LONG_CONNECTION_STATUS_CONNECTED:
+    case LongConnectionStatus.LONG_CONNECTION_STATUS_HEARTBEAT_WAITING:
+      return { label: '已连接', variant: 'default' };
+    case LongConnectionStatus.LONG_CONNECTION_STATUS_RECONNECTING:
+      return { label: '重连中', variant: 'secondary' };
+    case LongConnectionStatus.LONG_CONNECTION_STATUS_STARTING:
+      return { label: '启动中', variant: 'secondary' };
+    case LongConnectionStatus.LONG_CONNECTION_STATUS_FAILED:
+      return { label: '失败', variant: 'destructive' };
+    case LongConnectionStatus.LONG_CONNECTION_STATUS_STOPPED:
+      return { label: '已停止', variant: 'outline' };
+    default:
+      return { label: '未启动', variant: 'outline' };
+  }
+}
+
+function statusRank(status: LongConnectionStatus | undefined) {
+  switch (status) {
+    case LongConnectionStatus.LONG_CONNECTION_STATUS_CONNECTED:
+    case LongConnectionStatus.LONG_CONNECTION_STATUS_HEARTBEAT_WAITING:
+      return 0;
+    case LongConnectionStatus.LONG_CONNECTION_STATUS_RECONNECTING:
+      return 1;
+    case LongConnectionStatus.LONG_CONNECTION_STATUS_STARTING:
+      return 2;
+    case LongConnectionStatus.LONG_CONNECTION_STATUS_FAILED:
+      return 3;
+    case LongConnectionStatus.LONG_CONNECTION_STATUS_STOPPED:
+      return 4;
+    default:
+      return 5;
+  }
+}
