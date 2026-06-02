@@ -2,7 +2,7 @@ FROM docker.m.daocloud.io/library/node:22-bookworm-slim AS dashboard_remote_buil
 
 WORKDIR /wa-app/webui
 RUN apt-get update \
-    && apt-get install -y --no-install-recommends protobuf-compiler ca-certificates \
+    && apt-get install -y --no-install-recommends libprotobuf-dev protobuf-compiler ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 COPY common-lib/proto /common-lib/proto
 COPY common-lib/ui /common-lib/ui
