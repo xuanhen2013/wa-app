@@ -9,6 +9,7 @@ import (
 	"net"
 	"net/http"
 	"net/url"
+	"strconv"
 	"strings"
 	"time"
 
@@ -46,7 +47,7 @@ func (p *DynamicProxyRuntime) AcquireUSDynamic(ctx context.Context, purpose stri
 	if err != nil {
 		return DynamicProxyLease{}, err
 	}
-	purpose = firstNonEmpty(purpose, "WA_LONG_CONNECTION")
+	purpose = firstNonEmpty(purpose, "WA_DYNAMIC_PROXY")
 	ttl := "600s"
 	if leaseTTL > 0 {
 		ttl = fmt.Sprintf("%ds", int(leaseTTL.Round(time.Second)/time.Second))
@@ -70,7 +71,7 @@ func (p *DynamicProxyRuntime) AcquireUSDynamic(ctx context.Context, purpose stri
 			"purpose":                      purpose,
 			"strategy":                     "PROXY_CHAIN_STRATEGY_REGION_AWARE",
 			"max_attempts":                 3,
-			"allow_direct_dynamic_gateway": true,
+			"allow_direct_dynamic_gateway": false,
 			"prefer_line_proxy":            true,
 		},
 	}
@@ -103,6 +104,38 @@ func (p *DynamicProxyRuntime) AcquireUSDynamic(ctx context.Context, purpose stri
 		return DynamicProxyLease{}, err
 	}
 	return DynamicProxyLease{AccountID: firstNonEmpty(textField(lease, "account_id"), accountID), LeaseID: textField(lease, "lease_id"), ProxyURL: proxyURL}, nil
+}
+
+func (p *DynamicProxyRuntime) FixedProxyURL(ctx context.Context) (string, error) {
+	if p == nil || p.baseURL == "" {
+		return "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "PROXY_RUNTIME_API_BASE_URL is required", false)
+	}
+	endpoint, err := p.endpoint("/gateway")
+	if err != nil {
+		return "", err
+	}
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint, http.NoBody)
+	if err != nil {
+		return "", err
+	}
+	resp, err := p.client.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+	body, _ := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		return "", fmt.Errorf("proxy-runtime gateway returned HTTP %d", resp.StatusCode)
+	}
+	raw := map[string]any{}
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return "", err
+	}
+	listener := fixedEgressListener(objectField(raw, "gateway"))
+	if len(listener) == 0 {
+		return "", fmt.Errorf("proxy-runtime fixed egress listener is unavailable")
+	}
+	return proxyURLFromEgressListener(p.baseURL, listener)
 }
 
 func (p *DynamicProxyRuntime) Release(ctx context.Context, accountID string) {
@@ -144,11 +177,6 @@ func proxyURLFromDynamicEndpoint(baseURL string, endpoint map[string]any) (strin
 	if port <= 0 {
 		return "", fmt.Errorf("dynamic proxy lease has no egress port")
 	}
-	protocol := strings.ToUpper(textField(endpoint, "protocol"))
-	scheme := "http"
-	if strings.Contains(protocol, "SOCKS5") {
-		scheme = "socks5"
-	}
 	base, err := url.Parse(baseURL)
 	if err != nil {
 		return "", err
@@ -160,7 +188,72 @@ func proxyURLFromDynamicEndpoint(baseURL string, endpoint map[string]any) (strin
 	if host == "" {
 		return "", fmt.Errorf("dynamic proxy lease has no egress host")
 	}
-	return (&url.URL{Scheme: scheme, Host: net.JoinHostPort(host, fmt.Sprintf("%d", port))}).String(), nil
+	return (&url.URL{Scheme: proxyScheme(textField(endpoint, "protocol")), Host: net.JoinHostPort(host, fmt.Sprintf("%d", port))}).String(), nil
+}
+
+func fixedEgressListener(gateway map[string]any) map[string]any {
+	listeners := objectListField(gateway, "listeners")
+	for _, listener := range listeners {
+		if strings.EqualFold(textField(listener, "listener_id"), "direct-egress") && listenerRouteLabel(listener) == "upstream" {
+			return listener
+		}
+	}
+	for _, listener := range listeners {
+		if listenerRouteLabel(listener) == "upstream" && !strings.Contains(strings.ToLower(textField(listener, "listener_id")), "checkout") {
+			return listener
+		}
+	}
+	for _, listener := range listeners {
+		if listenerRouteLabel(listener) == "upstream" {
+			return listener
+		}
+	}
+	return nil
+}
+
+func listenerRouteLabel(listener map[string]any) string {
+	return strings.ToLower(textField(objectField(listener, "labels"), "route"))
+}
+
+func proxyURLFromEgressListener(baseURL string, listener map[string]any) (string, error) {
+	addr := textField(listener, "listen_addr")
+	if addr == "" {
+		return "", fmt.Errorf("proxy-runtime fixed egress listener has no address")
+	}
+	host, portText, err := net.SplitHostPort(addr)
+	if err != nil {
+		if strings.HasPrefix(addr, ":") {
+			host = ""
+			portText = strings.TrimPrefix(addr, ":")
+		} else if _, parseErr := strconv.Atoi(addr); parseErr == nil {
+			host = ""
+			portText = addr
+		} else {
+			return "", fmt.Errorf("parse proxy-runtime fixed egress listener address: %w", err)
+		}
+	}
+	port, err := strconv.Atoi(portText)
+	if err != nil || port <= 0 {
+		return "", fmt.Errorf("proxy-runtime fixed egress listener has invalid port")
+	}
+	base, err := url.Parse(baseURL)
+	if err != nil {
+		return "", err
+	}
+	if isLocalDynamicProxyHost(host) {
+		host = base.Hostname()
+	}
+	if host == "" {
+		return "", fmt.Errorf("proxy-runtime fixed egress listener has no host")
+	}
+	return (&url.URL{Scheme: proxyScheme(textField(listener, "protocol")), Host: net.JoinHostPort(host, fmt.Sprintf("%d", port))}).String(), nil
+}
+
+func proxyScheme(protocol string) string {
+	if strings.Contains(strings.ToUpper(protocol), "SOCKS5") {
+		return "socks5"
+	}
+	return "http"
 }
 
 func isLocalDynamicProxyHost(host string) bool {

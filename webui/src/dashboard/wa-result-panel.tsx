@@ -1,6 +1,6 @@
 import { ResultSummaryPanel, type ResultSummaryMetric, type ResultTone } from '@byte-v-forge/common-ui';
 import type { WaWorkflowResponse } from './wa-api';
-import { booleanLabel, methodStateLabel, registeredLabel, smsLabel } from './wa-result-labels';
+import { booleanLabel, methodStateLabel, oldDeviceLabel, smsLabel } from './wa-result-labels';
 import { metaItems, outcomeMeta, waProbeStatus, type WaProbeStatus } from './wa-result-model';
 
 export function WaResultPanel({ title, phone, result, loading }: { title: string; phone?: string; result?: WaWorkflowResponse | null; loading?: boolean }) {
@@ -13,7 +13,7 @@ export function WaResultPanel({ title, phone, result, loading }: { title: string
       subject={phone}
       badge={outcome}
       metrics={waMetrics(status)}
-      methods={status.requestFailed ? [] : status.methodStatuses.map((method) => ({
+      methods={status.methodStatuses.map((method) => ({
         key: method.key,
         label: method.label,
         state: methodStateLabel(method.available, method.cooldownSeconds),
@@ -24,12 +24,18 @@ export function WaResultPanel({ title, phone, result, loading }: { title: string
 }
 
 function waMetrics(status: WaProbeStatus): ResultSummaryMetric[] {
-  if (status.requestFailed) return [{ label: '请求', value: '失败', tone: 'bad' }];
+  if (status.requestFailed) {
+    return [
+      { label: '请求', value: '失败', tone: 'bad' },
+      { label: 'raw_status', value: status.accountRawStatus || '-', tone: 'bad' },
+      { label: 'raw_reason', value: status.accountRawReason || '-', tone: 'bad' },
+    ];
+  }
   return [
     {
-      label: '注册',
-      value: registeredLabel(status.registered, status.accountFlow),
-      tone: registrationTone(status),
+      label: '旧设备',
+      value: oldDeviceLabel(status.registered, status.accountFlow),
+      tone: oldDeviceTone(status),
     },
     {
       label: 'SMS',
@@ -44,9 +50,9 @@ function waMetrics(status: WaProbeStatus): ResultSummaryMetric[] {
   ];
 }
 
-function registrationTone(status: WaProbeStatus): ResultTone {
-  if (status.registered === true) return 'warn';
-  if (status.accountFlow === 'not_registered' || status.registered === false) return 'ok';
+function oldDeviceTone(status: WaProbeStatus): ResultTone {
+  if (status.registered === true || status.accountFlow === 'registered') return 'warn';
+  if (status.accountFlow === 'blocked') return 'bad';
   return 'idle';
 }
 

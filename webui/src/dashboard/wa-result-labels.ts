@@ -1,7 +1,6 @@
-export function registeredLabel(value?: boolean, flow?: string) {
-  if (value === true) return '已注册';
-  if (value === false) return '未注册';
-  if (flow === 'not_registered') return '未检测到';
+export function oldDeviceLabel(value?: boolean, flow?: string) {
+  if (value === true || flow === 'registered') return '可用';
+  if (flow === 'blocked') return '不可用';
   return '未知';
 }
 
@@ -46,11 +45,11 @@ function formatSeconds(value: number) {
 export function methodLabel(value: string) {
   const normalized = value.trim().toUpperCase().replace(/^VERIFICATION_DELIVERY_METHOD_/, '');
   if (!normalized || normalized === 'UNSPECIFIED') return '';
+  if (normalized === 'SEND_SMS' || normalized === 'SEND_SMS_TO_WA') return '发送 SMS 至 WA';
   if (normalized === 'SMS') return 'SMS';
   if (normalized === 'VOICE') return '语音';
-  if (normalized === 'IN_APP_MESSAGE') return 'App 验证';
+  if (normalized === 'IN_APP_MESSAGE' || normalized === 'WA_OLD' || normalized === 'OLD_WA') return '旧设备';
   if (normalized === 'PASSKEY') return 'Passkey';
-  if (normalized === 'WA_OLD' || normalized === 'OLD_WA') return 'WA 旧设备';
   if (normalized === 'EMAIL' || normalized === 'EMAIL_OTP') return '邮箱';
   if (normalized === 'FLASH') return 'Flash';
   return normalized.replaceAll('_', ' ').toLowerCase().replace(/\b\w/g, (char) => char.toUpperCase());

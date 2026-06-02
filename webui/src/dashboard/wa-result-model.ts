@@ -45,9 +45,9 @@ export function waProbeStatus(result?: WaWorkflowResponse | null): WaProbeStatus
   const rejectReason = firstText(phoneStatus.reject_reason, result?.error_message, result?.status);
   const explicitRequestFailed = firstBool(phoneStatus.request_failed, result?.request_failed);
   const requestFailed = explicitRequestFailed ?? (accountFlow !== 'registered' && (accountRejected(accountStatus, accountRawReason, accountError) || requestFailure(rejectReason, result?.error_message, result?.status)));
-  const methodStatuses = verificationMethodStatuses(phoneStatus.method_statuses, accountProbe.method_statuses, accountProbe.supported_methods);
+  const methodStatuses = verificationMethodStatuses(phoneStatus.method_statuses, accountProbe.method_statuses);
   return {
-    requestFailed, failureReason: reasonLabel(rejectReason || accountRawReason || accountError),
+    requestFailed, failureReason: rejectReason || accountRawReason || accountError,
     registered, blocked, accountReachable, smsAvailable, smsWaitSeconds, smsWaitUntil, canRegister, accountFlow,
     accountStatus, accountRawStatus, accountRawReason, accountError,
     smsStatus: firstText(phoneStatus.sms_status, smsProbe.sms_status, smsProbe.status),
@@ -63,16 +63,20 @@ export function outcomeMeta(status: WaProbeStatus, result?: WaWorkflowResponse |
   if (status.blocked === true) return { label: '已封禁', variant: 'destructive' };
   if (status.accountFlow === 'invalid_number') return { label: '号码异常', variant: 'secondary' };
   if (status.accountFlow === 'rate_limited') return { label: '限流', variant: 'secondary' };
-  if (status.registered === true || status.accountFlow === 'registered') return { label: '已注册', variant: 'secondary' };
-  if (status.canRegister === true || (status.accountFlow === 'not_registered' && status.smsAvailable === true)) return { label: 'SMS 可发', variant: 'default' };
+  if (status.registered === true || status.accountFlow === 'registered') return { label: '旧设备可用', variant: 'secondary' };
+  if (status.smsAvailable === true) return { label: 'SMS 可发', variant: 'default' };
   if (status.smsAvailable === false) return { label: 'SMS 不可发', variant: 'secondary' };
-  if (status.accountFlow === 'not_registered') return { label: '未检测到已注册', variant: 'secondary' };
+  if (status.accountFlow === 'not_registered') return { label: '旧设备未知', variant: 'secondary' };
   return { label: '完成', variant: 'secondary' };
 }
 export function metaItems(status: WaProbeStatus, result?: WaWorkflowResponse | null): MetaItem[] {
   const entries: MetaItem[] = [];
   if (status.requestFailed) {
-    addItem(entries, '原因', status.failureReason || reasonLabel(result?.error_message || '') || '本次请求失败', 'bad');
+    addItem(entries, 'account_status', status.accountStatus, 'bad');
+    addItem(entries, 'account_flow', status.accountFlow, 'bad');
+    addItem(entries, 'raw_status', status.accountRawStatus, 'bad');
+    addItem(entries, 'raw_reason', status.accountRawReason, 'bad');
+    addItem(entries, 'account_error', status.accountError || status.rejectReason || result?.error_message || '', 'bad');
     addItem(entries, '代理', status.proxyText);
     return entries;
   }
@@ -87,13 +91,12 @@ function accountFeedback(status: WaProbeStatus) {
   const raw = compactJoin([status.accountStatus, status.accountRawStatus, status.accountRawReason, status.accountError], ' / ');
   const normalized = raw.toLowerCase();
   if (!raw) return '';
-  if (normalized.includes('account_probe_status_rejected') || normalized.includes('invalid_skey') || normalized.includes('bad_token') || normalized.includes('incorrect')) return '请求未确认';
-  if (normalized.includes('incorrect')) return '';
+  if (normalized.includes('account_probe_status_rejected') || normalized.includes('invalid_skey') || normalized.includes('bad_token')) return extraValues(status.accountStatus, status.accountRawStatus, status.accountRawReason, status.accountError).join(' / ') || raw;
   return extraValues(status.accountStatus, status.accountRawStatus, status.accountRawReason, status.accountError).join(' / ');
 }
 function accountRejected(...values: string[]) {
   const normalized = compactJoin(values, ' ').toLowerCase();
-  return normalized.includes('account_probe_status_rejected') || normalized.includes('incorrect') || normalized.includes('invalid_skey') || normalized.includes('bad_token') || normalized.includes('missing_param') || normalized.includes('bad_param') || normalized.includes('old_version');
+  return normalized.includes('account_probe_status_rejected') || normalized.includes('invalid_skey') || normalized.includes('bad_token') || normalized.includes('missing_param') || normalized.includes('bad_param') || normalized.includes('old_version');
 }
 function requestFailure(...values: unknown[]) {
   const normalized = values.map(firstText).join(' ').toLowerCase();
@@ -117,7 +120,7 @@ function verificationMethodStatuses(...values: unknown[]) {
 }
 function addMethodStatus(seen: Map<string, VerificationMethodStatus>, value: unknown) {
   if (typeof value === 'string') {
-    for (const label of methodLabels(value)) upsertMethodStatus(seen, label, undefined, null);
+    for (const label of methodLabels(value)) upsertMethodStatus(seen, label, true, null);
     return;
   }
   const item = record(value);
@@ -136,21 +139,6 @@ function upsertMethodStatus(seen: Map<string, VerificationMethodStatus>, label: 
     cooldownSeconds: firstNumber(cooldownSeconds, previous?.cooldownSeconds)
   });
 }
-function reasonLabel(value: string) {
-  const normalized = value.trim().toLowerCase();
-  if (!normalized) return '';
-  if (normalized.includes('incorrect')) return '探测请求未被 WA 确认';
-  if (normalized.startsWith('account probe rejected') || normalized.startsWith('account probe request rejected')) return '账号请求被拒';
-  if (normalized.startsWith('account probe request failed')) return '账号请求失败';
-  if (normalized.includes('already registered')) return '号码已注册';
-  if (normalized.includes('number is blocked')) return '号码被封禁';
-  if (normalized.includes('sms route is cooling down')) return 'SMS 冷却中';
-  if (normalized.startsWith('sms route unavailable')) return 'SMS 不可用';
-  if (normalized.includes('dynamic ip lease unavailable')) return '动态 IP 不可用';
-  if (normalized.includes('length_short') || normalized.includes('length_long') || normalized.includes('format_wrong')) return '号码格式异常';
-  if (normalized.includes('too_recent') || normalized.includes('too_many') || normalized.includes('temporarily_unavailable')) return '限流';
-  return value.trim();
-}
 function addItem(entries: MetaItem[], label: string, value?: string, tone: ResultTone = 'idle') {
   const text = value?.trim();
   if (text) entries.push({ label, value: text, tone });
@@ -165,6 +153,5 @@ function deriveAccountFlow(input: { registered?: boolean; blocked?: boolean; sms
   if (input.blocked === true || raw.includes('blocked')) return 'blocked';
   if (raw.includes('length_short') || raw.includes('length_long') || raw.includes('format_wrong')) return 'invalid_number';
   if (raw.includes('too_recent') || raw.includes('too_many') || raw.includes('temporarily_unavailable')) return 'rate_limited';
-  if (raw.includes('incorrect')) return 'probe_failed';
   return 'unknown';
 }

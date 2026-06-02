@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 )
@@ -96,61 +97,25 @@ func existDeviceMap(state nativeState) map[string]string {
 	}
 }
 
-func registerVerificationMap(state nativeState, method string) map[string]string {
-	fields := state.Profile.AdditionalMapFields
-	clientMetrics, _ := json.Marshal(struct {
-		Attempts             int    `json:"attempts"`
-		VerifyMethod         string `json:"verify_method"`
-		WasActivatedFromStub bool   `json:"was_activated_from_stub"`
-	}{
-		Attempts:             1,
-		VerifyMethod:         firstNonEmpty(method, "sms"),
-		WasActivatedFromStub: false,
-	})
-	values := map[string]string{
-		"mistyped":                   "7",
-		"reason":                     "",
-		"hasav":                      "2",
-		"client_metrics":             string(clientMetrics),
-		"entered":                    "2",
-		"mcc":                        "",
-		"mnc":                        "",
-		"sim_mcc":                    "",
-		"sim_mnc":                    "",
-		"network_operator_name":      "",
-		"sim_operator_name":          "",
-		"network_radio_type":         "1",
-		"simnum":                     "0",
-		"hasinrc":                    "1",
-		"rc":                         "0",
-		"db":                         "1",
-		"device_ram":                 "3.53",
-		"education_screen_displayed": "false",
-		"prefer_sms_over_flash":      "false",
-		"recaptcha":                  `{"stage":"ABPROP_DISABLED"}`,
-	}
-	for key, value := range fields {
-		values[key] = value
-	}
-	return values
-}
-
 func parseExistProbeResult(data map[string]any) EngineProbeResult {
 	status := responseStatus(data)
 	reason := responseReason(data)
-	methods := availableVerificationMethods(data)
-	methodStatuses := verificationMethodStatuses(data, methods)
-	smsWait := methodCooldownSeconds(methodStatuses, waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS)
+	methodStatuses := verificationMethodStatuses(data, nil)
+	smsWait := verificationSMSCooldownSeconds(data)
+	smsWaitExhausted := verificationSMSWaitExhausted(data)
 	blocked := status == "blocked" || reason == "blocked"
 	baseProtocolRejected := existProtocolRejected(status, reason)
 	invalidNumber := existInvalidNumberReason(reason)
 	rateLimited := existRateLimitedReason(reason)
-	registered := !baseProtocolRejected && !blocked && !invalidNumber && !rateLimited && existRegisteredSignal(status, reason, data)
-	protocolRejected := baseProtocolRejected || (!registered && existRequestMaterialReason(reason))
-	notRegistered := !registered && !protocolRejected && !blocked && !invalidNumber && !rateLimited && existNotRegisteredSignal(status, reason, methods)
-	registeredKnown := registered || notRegistered || invalidNumber
-	canSendSMS := methodOffered(methodStatuses, waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS) && smsWait <= 0 && !blocked && !protocolRejected && !invalidNumber && !rateLimited
-	reachable := !protocolRejected && !blocked && !invalidNumber && !rateLimited && (existReachableStatus(status) || registered || len(methods) > 0 || notRegistered)
+	registered := !baseProtocolRejected && !blocked && !invalidNumber && !rateLimited && (waOldFallbackEligible(data) || existRegisteredSignal(status, reason, data))
+	protocolRejected := baseProtocolRejected
+	notRegistered := false
+	registeredKnown := registered || invalidNumber
+	smsRouteUnavailable := existRouteUnavailableReason(reason)
+	canSendSMS := smsProbeAvailableByCooldownOnly(smsWait, smsWaitExhausted, blocked, protocolRejected, invalidNumber, rateLimited, smsRouteUnavailable)
+	methodStatuses = ensureSendSMSMethodStatus(methodStatuses, smsWait > 0 || smsWaitExhausted || canSendSMS, canSendSMS, smsWait)
+	methods := methodsFromStatuses(methodStatuses)
+	reachable := !protocolRejected && !blocked && !invalidNumber && !rateLimited && (existReachableStatus(status) || registered || notRegistered || status != "" || reason != "")
 	result := EngineProbeResult{
 		Status:           waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_UNKNOWN,
 		AccountFlow:      existAccountFlow(protocolRejected, registered, notRegistered, blocked, invalidNumber, rateLimited),
@@ -218,10 +183,6 @@ func existProtocolRejected(status string, reason string) bool {
 	}
 }
 
-func existRequestMaterialReason(reason string) bool {
-	return reason == "incorrect"
-}
-
 func existInvalidNumberReason(reason string) bool {
 	switch reason {
 	case "format_wrong", "length_short", "length_long":
@@ -240,36 +201,23 @@ func existRateLimitedReason(reason string) bool {
 	}
 }
 
+func existRouteUnavailableReason(reason string) bool {
+	switch reason {
+	case "no_routes", "route_not_found", "route_unavailable":
+		return true
+	default:
+		return false
+	}
+}
+
 func existRegisteredSignal(status string, reason string, data map[string]any) bool {
 	if existRegisteredReason(reason) {
-		return true
-	}
-	if existExistingAccountSignal(data) {
-		return true
-	}
-	if jsonString(data["login"]) != "" {
 		return true
 	}
 	if existRegisteredStatus(status) {
 		return true
 	}
 	return firstNonEmpty(jsonString(data["new_jid"]), jsonString(data["jid"]), jsonString(data["registration_jid"])) != ""
-}
-
-func existAppVerificationSignal(data map[string]any) bool {
-	if jsonNumber(data["wa_old_eligible"]) > 0 ||
-		jsonNumber(data["email_otp_eligible"]) > 0 {
-		return true
-	}
-	return firstNonEmpty(
-		jsonString(data["passkey_auth_challenge"]),
-		jsonString(data["passkey_credential"]),
-		jsonString(data["wa_old_device_name"]),
-	) != ""
-}
-
-func existExistingAccountSignal(data map[string]any) bool {
-	return existAppVerificationSignal(data) || jsonNumber(data["acc_tr_eligible"]) > 0
 }
 
 func existRegisteredReason(reason string) bool {
@@ -279,10 +227,6 @@ func existRegisteredReason(reason string) bool {
 	default:
 		return false
 	}
-}
-
-func existNotRegisteredSignal(status string, reason string, methods []waappv1.VerificationDeliveryMethod) bool {
-	return status == "ok" && reason == "" && len(methods) > 0
 }
 
 func existAccountFlow(protocolRejected bool, registered bool, notRegistered bool, blocked bool, invalidNumber bool, rateLimited bool) string {
@@ -330,48 +274,24 @@ func waProtocolError(data map[string]any, fallback string) error {
 	return NewError(code, message, retryable)
 }
 
-func availableVerificationMethods(data map[string]any) []waappv1.VerificationDeliveryMethod {
-	candidates := verificationMethods(data["fallback_methods"])
-	out := []waappv1.VerificationDeliveryMethod{}
-	if containsDeliveryMethod(candidates, waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS) ||
-		jsonNumber(data["sms_length"]) > 0 ||
-		jsonNumber(data["send_sms_eligible"]) > 0 {
-		out = append(out, waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS)
-	}
-	if containsDeliveryMethod(candidates, waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_VOICE) ||
-		jsonNumber(data["voice_length"]) > 0 {
-		out = append(out, waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_VOICE)
-	}
-	if containsDeliveryMethod(candidates, waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_IN_APP_MESSAGE) || existAppVerificationSignal(data) {
-		out = append(out, waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_IN_APP_MESSAGE)
-	}
-	return out
-}
-
-func verificationMethods(value any) []waappv1.VerificationDeliveryMethod {
+func methodsFromStatuses(statuses []VerificationMethodStatus) []waappv1.VerificationDeliveryMethod {
 	seen := map[waappv1.VerificationDeliveryMethod]struct{}{}
-	out := []waappv1.VerificationDeliveryMethod{}
-	for _, name := range stringList(value) {
-		method := verificationMethod(name)
-		if method == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_UNSPECIFIED {
+	out := make([]waappv1.VerificationDeliveryMethod, 0, len(statuses))
+	for _, status := range statuses {
+		if _, ok := seen[status.Method]; ok {
 			continue
 		}
-		if _, ok := seen[method]; ok {
-			continue
-		}
-		seen[method] = struct{}{}
-		out = append(out, method)
+		seen[status.Method] = struct{}{}
+		out = append(out, status.Method)
 	}
 	return out
 }
 
 func verificationMethod(name string) waappv1.VerificationDeliveryMethod {
 	switch verificationMethodCode(name) {
-	case "sms", "send_sms":
+	case "send_sms":
 		return waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS
-	case "voice":
-		return waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_VOICE
-	case "in_app", "in_app_message", "wa_old", "email_otp", "passkey", "flash":
+	case "wa_old", "email_otp":
 		return waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_IN_APP_MESSAGE
 	default:
 		return waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_UNSPECIFIED
@@ -379,145 +299,158 @@ func verificationMethod(name string) waappv1.VerificationDeliveryMethod {
 }
 
 func verificationMethodStatuses(data map[string]any, methods []waappv1.VerificationDeliveryMethod) []VerificationMethodStatus {
-	seen := map[string]VerificationMethodStatus{}
-	order := []string{}
-	add := func(code string, method waappv1.VerificationDeliveryMethod, available bool, cooldown int64) {
-		if code == "" || method == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_UNSPECIFIED {
-			return
-		}
-		if !available && cooldown <= 0 {
-			return
-		}
-		if _, ok := seen[code]; !ok {
-			order = append(order, code)
-		}
-		previous := seen[code]
-		previous.Code = code
-		previous.Method = method
-		previous.Available = previous.Available || available
-		if cooldown <= 0 {
-			cooldown = previous.CooldownSeconds
-		}
-		previous.CooldownSeconds = cooldown
-		seen[code] = previous
-	}
-	for _, raw := range stringList(data["fallback_methods"]) {
-		code := verificationMethodCode(raw)
-		add(code, verificationMethod(code), true, verificationCodeCooldownSeconds(data, code))
-	}
-	for _, method := range methods {
-		code := defaultVerificationMethodCode(method)
-		if method == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_IN_APP_MESSAGE && hasSpecificInAppMethod(seen) {
+	_ = methods
+	out := []VerificationMethodStatus{}
+	for _, code := range fallbackVerificationMethodCodes(data) {
+		if !verificationMethodVisibleForProbe(data, code) {
 			continue
 		}
-		add(code, method, true, verificationCooldownSeconds(data, method))
-	}
-	add("sms", waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS, false, verificationCodeCooldownSeconds(data, "sms"))
-	add("voice", waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_VOICE, false, verificationCodeCooldownSeconds(data, "voice"))
-	add("wa_old", waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_IN_APP_MESSAGE, false, verificationCodeCooldownSeconds(data, "wa_old"))
-	add("email_otp", waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_IN_APP_MESSAGE, false, verificationCodeCooldownSeconds(data, "email_otp"))
-	add("flash", waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_IN_APP_MESSAGE, false, verificationCodeCooldownSeconds(data, "flash"))
-	add("passkey", waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_IN_APP_MESSAGE, false, verificationCodeCooldownSeconds(data, "passkey"))
-	out := make([]VerificationMethodStatus, 0, len(seen))
-	for _, code := range order {
-		out = append(out, seen[code])
+		cooldown := verificationCodeCooldownSeconds(data, code)
+		out = append(out, VerificationMethodStatus{
+			Method:          verificationMethod(code),
+			Code:            code,
+			Available:       cooldown <= 0 && !verificationCodeWaitExhausted(data, code),
+			CooldownSeconds: cooldown,
+		})
 	}
 	return out
 }
 
 func verificationMethodCode(name string) string {
 	switch strings.ToLower(strings.TrimSpace(name)) {
-	case "sms", "send_sms":
-		return "sms"
-	case "voice", "send_voice":
-		return "voice"
+	case "send_sms":
+		return "send_sms"
 	case "wa_old", "wa-old", "old_wa":
 		return "wa_old"
 	case "email", "email_otp", "email-otp":
 		return "email_otp"
-	case "flash":
-		return "flash"
-	case "passkey":
-		return "passkey"
-	case "in_app", "in_app_message":
-		return "in_app"
 	default:
 		return ""
 	}
 }
 
-func defaultVerificationMethodCode(method waappv1.VerificationDeliveryMethod) string {
-	switch method {
-	case waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS:
-		return "sms"
-	case waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_VOICE:
-		return "voice"
-	case waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_IN_APP_MESSAGE:
-		return "in_app"
-	default:
-		return ""
-	}
-}
-
-func hasSpecificInAppMethod(seen map[string]VerificationMethodStatus) bool {
-	for _, code := range []string{"passkey", "wa_old", "email_otp", "flash"} {
+func fallbackVerificationMethodCodes(data map[string]any) []string {
+	seen := map[string]struct{}{}
+	out := []string{}
+	for _, raw := range stringList(data["fallback_methods"]) {
+		code := verificationMethodCode(raw)
+		if code == "" {
+			continue
+		}
 		if _, ok := seen[code]; ok {
-			return true
+			continue
+		}
+		seen[code] = struct{}{}
+		out = append(out, code)
+	}
+	return out
+}
+
+func waOldFallbackEligible(data map[string]any) bool {
+	for _, code := range fallbackVerificationMethodCodes(data) {
+		if code == "wa_old" {
+			return verificationMethodVisibleForProbe(data, code)
 		}
 	}
 	return false
 }
 
-func verificationCooldownSeconds(data map[string]any, method waappv1.VerificationDeliveryMethod) int64 {
-	switch method {
-	case waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS:
-		return firstJSONInt64(data["sms_wait"], data["send_sms_wait"], data["sms_retry_after"], data["send_sms_retry_after"])
-	case waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_VOICE:
-		return firstJSONInt64(data["voice_wait"], data["send_voice_wait"], data["voice_retry_after"], data["send_voice_retry_after"])
-	case waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_IN_APP_MESSAGE:
-		return firstJSONInt64(data["wa_old_wait"], data["email_otp_wait"], data["in_app_wait"], data["device_confirm_wait"], data["passkey_wait"])
+func verificationMethodVisibleForProbe(data map[string]any, code string) bool {
+	switch code {
+	case "wa_old":
+		eligibility, ok := firstPresentJSONInt64(data["pref_wa_old_eligibility"], data["wa_old_eligible"])
+		if !ok {
+			return false
+		}
+		return eligibility != 0 && eligibility != 4
+	case "send_sms":
+		return true
+	case "email_otp":
+		eligibility, ok := firstPresentJSONInt64(data["pref_email_otp_eligibility"], data["email_otp_eligible"])
+		return ok && eligibility == 1
 	default:
-		return 0
+		return false
 	}
 }
 
 func verificationCodeCooldownSeconds(data map[string]any, code string) int64 {
 	switch code {
-	case "sms":
-		return firstJSONInt64(data["sms_wait"], data["send_sms_wait"], data["sms_retry_after"], data["send_sms_retry_after"])
-	case "voice":
-		return firstJSONInt64(data["voice_wait"], data["send_voice_wait"], data["voice_retry_after"], data["send_voice_retry_after"])
+	case "send_sms":
+		return firstJSONWaitSeconds(data["send_sms_wait"], data["send_sms_retry_after"], data["send_sms_retry_time"], data["pref_send_sms_wait_time"], data["EXTRA_SEND_SMS_RETRY_TIME"])
 	case "wa_old":
-		return firstJSONInt64(data["wa_old_wait"])
+		return firstJSONWaitSeconds(data["wa_old_wait"], data["wa_old_retry_time"], data["EXTRA_WA_OLD_RETRY_TIME"], data["pref_wa_old_wait_time"])
 	case "email_otp":
-		return firstJSONInt64(data["email_otp_wait"])
-	case "flash":
-		return firstJSONInt64(data["flash_wait"])
-	case "passkey":
-		return firstJSONInt64(data["passkey_wait"])
-	case "in_app":
-		return firstJSONInt64(data["wa_old_wait"], data["email_otp_wait"], data["flash_wait"], data["in_app_wait"], data["device_confirm_wait"], data["passkey_wait"])
+		return firstJSONWaitSeconds(data["email_otp_wait"], data["email_otp_retry_time"], data["EXTRA_EMAIL_OTP_RETRY_TIME"], data["pref_email_otp_wait_time"])
 	default:
 		return 0
 	}
 }
 
-func methodCooldownSeconds(statuses []VerificationMethodStatus, method waappv1.VerificationDeliveryMethod) int64 {
-	for _, status := range statuses {
-		if status.Method == method {
-			return status.CooldownSeconds
-		}
+func verificationCodeWaitExhausted(data map[string]any, code string) bool {
+	switch code {
+	case "send_sms":
+		return firstJSONWaitExhausted(data["send_sms_wait"], data["send_sms_retry_after"], data["send_sms_retry_time"], data["pref_send_sms_wait_time"], data["EXTRA_SEND_SMS_RETRY_TIME"])
+	case "wa_old":
+		return firstJSONWaitExhausted(data["wa_old_wait"], data["wa_old_retry_time"], data["EXTRA_WA_OLD_RETRY_TIME"], data["pref_wa_old_wait_time"])
+	case "email_otp":
+		return firstJSONWaitExhausted(data["email_otp_wait"], data["email_otp_retry_time"], data["EXTRA_EMAIL_OTP_RETRY_TIME"], data["pref_email_otp_wait_time"])
+	default:
+		return false
 	}
-	return 0
 }
 
-func methodOffered(statuses []VerificationMethodStatus, method waappv1.VerificationDeliveryMethod) bool {
-	for _, status := range statuses {
-		if status.Method == method && status.Available {
-			return true
+func verificationSMSCooldownSeconds(data map[string]any) int64 {
+	return firstJSONWaitSeconds(
+		data["sms_wait"],
+		data["sms_wait_time"],
+		data["sms_retry_after"],
+		data["sms_retry_time"],
+		data["pref_sms_wait_time"],
+		data["EXTRA_SMS_RETRY_TIME"],
+		data["retry_after"],
+		data["send_sms_wait"],
+		data["send_sms_retry_after"],
+		data["send_sms_retry_time"],
+		data["pref_send_sms_wait_time"],
+		data["EXTRA_SEND_SMS_RETRY_TIME"],
+	)
+}
+
+func verificationSMSWaitExhausted(data map[string]any) bool {
+	return firstJSONWaitExhausted(
+		data["sms_wait"],
+		data["sms_wait_time"],
+		data["sms_retry_after"],
+		data["sms_retry_time"],
+		data["pref_sms_wait_time"],
+		data["EXTRA_SMS_RETRY_TIME"],
+		data["retry_after"],
+	)
+}
+
+func smsProbeAvailableByCooldownOnly(smsWait int64, smsWaitExhausted bool, blocked bool, protocolRejected bool, invalidNumber bool, rateLimited bool, routeUnavailable bool) bool {
+	return smsWait <= 0 && !smsWaitExhausted && !blocked && !protocolRejected && !invalidNumber && !rateLimited && !routeUnavailable
+}
+
+func ensureSendSMSMethodStatus(statuses []VerificationMethodStatus, visible bool, available bool, cooldownSeconds int64) []VerificationMethodStatus {
+	if !visible {
+		return statuses
+	}
+	for i := range statuses {
+		if statuses[i].Code == "send_sms" || statuses[i].Method == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS {
+			statuses[i].Code = "send_sms"
+			statuses[i].Method = waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS
+			statuses[i].Available = available
+			statuses[i].CooldownSeconds = cooldownSeconds
+			return statuses
 		}
 	}
-	return false
+	return append(statuses, VerificationMethodStatus{
+		Method:          waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS,
+		Code:            "send_sms",
+		Available:       available,
+		CooldownSeconds: cooldownSeconds,
+	})
 }
 
 func stringList(value any) []string {
@@ -547,15 +480,6 @@ func stringList(value any) []string {
 	}
 }
 
-func containsDeliveryMethod(methods []waappv1.VerificationDeliveryMethod, expected waappv1.VerificationDeliveryMethod) bool {
-	for _, method := range methods {
-		if method == expected {
-			return true
-		}
-	}
-	return false
-}
-
 func jsonInt64(value any) int64 {
 	switch v := value.(type) {
 	case float64:
@@ -575,11 +499,61 @@ func jsonInt64(value any) int64 {
 	}
 }
 
-func firstJSONInt64(values ...any) int64 {
+func firstPresentJSONInt64(values ...any) (int64, bool) {
 	for _, value := range values {
-		if result := jsonInt64(value); result > 0 {
+		if jsonValuePresent(value) {
+			return jsonInt64(value), true
+		}
+	}
+	return 0, false
+}
+
+func firstJSONWaitSeconds(values ...any) int64 {
+	for _, value := range values {
+		if result := normalizeWaitSeconds(jsonInt64(value)); result > 0 {
 			return result
 		}
 	}
 	return 0
+}
+
+func firstJSONWaitExhausted(values ...any) bool {
+	for _, value := range values {
+		if jsonValuePresent(value) {
+			return jsonInt64(value) == -1
+		}
+	}
+	return false
+}
+
+func normalizeWaitSeconds(value int64) int64 {
+	if value <= 0 {
+		return 0
+	}
+	now := time.Now()
+	nowMS := now.UnixMilli()
+	if value >= 1_000_000_000_000 {
+		if value <= nowMS {
+			return 0
+		}
+		return (value - nowMS + 999) / 1000
+	}
+	nowSeconds := now.Unix()
+	if value >= 1_000_000_000 {
+		if value <= nowSeconds {
+			return 0
+		}
+		return value - nowSeconds
+	}
+	return value
+}
+
+func jsonValuePresent(value any) bool {
+	if value == nil {
+		return false
+	}
+	if text, ok := value.(string); ok {
+		return strings.TrimSpace(text) != ""
+	}
+	return true
 }

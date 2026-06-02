@@ -71,7 +71,7 @@ function ToolboxTab(props: { result: WaWorkflowResponse | null; phone: string; b
       subject={props.phone}
       result={props.result}
       busy={props.busy}
-      emptyResultText="结果：注册 / SMS / Blocked"
+      emptyResultText="结果：旧设备 / SMS / Blocked"
       countryPlaceholder="+992"
       phonePlaceholder="007886231"
       actionLabel="探测手机号和 SMS 状态"

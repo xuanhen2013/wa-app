@@ -137,7 +137,7 @@ func (m *LongConnectionManager) restore(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return nil
 		}
-		runner, release, err := m.server.runnerWithDynamicProxy(ctx, "WA_LOGIN_STATE_RESTORE", record.LoginState.GetLoginStateId())
+		runner, err := m.server.longConnectionRunner(ctx)
 		if err != nil {
 			m.recordRestoreFailure(record.WorkspaceID, record.LoginState, err)
 			m.Ensure(ctx, record.WorkspaceID, record.LoginState)
@@ -151,7 +151,6 @@ func (m *LongConnectionManager) restore(ctx context.Context) error {
 			RegisteredIdentityId: record.LoginState.GetRegisteredIdentityId(),
 			RemoteTimeout:        durationpb.New(10 * time.Second),
 		}, runner)
-		release()
 		if err != nil {
 			m.recordRestoreFailure(record.WorkspaceID, record.LoginState, err)
 			continue
@@ -201,7 +200,7 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, workspaceID string
 			snapshot.LastConnectedAt = timestamppb.New(m.server.clock.Now())
 			snapshot.LastError = nil
 		})
-		runner, release, err := m.server.runnerWithDynamicProxy(ctx, "WA_LONG_CONNECTION", session.GetMessageSessionId())
+		runner, err := m.server.longConnectionRunner(ctx)
 		if err != nil {
 			m.recordLoopError(key, reconnects, err)
 			if !sleepContext(ctx, backoff) {
@@ -235,7 +234,6 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, workspaceID string
 			})
 			m.decryptReceivedMessages(ctx, workspaceID, session, messages, runner)
 		}
-		release()
 		if ctx.Err() != nil {
 			return
 		}
@@ -347,22 +345,23 @@ func (s *Server) ensureLongConnection(ctx context.Context, workspaceID string, l
 	}
 }
 
-func (s *Server) runnerWithDynamicProxy(ctx context.Context, purpose string, correlationID string) (ProtocolEngine, func(), error) {
-	release := func() {}
+func (s *Server) longConnectionRunner(ctx context.Context) (ProtocolEngine, error) {
 	engine, ok := s.runner.(*NativeEngine)
-	if !ok || strings.TrimSpace(engine.activeProxyURL) != "" || s.proxyRuntime == nil {
-		return s.runner, release, nil
+	if !ok || strings.TrimSpace(engine.activeProxyURL) != "" {
+		return s.runner, nil
 	}
-	lease, err := s.proxyRuntime.AcquireUSDynamic(ctx, purpose, correlationID, 0)
+	if s.proxyRuntime == nil {
+		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "PROXY_RUNTIME_API_BASE_URL is required", false)
+	}
+	proxyURL, err := s.proxyRuntime.FixedProxyURL(ctx)
 	if err != nil {
-		return nil, release, err
+		return nil, err
 	}
-	dynamicEngine, err := engine.WithProxyURL(lease.ProxyURL)
+	proxyEngine, err := engine.WithProxyURL(proxyURL)
 	if err != nil {
-		s.proxyRuntime.Release(context.Background(), lease.AccountID)
-		return nil, release, err
+		return nil, err
 	}
-	return dynamicEngine, func() { s.proxyRuntime.Release(context.Background(), lease.AccountID) }, nil
+	return proxyEngine, nil
 }
 
 func longConnectionKey(workspaceID string, loginState *waappv1.LoginState) string {

@@ -171,9 +171,6 @@ func accountProbeRequestFailed(accountFlow string, accountStatus string, account
 	}
 	status := strings.ToLower(strings.TrimSpace(accountStatus))
 	raw := strings.ToLower(strings.TrimSpace(accountRawStatus + " " + accountRawReason))
-	if strings.Contains(raw, "incorrect") {
-		return true
-	}
 	if status == "" || status == "unknown" || status == "account_probe_status_rejected" || status == "rejected" || status == "error" {
 		return true
 	}

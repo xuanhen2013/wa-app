@@ -118,7 +118,7 @@ function registerActions(account: AccountRecord, busy: boolean, onRegister: () =
     label: '注册流程',
     icon: <Play size={14} />,
     disabled: busy || registered || status === 'archived',
-    hint: registered ? '当前 WAAccount 已注册' : '进入 WA 注册流程并等待 OTP',
+    hint: registered ? '当前 WAAccount 已激活' : '进入 WA 注册流程并等待 OTP',
     onClick: () => { void onRegister(); },
   }];
 }
@@ -130,7 +130,7 @@ function toolActions(busy: boolean, onProbe: () => void | Promise<void>): Action
     icon: <Search size={14} />,
     disabled: busy,
     variant: 'outline',
-    hint: '对当前 WAAccount 的手机号重新探测注册和 SMS 状态',
+    hint: '对当前 WAAccount 的手机号重新探测旧设备和 SMS 状态',
     onClick: () => { void onProbe(); },
   }];
 }

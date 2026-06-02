@@ -82,7 +82,7 @@
         "sendBody": true,
         "contentType": "json",
         "specifyBody": "json",
-        "jsonBody": "={{ { account_id: $('Normalize Dynamic IP Input').first().json.account_id, purpose: $('Normalize Dynamic IP Input').first().json.purpose, force_new: true, policy: { mode: 'PROXY_SESSION_MODE_STICKY', region: 'US', sticky_ttl: '600s', labels: { country_code: 'US', selection_seed: $('Normalize Dynamic IP Input').first().json.selection_seed, job_id: $('Normalize Dynamic IP Input').first().json.job_id } }, chain_policy: { country_code: 'US', purpose: $('Normalize Dynamic IP Input').first().json.purpose, strategy: 'PROXY_CHAIN_STRATEGY_REGION_AWARE', max_attempts: 3, allow_direct_dynamic_gateway: true, prefer_line_proxy: true } } }}",
+        "jsonBody": "={{ { account_id: $('Normalize Dynamic IP Input').first().json.account_id, purpose: $('Normalize Dynamic IP Input').first().json.purpose, force_new: true, policy: { mode: 'PROXY_SESSION_MODE_STICKY', region: 'US', sticky_ttl: '600s', labels: { country_code: 'US', selection_seed: $('Normalize Dynamic IP Input').first().json.selection_seed, job_id: $('Normalize Dynamic IP Input').first().json.job_id } }, chain_policy: { country_code: 'US', purpose: $('Normalize Dynamic IP Input').first().json.purpose, strategy: 'PROXY_CHAIN_STRATEGY_REGION_AWARE', max_attempts: 3, allow_direct_dynamic_gateway: false, prefer_line_proxy: true } } }}",
         "options": {
           "response": {
             "response": {
