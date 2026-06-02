@@ -90,8 +90,15 @@ func (s *Server) publishOTPCandidates(ctx context.Context, reqCtx *waappv1.Reque
 			"source", source.String(),
 			"source_party", sourceParty,
 		)
+		eventMessage, err := eventcatalog.WAOTPReceived.NewMessage(event, eventCtx, attrs)
+		if err != nil {
+			if ctx.Err() == nil {
+				log.Printf("prepare WA OTP event failed: %v", sanitizeEventPublishError(err))
+			}
+			continue
+		}
 		publishCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		_, err := s.platformPublisher.Publish(publishCtx, eventbus.Message{Subject: eventcatalog.WAOTPReceived.Subject, Event: event, Context: eventCtx, Attributes: attrs})
+		_, err = s.platformPublisher.Publish(publishCtx, eventMessage)
 		cancel()
 		if err != nil && ctx.Err() == nil {
 			log.Printf("publish WA OTP event failed: %v", sanitizeEventPublishError(err))
