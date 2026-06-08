@@ -22,7 +22,6 @@ const registrationOTPWaitDefaultTTL = 20 * time.Minute
 const registrationProxyRouteTTL = 10 * time.Minute
 
 type registrationOTPWait struct {
-	WorkspaceID           string `json:"workspace_id"`
 	WAAccountID           string `json:"wa_account_id"`
 	VerificationRequestID string `json:"verification_request_id"`
 	ResumeURL             string `json:"resume_url"`
@@ -142,7 +141,7 @@ func (g *actionGateway) commitFingerprint(ctx context.Context, payload map[strin
 	if err != nil {
 		return nil, err
 	}
-	account, profile, protocol, err := g.server.commitNativeState(ctx, actionContext(payload), normalizePhone(phoneFromAction(payload)), state)
+	account, profile, protocol, err := g.server.commitNativeState(ctx, normalizePhone(phoneFromAction(payload)), state)
 	if err != nil {
 		return nil, err
 	}
@@ -184,7 +183,7 @@ func (g *actionGateway) requestSMSOTP(ctx context.Context, payload map[string]an
 	}
 	record := resp.GetVerificationRequest()
 	if managedRoute {
-		if err := g.saveRegistrationProxyRoute(ctx, reqCtx.GetWorkspaceId(), record.GetVerificationRequestId(), route); err != nil {
+		if err := g.saveRegistrationProxyRoute(ctx, record.GetVerificationRequestId(), route); err != nil {
 			g.releaseProxyRoute(context.Background(), route)
 			return nil, err
 		}
@@ -219,7 +218,7 @@ func (g *actionGateway) resumeOTP(ctx context.Context, payload map[string]any) (
 	if strings.TrimSpace(code) == "" {
 		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "otp is required", false)
 	}
-	wait, err := g.loadRegistrationOTPWait(ctx, actionContext(payload).GetWorkspaceId(), textField(payload, "wa_account_id"), textField(payload, "verification_request_id"))
+	wait, err := g.loadRegistrationOTPWait(ctx, textField(payload, "wa_account_id"), textField(payload, "verification_request_id"))
 	if err != nil {
 		return nil, err
 	}
@@ -245,7 +244,6 @@ func (g *actionGateway) resumeOTP(ctx context.Context, payload map[string]any) (
 
 func registrationOTPWaitFromPayload(payload map[string]any) (registrationOTPWait, time.Duration, error) {
 	wait := registrationOTPWait{
-		WorkspaceID:           actionContext(payload).GetWorkspaceId(),
 		WAAccountID:           textField(payload, "wa_account_id"),
 		VerificationRequestID: textField(payload, "verification_request_id"),
 		ResumeURL:             textField(payload, "resume_url"),
@@ -273,27 +271,27 @@ func (g *actionGateway) saveRegistrationOTPWait(ctx context.Context, wait regist
 	if err != nil {
 		return err
 	}
-	if err := g.server.runtime.SaveTransientState(ctx, registrationOTPWaitKey(wait.WorkspaceID, wait.VerificationRequestID), data, ttl); err != nil {
+	if err := g.server.runtime.SaveTransientState(ctx, registrationOTPWaitKey(wait.VerificationRequestID), data, ttl); err != nil {
 		return err
 	}
 	if wait.WAAccountID != "" {
-		if err := g.server.runtime.SaveTransientState(ctx, registrationOTPWaitAccountKey(wait.WorkspaceID, wait.WAAccountID), data, ttl); err != nil {
+		if err := g.server.runtime.SaveTransientState(ctx, registrationOTPWaitAccountKey(wait.WAAccountID), data, ttl); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (g *actionGateway) loadRegistrationOTPWait(ctx context.Context, workspaceID string, waAccountIDValue string, verificationRequestID string) (registrationOTPWait, error) {
+func (g *actionGateway) loadRegistrationOTPWait(ctx context.Context, waAccountIDValue string, verificationRequestID string) (registrationOTPWait, error) {
 	key := ""
 	if verificationRequestID != "" {
-		key = registrationOTPWaitKey(workspaceID, verificationRequestID)
+		key = registrationOTPWaitKey(verificationRequestID)
 	} else if waAccountIDValue != "" {
 		accountID, err := requireWAAccountID(waAccountIDValue)
 		if err != nil {
 			return registrationOTPWait{}, err
 		}
-		key = registrationOTPWaitAccountKey(workspaceID, accountID)
+		key = registrationOTPWaitAccountKey(accountID)
 	}
 	if key == "" {
 		return registrationOTPWait{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "wa_account_id or verification_request_id is required", false)
@@ -310,9 +308,9 @@ func (g *actionGateway) loadRegistrationOTPWait(ctx context.Context, workspaceID
 }
 
 func (g *actionGateway) deleteRegistrationOTPWait(ctx context.Context, wait registrationOTPWait) error {
-	_ = g.server.runtime.DeleteTransientState(ctx, registrationOTPWaitKey(wait.WorkspaceID, wait.VerificationRequestID))
+	_ = g.server.runtime.DeleteTransientState(ctx, registrationOTPWaitKey(wait.VerificationRequestID))
 	if wait.WAAccountID != "" {
-		_ = g.server.runtime.DeleteTransientState(ctx, registrationOTPWaitAccountKey(wait.WorkspaceID, wait.WAAccountID))
+		_ = g.server.runtime.DeleteTransientState(ctx, registrationOTPWaitAccountKey(wait.WAAccountID))
 	}
 	return nil
 }
@@ -345,12 +343,12 @@ func postRegistrationOTPResume(ctx context.Context, wait registrationOTPWait, co
 	return nil
 }
 
-func registrationOTPWaitKey(workspaceID string, verificationRequestID string) string {
-	return "wa-registration-otp-wait:verification:" + workspaceID + ":" + verificationRequestID
+func registrationOTPWaitKey(verificationRequestID string) string {
+	return "wa-registration-otp-wait:verification:" + verificationRequestID
 }
 
-func registrationOTPWaitAccountKey(workspaceID string, waAccountIDValue string) string {
-	return "wa-registration-otp-wait:account:" + workspaceID + ":" + waAccountIDValue
+func registrationOTPWaitAccountKey(waAccountIDValue string) string {
+	return "wa-registration-otp-wait:account:" + waAccountIDValue
 }
 
 func (g *actionGateway) submitOTP(ctx context.Context, payload map[string]any) (map[string]any, error) {
@@ -367,21 +365,21 @@ func (g *actionGateway) submitOTP(ctx context.Context, payload map[string]any) (
 	if err != nil {
 		if managedRoute {
 			g.releaseProxyRoute(context.Background(), route)
-			_ = g.deleteRegistrationProxyRoute(context.Background(), actionContext(payload).GetWorkspaceId(), textField(payload, "verification_request_id"))
+			_ = g.deleteRegistrationProxyRoute(context.Background(), textField(payload, "verification_request_id"))
 		}
 		return nil, err
 	}
 	if resp.GetError() != nil {
 		if managedRoute {
 			g.releaseProxyRoute(context.Background(), route)
-			_ = g.deleteRegistrationProxyRoute(context.Background(), actionContext(payload).GetWorkspaceId(), textField(payload, "verification_request_id"))
+			_ = g.deleteRegistrationProxyRoute(context.Background(), textField(payload, "verification_request_id"))
 		}
 		return map[string]any{"success": false, "error": protoMap(resp.GetError()), "error_message": resp.GetError().GetMessage(), "registration": protoMap(resp.GetRegistration())}, nil
 	}
 	success := resp.GetRegistration().GetStatus() == waappv1.RegistrationStatus_REGISTRATION_STATUS_REGISTERED && resp.GetLoginState().GetStatus() == waappv1.LoginStateStatus_LOGIN_STATE_STATUS_ACTIVE
 	if managedRoute {
 		g.releaseProxyRoute(context.Background(), route)
-		_ = g.deleteRegistrationProxyRoute(context.Background(), actionContext(payload).GetWorkspaceId(), textField(payload, "verification_request_id"))
+		_ = g.deleteRegistrationProxyRoute(context.Background(), textField(payload, "verification_request_id"))
 	}
 	return map[string]any{
 		"success":      success,
@@ -398,11 +396,10 @@ func (g *actionGateway) cleanupFailedRegistration(ctx context.Context, payload m
 	verificationRequestID := cleanupVerificationRequestID(payload)
 	if verificationRequestID != "" || accountID != "" {
 		_ = g.deleteRegistrationOTPWait(ctx, registrationOTPWait{
-			WorkspaceID:           reqCtx.GetWorkspaceId(),
 			WAAccountID:           accountID,
 			VerificationRequestID: verificationRequestID,
 		})
-		_ = g.releaseRegistrationProxyRoute(ctx, reqCtx.GetWorkspaceId(), verificationRequestID)
+		_ = g.releaseRegistrationProxyRoute(ctx, verificationRequestID)
 	}
 	if accountID == "" {
 		return map[string]any{"success": true, "deleted": false, "reason": "missing_wa_account_id"}, nil
@@ -411,7 +408,7 @@ func (g *actionGateway) cleanupFailedRegistration(ctx context.Context, payload m
 	if err != nil {
 		return nil, err
 	}
-	account, err := g.server.getWAAccount(ctx, reqCtx.GetWorkspaceId(), normalizedAccountID)
+	account, err := g.server.getWAAccount(ctx, normalizedAccountID)
 	if isWAAccountNotFound(err) {
 		return map[string]any{"success": true, "deleted": false, "wa_account_id": normalizedAccountID, "reason": "already_deleted"}, nil
 	}
@@ -440,11 +437,10 @@ func (g *actionGateway) persistLoginState(ctx context.Context, payload map[strin
 	registrationID := textField(registration, "registration_id")
 	var loginState *waappv1.LoginState
 	var err error
-	workspaceID := actionContext(payload).GetWorkspaceId()
 	if registrationID != "" {
-		loginState, err = g.server.store.GetLoginStateByRegistration(ctx, workspaceID, registrationID)
+		loginState, err = g.server.store.GetLoginStateByRegistration(ctx, registrationID)
 	} else if clientProfileID := textField(payload, "client_profile_id"); clientProfileID != "" {
-		loginState, err = g.server.store.GetActiveLoginState(ctx, workspaceID, textField(registration, "wa_account_id"), clientProfileID)
+		loginState, err = g.server.store.GetActiveLoginState(ctx, textField(registration, "wa_account_id"), clientProfileID)
 	} else {
 		err = NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "registration_id or client_profile_id is required", false)
 	}
@@ -490,65 +486,63 @@ func (g *actionGateway) checkLoginState(ctx context.Context, payload map[string]
 	return out, nil
 }
 
-func (s *Server) commitNativeState(ctx context.Context, reqCtx *waappv1.RequestContext, phone *waappv1.PhoneTarget, state nativeState) (*waappv1.WAAccount, *waappv1.ClientProfile, *waappv1.ProtocolProfile, error) {
+func (s *Server) commitNativeState(ctx context.Context, phone *waappv1.PhoneTarget, state nativeState) (*waappv1.WAAccount, *waappv1.ClientProfile, *waappv1.ProtocolProfile, error) {
 	engine, ok := s.runner.(nativeStateSaver)
 	if !ok {
 		return nil, nil, nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "native engine is required", false)
 	}
-	workspaceID := reqCtx.GetWorkspaceId()
 	if phone.GetE164Number() == "" {
 		return nil, nil, nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "phone is required", false)
 	}
-	account, err := s.store.FindWAAccountByPhone(ctx, workspaceID, phone.GetE164Number())
+	account, err := s.store.FindWAAccountByPhone(ctx, phone.GetE164Number())
 	if err != nil {
 		now := s.clock.Now()
-		account = newWAAccount(s.ids.NewID("waacc_"), workspaceID, phone, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_PENDING_REGISTRATION, &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)})
-		account, err = s.saveWAAccount(ctx, workspaceID, account)
+		account = newWAAccount(s.ids.NewID("waacc_"), phone, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_PENDING_REGISTRATION, &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)})
+		account, err = s.saveWAAccount(ctx, account)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 	}
-	protocol, err := s.ensureDefaultProtocolProfile(ctx, workspaceID)
+	protocol, err := s.ensureDefaultProtocolProfile(ctx)
 	if err != nil {
 		return nil, nil, nil, err
 	}
 	now := s.clock.Now()
 	profile := &waappv1.ClientProfile{ClientProfileId: s.ids.NewID("wacp_"), WaAccountId: waAccountID(account), ProtocolProfileId: protocol.GetProtocolProfileId(), Status: waappv1.ClientProfileStatus_CLIENT_PROFILE_STATUS_PREPARING, RegistrationKeyState: waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_PENDING, MessagingKeyState: waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_PENDING, Audit: &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)}}
-	if err := s.store.SaveClientProfile(ctx, profile, workspaceID); err != nil {
+	if err := s.store.SaveClientProfile(ctx, profile); err != nil {
 		return nil, nil, nil, err
 	}
 	state.CC = firstNonEmpty(state.CC, phoneCC(phone))
 	state.Phone = firstNonEmpty(state.Phone, phoneNational(phone))
-	if err := engine.saveState(ctx, workspaceID, profile.GetClientProfileId(), state); err != nil {
+	if err := engine.saveState(ctx, profile.GetClientProfileId(), state); err != nil {
 		profile.Status = waappv1.ClientProfileStatus_CLIENT_PROFILE_STATUS_REJECTED
 		profile.LastError = ToProtoError(err)
-		_ = s.store.SaveClientProfile(ctx, profile, workspaceID)
+		_ = s.store.SaveClientProfile(ctx, profile)
 		return nil, nil, nil, err
 	}
 	profile.Status = waappv1.ClientProfileStatus_CLIENT_PROFILE_STATUS_READY
 	profile.RegistrationKeyState = waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_READY
 	profile.MessagingKeyState = waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_READY
 	profile.Audit.UpdatedAt = timestamppb.New(s.clock.Now())
-	if err := s.store.SaveClientProfile(ctx, profile, workspaceID); err != nil {
+	if err := s.store.SaveClientProfile(ctx, profile); err != nil {
 		return nil, nil, nil, err
 	}
 	return account, profile, protocol, nil
 }
 
 type nativeStateSaver interface {
-	saveState(context.Context, string, string, nativeState) error
+	saveState(context.Context, string, nativeState) error
 }
 
-func (s *Server) ensureDefaultProtocolProfile(ctx context.Context, workspaceID string) (*waappv1.ProtocolProfile, error) {
-	suffix := stableID(workspaceID)
-	protocolID := "waproto_native_" + suffix
-	if profile, err := s.store.GetProtocolProfile(ctx, workspaceID, protocolID); err == nil {
+func (s *Server) ensureDefaultProtocolProfile(ctx context.Context) (*waappv1.ProtocolProfile, error) {
+	protocolID := "waproto_native"
+	if profile, err := s.store.GetProtocolProfile(ctx, protocolID); err == nil {
 		return profile, nil
 	}
 	now := s.clock.Now()
-	artifactID := "waart_native_" + suffix
+	artifactID := "waart_native"
 	artifact := &waappv1.AppArtifact{ArtifactId: artifactID, Label: "WA native app", VersionLabel: "native", ObservedAt: timestamppb.New(now)}
-	if err := s.store.SaveAppArtifact(ctx, artifact, workspaceID); err != nil {
+	if err := s.store.SaveAppArtifact(ctx, artifact); err != nil {
 		return nil, err
 	}
 	profile := &waappv1.ProtocolProfile{
@@ -568,7 +562,7 @@ func (s *Server) ensureDefaultProtocolProfile(ctx context.Context, workspaceID s
 		DiscoveredAt:      timestamppb.New(now),
 		Audit:             &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)},
 	}
-	if err := s.store.SaveProtocolProfile(ctx, profile, workspaceID); err != nil {
+	if err := s.store.SaveProtocolProfile(ctx, profile); err != nil {
 		return nil, err
 	}
 	return profile, nil
@@ -617,12 +611,11 @@ func (g *actionGateway) registrationSubmitRunner(ctx context.Context, payload ma
 	if actionProxyURL(payload) != "" {
 		return engine, DynamicProxyRoute{}, false, nil
 	}
-	workspaceID := actionContext(payload).GetWorkspaceId()
 	verificationRequestID := textField(payload, "verification_request_id")
-	route, err := g.loadRegistrationProxyRoute(ctx, workspaceID, verificationRequestID)
+	route, err := g.loadRegistrationProxyRoute(ctx, verificationRequestID)
 	if err == nil && registrationProxyRouteExpired(route, time.Now().UTC()) {
 		g.releaseProxyRoute(context.Background(), route)
-		_ = g.deleteRegistrationProxyRoute(ctx, workspaceID, verificationRequestID)
+		_ = g.deleteRegistrationProxyRoute(ctx, verificationRequestID)
 		err = NewError(waappv1.WaErrorCode_WA_ERROR_CODE_ROUTE_UNAVAILABLE, "registration proxy session expired", false)
 	}
 	if err != nil {
@@ -633,7 +626,7 @@ func (g *actionGateway) registrationSubmitRunner(ctx context.Context, payload ma
 		if err != nil {
 			return engine, DynamicProxyRoute{}, false, nil
 		}
-		if saveErr := g.saveRegistrationProxyRoute(ctx, workspaceID, verificationRequestID, route); saveErr != nil {
+		if saveErr := g.saveRegistrationProxyRoute(ctx, verificationRequestID, route); saveErr != nil {
 			g.releaseProxyRoute(context.Background(), route)
 			return nil, DynamicProxyRoute{}, false, saveErr
 		}
@@ -648,7 +641,7 @@ func (g *actionGateway) registrationSubmitRunner(ctx context.Context, payload ma
 
 func (g *actionGateway) registrationGatewayProxy(ctx context.Context, payload map[string]any, purpose string) (DynamicProxyRoute, error) {
 	if g == nil || g.server == nil || g.server.proxyRuntime == nil {
-		return DynamicProxyRoute{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_ROUTE_UNAVAILABLE, "PROXY_RUNTIME_API_BASE_URL is required", false)
+		return DynamicProxyRoute{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_ROUTE_UNAVAILABLE, "WA_APP_PROXY_RUNTIME_API_BASE_URL is not configured", false)
 	}
 	username := strings.TrimSpace(g.server.registrationProxyUsername)
 	if username == "" {
@@ -662,7 +655,7 @@ func (g *actionGateway) registrationGatewayProxy(ctx context.Context, payload ma
 	})
 }
 
-func (g *actionGateway) saveRegistrationProxyRoute(ctx context.Context, workspaceID string, verificationRequestID string, route DynamicProxyRoute) error {
+func (g *actionGateway) saveRegistrationProxyRoute(ctx context.Context, verificationRequestID string, route DynamicProxyRoute) error {
 	if strings.TrimSpace(verificationRequestID) == "" || strings.TrimSpace(route.ProxyURL) == "" {
 		return nil
 	}
@@ -684,14 +677,14 @@ func (g *actionGateway) saveRegistrationProxyRoute(ctx context.Context, workspac
 	if err != nil {
 		return err
 	}
-	return g.server.runtime.SaveTransientState(ctx, registrationProxyRouteKey(workspaceID, verificationRequestID), data, registrationOTPWaitDefaultTTL)
+	return g.server.runtime.SaveTransientState(ctx, registrationProxyRouteKey(verificationRequestID), data, registrationOTPWaitDefaultTTL)
 }
 
-func (g *actionGateway) loadRegistrationProxyRoute(ctx context.Context, workspaceID string, verificationRequestID string) (DynamicProxyRoute, error) {
+func (g *actionGateway) loadRegistrationProxyRoute(ctx context.Context, verificationRequestID string) (DynamicProxyRoute, error) {
 	if strings.TrimSpace(verificationRequestID) == "" {
 		return DynamicProxyRoute{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "verification_request_id is required", false)
 	}
-	data, err := g.server.runtime.GetTransientState(ctx, registrationProxyRouteKey(workspaceID, verificationRequestID))
+	data, err := g.server.runtime.GetTransientState(ctx, registrationProxyRouteKey(verificationRequestID))
 	if err != nil {
 		return DynamicProxyRoute{}, err
 	}
@@ -709,15 +702,15 @@ func (g *actionGateway) loadRegistrationProxyRoute(ctx context.Context, workspac
 	return route, nil
 }
 
-func (g *actionGateway) releaseRegistrationProxyRoute(ctx context.Context, workspaceID string, verificationRequestID string) error {
+func (g *actionGateway) releaseRegistrationProxyRoute(ctx context.Context, verificationRequestID string) error {
 	if strings.TrimSpace(verificationRequestID) == "" {
 		return nil
 	}
-	route, err := g.loadRegistrationProxyRoute(ctx, workspaceID, verificationRequestID)
+	route, err := g.loadRegistrationProxyRoute(ctx, verificationRequestID)
 	if err == nil {
 		g.releaseProxyRoute(context.Background(), route)
 	}
-	return g.deleteRegistrationProxyRoute(ctx, workspaceID, verificationRequestID)
+	return g.deleteRegistrationProxyRoute(ctx, verificationRequestID)
 }
 
 func (g *actionGateway) releaseProxyRoute(ctx context.Context, route DynamicProxyRoute) {
@@ -727,15 +720,15 @@ func (g *actionGateway) releaseProxyRoute(ctx context.Context, route DynamicProx
 	_ = g.server.proxyRuntime.ReleaseProxyRoute(ctx, route)
 }
 
-func (g *actionGateway) deleteRegistrationProxyRoute(ctx context.Context, workspaceID string, verificationRequestID string) error {
+func (g *actionGateway) deleteRegistrationProxyRoute(ctx context.Context, verificationRequestID string) error {
 	if strings.TrimSpace(verificationRequestID) == "" {
 		return nil
 	}
-	return g.server.runtime.DeleteTransientState(ctx, registrationProxyRouteKey(workspaceID, verificationRequestID))
+	return g.server.runtime.DeleteTransientState(ctx, registrationProxyRouteKey(verificationRequestID))
 }
 
-func registrationProxyRouteKey(workspaceID string, verificationRequestID string) string {
-	return "wa-registration-proxy-route:verification:" + workspaceID + ":" + verificationRequestID
+func registrationProxyRouteKey(verificationRequestID string) string {
+	return "wa-registration-proxy-route:verification:" + verificationRequestID
 }
 
 func registrationProxyRouteExpired(route DynamicProxyRoute, now time.Time) bool {
@@ -848,7 +841,6 @@ func writeActionJSON(w http.ResponseWriter, status int, value any) {
 func actionContext(payload map[string]any) *waappv1.RequestContext {
 	return &waappv1.RequestContext{
 		RequestId:     textField(payload, "request_id"),
-		WorkspaceId:   firstNonEmpty(textField(payload, "workspace_id"), "default"),
 		ActorId:       textField(payload, "actor_id"),
 		CorrelationId: firstNonEmpty(textField(payload, "correlation_id"), textField(payload, "job_id")),
 		TraceId:       textField(payload, "trace_id"),

@@ -1,4 +1,4 @@
-import type { ResultTone } from '@byte-v-forge/common-ui';
+import type { ResultTone } from './ui';
 import type { WaWorkflowResponse } from './wa-api';
 import { methodLabel, methodLabels } from './wa-result-labels';
 import { compactJoin, extraValues, firstBool, firstNumber, firstText, record, statusIn } from './wa-result-normalize';

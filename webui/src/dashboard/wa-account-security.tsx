@@ -1,11 +1,10 @@
 import { type FormEvent, useState } from 'react';
 import { CheckCircle2, KeyRound, Mail, Send, ShieldCheck } from 'lucide-react';
-import { Badge, Button, Field, FieldDescription, FieldGroup, FieldLabel, Input, useMutation } from '@byte-v-forge/common-ui';
+import { useMutation } from '@tanstack/react-query';
+import { Badge, Button, Field, FieldDescription, FieldGroup, FieldLabel, Input } from './ui';
 import { AccountSettingsOperationStatus } from '../proto/byte/v/forge/waapp/v1/account_settings';
 import type { WaAccountProjection } from './wa-api';
 import { requestWaAccountEmailOtp, setWaAccountEmail, setWaTwoFactorAuthSettings, verifyWaAccountEmailOtp } from './wa-api';
-
-const ACCOUNT_WORKSPACE_ID = 'default';
 
 type Props = {
   account: WaAccountProjection;
@@ -26,22 +25,22 @@ export function WaAccountSecurityPanel({ account, onDone, onError }: Props) {
     onDone(message);
   };
   const twoFactor = useMutation({
-    mutationFn: () => setWaTwoFactorAuthSettings(account, { pin, recovery_email: recoveryEmail }, ACCOUNT_WORKSPACE_ID),
+    mutationFn: () => setWaTwoFactorAuthSettings(account, { pin, recovery_email: recoveryEmail }),
     onSuccess: (resp) => { setPin(''); handleSuccess('2FA PIN 设置请求已提交', resp.operation?.status); },
     onError: handleError,
   });
   const emailSet = useMutation({
-    mutationFn: () => setWaAccountEmail(account, { email_address: email, google_id_token: idToken }, ACCOUNT_WORKSPACE_ID),
+    mutationFn: () => setWaAccountEmail(account, { email_address: email, google_id_token: idToken }),
     onSuccess: (resp) => { setIdToken(''); handleSuccess('账户邮箱设置请求已提交', resp.operation?.status); },
     onError: handleError,
   });
   const otpRequest = useMutation({
-    mutationFn: () => requestWaAccountEmailOtp(account, ACCOUNT_WORKSPACE_ID),
+    mutationFn: () => requestWaAccountEmailOtp(account),
     onSuccess: (resp) => handleSuccess('邮箱 OTP 已请求', resp.operation?.status),
     onError: handleError,
   });
   const otpVerify = useMutation({
-    mutationFn: () => verifyWaAccountEmailOtp(account, emailOtp, ACCOUNT_WORKSPACE_ID),
+    mutationFn: () => verifyWaAccountEmailOtp(account, emailOtp),
     onSuccess: (resp) => { setEmailOtp(''); handleSuccess('邮箱 OTP 校验请求已提交', resp.operation?.status); },
     onError: handleError,
   });

@@ -3,7 +3,6 @@ syntax = "proto3";
 package byte.v.forge.waapp.v1;
 
 import "byte/v/forge/waapp/v1/common.proto";
-import "byte/v/forge/contracts/wa/v1/wa.proto";
 import "google/protobuf/timestamp.proto";
 
 option csharp_namespace = "ByteVForge.WaApp.V1";
@@ -17,6 +16,13 @@ service WaExtractionService {
   rpc DecryptMessage(DecryptMessageRequest) returns (DecryptMessageResponse);
   rpc ExtractCandidates(ExtractCandidatesRequest) returns (ExtractCandidatesResponse);
   rpc ListAccountOtpMessages(ListAccountOtpMessagesRequest) returns (ListAccountOtpMessagesResponse);
+}
+
+enum WaOtpSource {
+  WA_OTP_SOURCE_UNSPECIFIED = 0;
+  WA_OTP_SOURCE_LONG_CONNECTION = 1;
+  WA_OTP_SOURCE_AUTO_EXTRACTION = 2;
+  WA_OTP_SOURCE_IMPORTED_HISTORY = 3;
 }
 
 enum DecryptionStatus {
@@ -69,7 +75,7 @@ message OtpMessage {
   string registered_identity_id = 4;
   string message_id = 5;
   string candidate_id = 6;
-  byte.v.forge.contracts.wa.v1.WaOtpSource source = 7;
+  WaOtpSource source = 7;
   string source_party = 8;
   SensitiveText otp = 9;
   google.protobuf.Timestamp received_at = 10;

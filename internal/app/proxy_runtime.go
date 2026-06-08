@@ -12,8 +12,6 @@ import (
 	"strings"
 	"time"
 
-	proxyruntimev1 "github.com/byte-v-forge/common-lib/gen/go/byte/v/forge/contracts/proxyruntime/v1"
-	"github.com/byte-v-forge/common-lib/protojsonx"
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 )
 
@@ -52,6 +50,25 @@ type gatewayProxyRule struct {
 	Username  string
 	Password  string
 	ProfileID string
+}
+
+type releaseProxyLeaseRequest struct {
+	LeaseID string `json:"lease_id"`
+}
+
+type proxyRuntimeSettingsResponse struct {
+	Settings proxyRuntimeSettings `json:"settings"`
+}
+
+type proxyRuntimeSettings struct {
+	IngressRules []proxyIngressRuleSettings `json:"ingress_rules"`
+}
+
+type proxyIngressRuleSettings struct {
+	Enabled       bool   `json:"enabled"`
+	Username      string `json:"username"`
+	PasswordValue string `json:"password_value"`
+	ProfileID     string `json:"profile_id"`
 }
 
 const proxyRuntimeGatewayPort = "10810"
@@ -109,8 +126,8 @@ func (p *DynamicProxyRuntime) ReleaseProxyRoute(ctx context.Context, route Dynam
 	if err != nil {
 		return err
 	}
-	payload := &proxyruntimev1.ReleaseProxyLeaseRequest{LeaseId: routeID}
-	data, err := protojsonx.Marshal(payload)
+	payload := releaseProxyLeaseRequest{LeaseID: routeID}
+	data, err := json.Marshal(payload)
 	if err != nil {
 		return err
 	}
@@ -135,7 +152,7 @@ func (p *DynamicProxyRuntime) ReleaseProxyRoute(ctx context.Context, route Dynam
 
 func (p *DynamicProxyRuntime) gatewayProxyRule(ctx context.Context, username string) (gatewayProxyRule, error) {
 	if p == nil || p.baseURL == "" {
-		return gatewayProxyRule{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "PROXY_RUNTIME_API_BASE_URL is required", false)
+		return gatewayProxyRule{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_ROUTE_UNAVAILABLE, "WA_APP_PROXY_RUNTIME_API_BASE_URL is not configured", false)
 	}
 	username = strings.TrimSpace(username)
 	if username == "" {
@@ -158,15 +175,15 @@ func (p *DynamicProxyRuntime) gatewayProxyRule(ctx context.Context, username str
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		return gatewayProxyRule{}, proxyRuntimeRouteError("gateway ingress", resp.StatusCode, body)
 	}
-	var settings proxyruntimev1.GetProxyRuntimeSettingsResponse
-	if err := protojsonx.Unmarshal(body, &settings); err != nil {
+	var settings proxyRuntimeSettingsResponse
+	if err := json.Unmarshal(body, &settings); err != nil {
 		return gatewayProxyRule{}, err
 	}
-	for _, rule := range settings.GetSettings().GetIngressRules() {
-		if !rule.GetEnabled() || strings.TrimSpace(rule.GetUsername()) != username {
+	for _, rule := range settings.Settings.IngressRules {
+		if !rule.Enabled || strings.TrimSpace(rule.Username) != username {
 			continue
 		}
-		return gatewayProxyRule{Username: username, Password: rule.GetPasswordValue(), ProfileID: strings.TrimSpace(rule.GetProfileId())}, nil
+		return gatewayProxyRule{Username: username, Password: rule.PasswordValue, ProfileID: strings.TrimSpace(rule.ProfileID)}, nil
 	}
 	return gatewayProxyRule{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_ROUTE_UNAVAILABLE, fmt.Sprintf("proxy-runtime gateway user %q is unavailable", username), true)
 }
@@ -174,7 +191,7 @@ func (p *DynamicProxyRuntime) gatewayProxyRule(ctx context.Context, username str
 func (p *DynamicProxyRuntime) endpoint(path string) (string, error) {
 	parsed, err := url.Parse(strings.TrimRight(strings.TrimSpace(p.baseURL), "/"))
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return "", fmt.Errorf("invalid PROXY_RUNTIME_API_BASE_URL")
+		return "", fmt.Errorf("invalid WA_APP_PROXY_RUNTIME_API_BASE_URL")
 	}
 	parsed.Path = strings.TrimRight(parsed.Path, "/") + path
 	parsed.RawQuery = ""
@@ -185,11 +202,11 @@ func (p *DynamicProxyRuntime) endpoint(path string) (string, error) {
 func (p *DynamicProxyRuntime) gatewayProxyURL(username string, password string) (string, error) {
 	parsed, err := url.Parse(strings.TrimRight(strings.TrimSpace(p.baseURL), "/"))
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return "", fmt.Errorf("invalid PROXY_RUNTIME_API_BASE_URL")
+		return "", fmt.Errorf("invalid WA_APP_PROXY_RUNTIME_API_BASE_URL")
 	}
 	host := strings.TrimSpace(parsed.Hostname())
 	if host == "" {
-		return "", fmt.Errorf("invalid PROXY_RUNTIME_API_BASE_URL")
+		return "", fmt.Errorf("invalid WA_APP_PROXY_RUNTIME_API_BASE_URL")
 	}
 	gateway := &url.URL{
 		Scheme: p.gatewayScheme,

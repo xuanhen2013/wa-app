@@ -17,6 +17,7 @@ service WaMessagingService {
   rpc OpenMessageSession(OpenMessageSessionRequest) returns (OpenMessageSessionResponse);
   rpc GetMessageSession(GetMessageSessionRequest) returns (GetMessageSessionResponse);
   rpc ReceiveMessageBatch(ReceiveMessageBatchRequest) returns (ReceiveMessageBatchResponse);
+  rpc ListAccountMessages(ListAccountMessagesRequest) returns (ListAccountMessagesResponse);
   rpc GetLongConnectionStatus(GetLongConnectionStatusRequest) returns (GetLongConnectionStatusResponse);
   rpc AcknowledgeMessage(AcknowledgeMessageRequest) returns (AcknowledgeMessageResponse);
   rpc CloseMessageSession(CloseMessageSessionRequest) returns (CloseMessageSessionResponse);
@@ -55,6 +56,19 @@ enum MessageAckStatus {
   MESSAGE_ACK_STATUS_FAILED = 4;
 }
 
+enum AccountMessageDirection {
+  ACCOUNT_MESSAGE_DIRECTION_UNSPECIFIED = 0;
+  ACCOUNT_MESSAGE_DIRECTION_INBOUND = 1;
+  ACCOUNT_MESSAGE_DIRECTION_OUTBOUND = 2;
+  ACCOUNT_MESSAGE_DIRECTION_SYSTEM = 3;
+}
+
+enum AccountMessageSource {
+  ACCOUNT_MESSAGE_SOURCE_UNSPECIFIED = 0;
+  ACCOUNT_MESSAGE_SOURCE_LONG_CONNECTION = 1;
+  ACCOUNT_MESSAGE_SOURCE_IMPORTED_HISTORY = 2;
+}
+
 enum LongConnectionStatus {
   LONG_CONNECTION_STATUS_UNSPECIFIED = 0;
   LONG_CONNECTION_STATUS_STARTING = 1;
@@ -88,10 +102,26 @@ message InboundMessage {
   string payload_ref = 7;
   google.protobuf.Timestamp received_at = 8;
   WaError last_error = 9;
+  string contact_ref = 10;
+}
+
+message AccountMessage {
+  string account_message_id = 1;
+  string wa_account_id = 2;
+  string message_session_id = 3;
+  string contact_ref = 4;
+  string sender_ref = 5;
+  AccountMessageDirection direction = 6;
+  AccountMessageSource source = 7;
+  InboundMessageKind kind = 8;
+  MessageEncryptionState encryption_state = 9;
+  MessageAckStatus ack_status = 10;
+  SensitiveText text = 11;
+  google.protobuf.Timestamp received_at = 12;
+  WaError last_error = 13;
 }
 
 message LongConnectionState {
-  string workspace_id = 1;
   string login_state_id = 2;
   string wa_account_id = 3;
   string client_profile_id = 4;
@@ -140,6 +170,21 @@ message ReceiveMessageBatchRequest {
 message ReceiveMessageBatchResponse {
   repeated InboundMessage messages = 1;
   MessageSession session = 2;
+  WaError error = 3;
+}
+
+message ListAccountMessagesRequest {
+  RequestContext context = 1;
+  string wa_account_id = 2;
+  string contact_ref = 3;
+  int32 limit = 4;
+  string cursor = 5;
+  bool include_sensitive_text = 6;
+}
+
+message ListAccountMessagesResponse {
+  repeated AccountMessage messages = 1;
+  string next_cursor = 2;
   WaError error = 3;
 }
 

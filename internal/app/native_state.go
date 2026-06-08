@@ -38,6 +38,7 @@ type nativeState struct {
 	ChatConnection  nativeChatConnectionState       `json:"chat_connection,omitempty"`
 	ChatStatic      nativeCurveKeyPair              `json:"chat_static"`
 	Signal          nativeSignalState               `json:"signal"`
+	ContactHints    []waContactHint                 `json:"contact_hints,omitempty"`
 	MessagePayloads map[string]nativeMessagePayload `json:"message_payloads,omitempty"`
 	MessagePlainRef map[string]string               `json:"message_plain_ref,omitempty"`
 }
@@ -105,10 +106,16 @@ type nativeReceiverChain struct {
 }
 
 type nativeMessagePayload struct {
-	Sender  string `json:"sender,omitempty"`
-	EncType string `json:"enc_type,omitempty"`
-	Path    string `json:"path,omitempty"`
-	Payload string `json:"payload"`
+	Contact             string          `json:"contact,omitempty"`
+	Sender              string          `json:"sender,omitempty"`
+	ContactPN           string          `json:"contact_pn,omitempty"`
+	SenderPN            string          `json:"sender_pn,omitempty"`
+	NotifyName          string          `json:"notify_name,omitempty"`
+	ParticipantUsername string          `json:"participant_username,omitempty"`
+	ContactHints        []waContactHint `json:"contact_hints,omitempty"`
+	EncType             string          `json:"enc_type,omitempty"`
+	Path                string          `json:"path,omitempty"`
+	Payload             string          `json:"payload"`
 }
 
 type nativeChatConnectionState struct {

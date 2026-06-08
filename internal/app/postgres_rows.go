@@ -4,7 +4,6 @@ import (
 	"database/sql"
 	"time"
 
-	wav1 "github.com/byte-v-forge/common-lib/gen/go/byte/v/forge/contracts/wa/v1"
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -111,19 +110,18 @@ func (r protocolProfileRow) toProto() *waappv1.ProtocolProfile {
 }
 
 type waAccountRow struct {
-	id          string
-	workspaceID string
-	e164        string
-	cc          string
-	national    string
-	iso2        string
-	status      string
-	createdAt   time.Time
-	updatedAt   time.Time
+	id        string
+	e164      string
+	cc        string
+	national  string
+	iso2      string
+	status    string
+	createdAt time.Time
+	updatedAt time.Time
 }
 
 func (r waAccountRow) toProto() *waappv1.WAAccount {
-	return newWAAccount(r.id, r.workspaceID, &waappv1.PhoneTarget{
+	return newWAAccount(r.id, &waappv1.PhoneTarget{
 		E164Number:         r.e164,
 		CountryCallingCode: r.cc,
 		NationalNumber:     r.national,
@@ -300,6 +298,7 @@ type messageRow struct {
 	kind            string
 	encryptionState string
 	ackStatus       string
+	contactRef      string
 	senderRef       string
 	payloadRef      string
 	errCode         string
@@ -315,6 +314,7 @@ func (r messageRow) toProto() *waappv1.InboundMessage {
 		Kind:             waappv1.InboundMessageKind(waappv1.InboundMessageKind_value[r.kind]),
 		EncryptionState:  waappv1.MessageEncryptionState(waappv1.MessageEncryptionState_value[r.encryptionState]),
 		AckStatus:        waappv1.MessageAckStatus(waappv1.MessageAckStatus_value[r.ackStatus]),
+		ContactRef:       r.contactRef,
 		SenderRef:        r.senderRef,
 		PayloadRef:       r.payloadRef,
 		ReceivedAt:       timestamppb.New(r.receivedAt.UTC()),
@@ -327,6 +327,7 @@ type decryptedRow struct {
 	messageID    string
 	status       string
 	plaintextRef string
+	plaintext    string
 	redacted     string
 	secretRef    string
 	errCode      string
@@ -341,7 +342,7 @@ func (r decryptedRow) toProto() *waappv1.DecryptedMessage {
 		MessageId:          r.messageID,
 		Status:             waappv1.DecryptionStatus(waappv1.DecryptionStatus_value[r.status]),
 		PlaintextRef:       r.plaintextRef,
-		PlaintextText:      &waappv1.SensitiveText{RedactedValue: r.redacted, SecretRef: r.secretRef},
+		PlaintextText:      &waappv1.SensitiveText{Value: r.plaintext, RedactedValue: r.redacted, SecretRef: r.secretRef},
 		DecryptedAt:        timestamppb.New(r.decryptedAt.UTC()),
 		LastError:          protoError(r.errCode, r.errMessage, r.errRetryable),
 	}
@@ -379,10 +380,43 @@ func (r otpMessageRow) toProto(includeSensitiveValue bool) *waappv1.OtpMessage {
 		RegisteredIdentityId: r.registeredIdentityID,
 		MessageId:            r.messageID,
 		CandidateId:          r.candidateID,
-		Source:               wav1.WaOtpSource(wav1.WaOtpSource_value[r.source]),
+		Source:               waappv1.WaOtpSource(waappv1.WaOtpSource_value[r.source]),
 		SourceParty:          r.sourceParty,
 		Otp:                  text,
 		ReceivedAt:           timestamppb.New(r.receivedAt.UTC()),
 		Audit:                audit(r.createdAt, r.updatedAt),
+	}
+}
+
+type contactRow struct {
+	id               string
+	waAccountIDValue string
+	jid              string
+	number           string
+	displayName      string
+	waName           string
+	verifiedName     string
+	kind             string
+	isWhatsAppUser   bool
+	isReachable      bool
+	createdAt        time.Time
+	updatedAt        time.Time
+}
+
+func (r contactRow) toProto() *waappv1.WAContact {
+	kind := waappv1.WAContactKind(waappv1.WAContactKind_value[r.kind])
+	displayName := firstNonEmpty(storedWAContactDisplayName(r.displayName, kind, r.jid, r.number), fallbackWAContactDisplayName(kind, r.jid, r.number))
+	return &waappv1.WAContact{
+		ContactId:      r.id,
+		WaAccountId:    r.waAccountIDValue,
+		Jid:            r.jid,
+		Number:         r.number,
+		DisplayName:    displayName,
+		WaName:         r.waName,
+		VerifiedName:   r.verifiedName,
+		Kind:           kind,
+		IsWhatsappUser: r.isWhatsAppUser,
+		IsReachable:    r.isReachable,
+		Audit:          audit(r.createdAt, r.updatedAt),
 	}
 }

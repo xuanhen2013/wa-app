@@ -1,102 +1,112 @@
-import { Smartphone } from 'lucide-react';
-import {
-  ACCOUNT_PAGE_SIZE,
-  AccountManagementDrawerView,
-  ToastMessage,
-  accountCarrierID,
-  accountId,
-  accountSubjectRenderConfig,
-  useAccountManagementController,
-  useToastMessage,
-  type AccountManagementController,
-  type AccountManagementControllerOptions,
-  type AccountRecord,
-} from '@byte-v-forge/common-ui';
-import type { ListWAAccountsResponse } from '../proto/byte/v/forge/waapp/v1/profile';
-import { deleteWaAccount, getWaAccounts, waKeys, type WaAccountProjection } from './wa-api';
+import { useMemo } from 'react';
+import type { ReactNode } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Navigate, Outlet, useMatches, useNavigate, useOutletContext, useParams } from 'react-router';
+import { Plus } from 'lucide-react';
+import type { LongConnectionState } from '../proto/byte/v/forge/waapp/v1/messaging';
+import type { WAAccount } from '../proto/byte/v/forge/waapp/v1/profile';
+import { deleteWaAccount, getWaAccounts, getWaClientProfiles, waAccountID, waKeys } from './wa-api';
 import { WaAccountAdd } from './wa-account-add';
-import { waAccountDetailTabs } from './wa-account-detail';
-import { WaLongConnectionBadge, useWaLongConnectionIndex } from './wa-long-connection-badge';
+import { WaAccountInfoPage } from './wa-account-info-page';
+import { WaAccountRail } from './wa-account-rail';
+import { WhatsAppIcon } from './wa-brand-icon';
+import { WaInbox } from './wa-inbox';
+import { useWaLongConnectionIndex } from './wa-long-connection-badge';
+import { waChatsPath } from './wa-route-paths';
+import { Button, LoadingText, ToastMessage, useToastMessage } from './ui';
 
-const ACCOUNT_WORKSPACE_ID = 'default';
-const waAccountControllerOptions = {
-  queryKey: waKeys.accounts(ACCOUNT_WORKSPACE_ID),
-  queryFn: (cursor) => getWaAccounts(ACCOUNT_WORKSPACE_ID, cursor),
-  refetchInterval: 10000,
-  pageSize: ACCOUNT_PAGE_SIZE,
-  clearMissingSelection: true,
-} satisfies AccountManagementControllerOptions<WaAccountProjection, ListWAAccountsResponse>;
+type WaRouteContext = { accounts: WAAccount[]; accountsLoading: boolean; connections: Map<string, LongConnectionState>; deleting: boolean; refreshAccounts: () => Promise<void>; deleteAccount: (account: WAAccount) => void; done: (message: string) => void; error: (message: string) => void };
 
-export function WaPage() {
+const emptyAccounts: WAAccount[] = [];
+
+export function WaLayout() {
   const toast = useToastMessage();
-  const accounts = useAccountManagementController<WaAccountProjection, ListWAAccountsResponse>(waAccountControllerOptions);
+  const navigate = useNavigate();
+  const queryClient = useQueryClient();
+  const accountsQuery = useQuery({ queryKey: waKeys.accounts(), queryFn: () => getWaAccounts(), refetchInterval: 10000 });
+  const connections = useWaLongConnectionIndex();
+  const accounts = accountsQuery.data?.accounts || emptyAccounts;
+  const selectedID = useSelectedAccountID(accounts);
+  const deletion = useMutation({ mutationFn: deleteWaAccount, onSuccess: async () => { toast.showOK('账号已删除'); await refreshAccounts(); navigate('/', { replace: true }); }, onError: toast.showError });
+  async function refreshAccounts() {
+    await queryClient.invalidateQueries({ queryKey: waKeys.accounts() });
+  }
+  const context: WaRouteContext = { accounts, accountsLoading: accountsQuery.isLoading, connections: connections.byAccount, deleting: deletion.isPending, refreshAccounts, deleteAccount: deletion.mutate, done: toast.showOK, error: toast.showError };
   return (
-    <>
+    <div className="grid h-dvh grid-cols-[68px_minmax(0,1fr)] overflow-hidden bg-background text-foreground">
+      <WaAccountRail accounts={accounts} selectedID={selectedID} connections={connections.byAccount} loading={accountsQuery.isLoading} connectionsLoading={connections.loading} />
+      <Outlet context={context} />
       <ToastMessage toast={toast.toast} />
-      <WaAccountsView
-        controller={accounts}
-        onAccountAdded={async () => {
-          toast.showOK('WA 注册流程已发起，等待 OTP');
-          await accounts.invalidate();
-        }}
-        onActionDone={toast.showOK}
-        onError={toast.showError}
-      />
-    </>
+    </div>
   );
 }
 
-function WaAccountsView(props: {
-  controller: AccountManagementController<WaAccountProjection, ListWAAccountsResponse>;
-  onAccountAdded: () => void | Promise<void>;
-  onActionDone: (message: string) => void;
-  onError: (message: unknown) => void;
-}) {
-  const busy = props.controller.isLoading || props.controller.actionBusy;
-  const connections = useWaLongConnectionIndex(ACCOUNT_WORKSPACE_ID);
-  const renderConfig = {
-    ...accountSubjectRenderConfig({ icon: () => <Smartphone size={15} /> }),
-    meta: (account: AccountRecord) => (
-      <WaLongConnectionBadge connection={connections.byAccount.get(accountId(account))} loading={connections.loading} />
-    ),
-  };
-  async function deleteAccount(account: WaAccountProjection) {
-    const accountID = accountCarrierID(account);
-    await props.controller.deleteAccount(account, () => deleteWaAccount(account, ACCOUNT_WORKSPACE_ID), {
-      actionID: 'wa-delete',
-      confirmMessage: () => `删除 WAAccount ${accountID}？`,
-      onSuccess: (deleted) => {
-        if (deleted) props.onActionDone('WAAccount 已删除');
-      },
-      onError: props.onError,
-    });
-  }
-  return (
-    <AccountManagementDrawerView
-      title={
-        <span className="inline-flex items-center gap-2">
-          <Smartphone className="size-4" />WA 管理
-        </span>
-      }
-      icon={<Smartphone size={16} />}
-      actions={<WaAccountAdd disabled={busy} onCreated={props.onAccountAdded} onError={(message) => props.onError(message)} />}
-      carriers={props.controller.accounts}
-      selectedCarrier={props.controller.selected}
-      selectedID={props.controller.selectedID}
-      onSelectCarrier={props.controller.selectAccount}
-      loading={props.controller.isLoading}
-      loadingText="加载 WAAccount..."
-      emptyText="暂无已持久化 WAAccount；点击右上角添加并注册。"
-      pagination={props.controller.accountsPagination}
-      config={renderConfig}
-      drawerDescription="WA 账号详情"
-      detailTabs={waAccountDetailTabs({
-        busy,
-        onDelete: deleteAccount,
-        onManualOTPDone: props.onActionDone,
-        onError: props.onError,
-      })}
-      onCloseDetails={props.controller.clearSelection}
-    />
-  );
+export function WaHomeRoute() {
+  const { accounts, accountsLoading } = useWaContext();
+  if (accountsLoading) return <PageCenter><LoadingText>加载账号...</LoadingText></PageCenter>;
+  const firstID = waAccountID(accounts[0]);
+  return firstID ? <Navigate to={waChatsPath(firstID)} replace /> : <NoAccount />;
+}
+
+export function WaCreateAccountRoute() {
+  const navigate = useNavigate();
+  const { deleting, refreshAccounts, done, error } = useWaContext();
+  return <PageShell title="添加账号"><WaAccountAdd disabled={deleting} onCreated={async () => { done('注册流程已发起'); await refreshAccounts(); navigate('/', { replace: true }); }} onError={error} /></PageShell>;
+}
+
+export function WaAccountInfoRoute() {
+  const account = useRouteAccount();
+  const { accounts, accountsLoading, deleting, deleteAccount, done, error } = useWaContext();
+  const accountID = waAccountID(account);
+  const profilesQuery = useQuery({ queryKey: waKeys.profiles(accountID), queryFn: () => getWaClientProfiles(accountID), enabled: Boolean(accountID), refetchInterval: 30000 });
+  if (accountsLoading) return <PageCenter><LoadingText>加载账号...</LoadingText></PageCenter>;
+  if (!account) return <AccountFallback accounts={accounts} />;
+  return <WaAccountInfoPage account={account} profiles={profilesQuery.data?.client_profiles || []} profilesLoading={profilesQuery.isLoading} busy={deleting} onDelete={deleteAccount} onDone={done} onError={error} />;
+}
+
+export function WaInboxRoute() {
+  const { contactID = '' } = useParams();
+  const account = useRouteAccount();
+  const { accounts, accountsLoading, connections } = useWaContext();
+  if (accountsLoading) return <PageCenter><LoadingText>加载消息...</LoadingText></PageCenter>;
+  if (!account) return <AccountFallback accounts={accounts} />;
+  const accountID = waAccountID(account);
+  return <WaInbox account={account} connection={connections.get(accountID)} contactID={contactID} />;
+}
+
+function useRouteAccount() {
+  const { accountID = '' } = useParams();
+  const { accounts } = useWaContext();
+  return useMemo(() => accounts.find((account) => waAccountID(account) === accountID), [accounts, accountID]);
+}
+
+function useWaContext() {
+  return useOutletContext<WaRouteContext>();
+}
+
+function useSelectedAccountID(accounts: WAAccount[]) {
+  const accountID = [...useMatches()].reverse().find((match) => match.params.accountID)?.params.accountID || '';
+  return accounts.some((account) => waAccountID(account) === accountID) ? accountID : '';
+}
+
+function AccountFallback({ accounts }: { accounts: WAAccount[] }) {
+  const firstID = waAccountID(accounts[0]);
+  return firstID ? <Navigate to={waChatsPath(firstID)} replace /> : <NoAccount />;
+}
+
+function NoAccount() {
+  const navigate = useNavigate();
+  return <PageCenter><div className="grid max-w-xs gap-3 text-center"><WhatsAppIcon className="mx-auto size-12" /><div><p className="font-semibold">还没有账号</p><p className="mt-1 text-sm text-muted-foreground">添加账号后即可查看联系人和消息。</p></div><Button onClick={() => navigate('/accounts/new')}><Plus size={16} />添加账号</Button></div></PageCenter>;
+}
+
+function PageShell({ title, children }: { title: string; children: ReactNode }) {
+  return <section className="grid h-dvh grid-rows-[auto_1fr] bg-background"><header className="flex h-16 items-center border-b border-border bg-card px-5"><h1 className="text-base font-semibold">{title}</h1></header><main className="min-h-0 overflow-y-auto p-6"><div className="mx-auto max-w-3xl">{children}</div></main></section>;
+}
+
+function PageCenter({ children }: { children: ReactNode }) {
+  return <section className="grid h-dvh place-items-center bg-background p-8">{children}</section>;
+}
+
+export function WaNotFoundRoute() {
+  return <Navigate to="/" replace />;
 }

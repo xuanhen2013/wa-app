@@ -122,8 +122,7 @@ func readAccountSettingsPayload(w http.ResponseWriter, r *http.Request) (map[str
 
 func accountSettingsRequestContext(payload map[string]any, prefix string) *waappv1.RequestContext {
 	return &waappv1.RequestContext{
-		WorkspaceId: firstNonEmpty(textField(payload, "workspace_id"), "default"),
-		RequestId:   firstNonEmpty(textField(payload, "request_id"), newRequestID(prefix)),
+		RequestId: firstNonEmpty(textField(payload, "request_id"), newRequestID(prefix)),
 	}
 }
 

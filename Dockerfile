@@ -1,15 +1,19 @@
 FROM docker.m.daocloud.io/library/node:22-bookworm-slim AS dashboard_remote_builder
 
-WORKDIR /wa-app/webui
-RUN apt-get update \
+WORKDIR /app
+ENV NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
+RUN find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -exec sed -i \
+        -e 's|http://deb.debian.org/debian-security|http://mirrors.aliyun.com/debian-security|g' \
+        -e 's|http://deb.debian.org/debian|http://mirrors.aliyun.com/debian|g' \
+        -e 's|http://security.debian.org/debian-security|http://mirrors.aliyun.com/debian-security|g' {} + \
+    && apt-get update \
     && apt-get install -y --no-install-recommends libprotobuf-dev protobuf-compiler ca-certificates \
     && rm -rf /var/lib/apt/lists/*
-COPY common-lib/proto /common-lib/proto
-COPY common-lib/ui /common-lib/ui
-COPY wa-app/proto /wa-app/proto
-COPY wa-app/scripts /wa-app/scripts
-COPY wa-app/webui ./
-RUN npm ci && SOURCE_ROOT=/ npm run build
+COPY proto ./proto
+COPY scripts ./scripts
+COPY webui ./webui
+WORKDIR /app/webui
+RUN npm ci --prefer-offline --no-audit --fund=false && npm run build
 
 FROM docker.m.daocloud.io/library/golang:1.26-alpine AS builder
 
@@ -18,12 +22,10 @@ ENV GOPROXY=https://goproxy.cn,direct
 RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories \
     && apk add --no-cache git ca-certificates protobuf-dev
 
-COPY common-lib /common-lib
-COPY wa-app/go.mod wa-app/go.sum ./
-RUN go mod edit -replace github.com/byte-v-forge/common-lib=/common-lib \
-    && go mod download
+COPY go.mod go.sum ./
+RUN go mod download
 
-COPY wa-app .
+COPY . .
 RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11 \
     && go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2 \
     && scripts/generate-proto.sh \
@@ -36,6 +38,6 @@ RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories
 
 WORKDIR /app
 COPY --from=builder /app/wa-app-service .
-COPY --from=dashboard_remote_builder /wa-app/webui/dist /app/dashboard/wa
-EXPOSE 50051 8080
+COPY --from=dashboard_remote_builder /app/webui/dist /app/dashboard/wa
+EXPOSE 50091 8080
 CMD ["./wa-app-service"]

@@ -9,43 +9,47 @@ import (
 
 type Store interface {
 	Close()
-	SaveAppArtifact(context.Context, *waappv1.AppArtifact, string) error
-	GetAppArtifact(context.Context, string, string) (*waappv1.AppArtifact, error)
-	SaveProtocolProfile(context.Context, *waappv1.ProtocolProfile, string) error
-	GetProtocolProfile(context.Context, string, string) (*waappv1.ProtocolProfile, error)
+	SaveAppArtifact(context.Context, *waappv1.AppArtifact) error
+	GetAppArtifact(context.Context, string) (*waappv1.AppArtifact, error)
+	SaveProtocolProfile(context.Context, *waappv1.ProtocolProfile) error
+	GetProtocolProfile(context.Context, string) (*waappv1.ProtocolProfile, error)
 
 	SaveWAAccount(context.Context, *waappv1.WAAccount) error
-	GetWAAccount(context.Context, string, string) (*waappv1.WAAccount, error)
-	FindWAAccountByPhone(context.Context, string, string) (*waappv1.WAAccount, error)
-	ListWAAccounts(context.Context, string, string, int) ([]*waappv1.WAAccount, string, error)
-	DeleteWAAccount(context.Context, string, string) error
-	SaveClientProfile(context.Context, *waappv1.ClientProfile, string) error
-	GetClientProfile(context.Context, string, string) (*waappv1.ClientProfile, error)
-	SaveNativeState(context.Context, string, string, nativeState) error
-	GetNativeState(context.Context, string, string) (nativeState, error)
+	GetWAAccount(context.Context, string) (*waappv1.WAAccount, error)
+	FindWAAccountByPhone(context.Context, string) (*waappv1.WAAccount, error)
+	ListWAAccounts(context.Context, string, int) ([]*waappv1.WAAccount, string, error)
+	DeleteWAAccount(context.Context, string) error
+	SaveClientProfile(context.Context, *waappv1.ClientProfile) error
+	GetClientProfile(context.Context, string) (*waappv1.ClientProfile, error)
+	ListClientProfiles(context.Context, string, string, int) ([]*waappv1.ClientProfile, string, error)
+	SaveNativeState(context.Context, string, nativeState) error
+	GetNativeState(context.Context, string) (nativeState, error)
 
-	SaveAccountProbe(context.Context, *waappv1.AccountProbe, string) error
-	SaveVerificationRequest(context.Context, *waappv1.VerificationCodeRequestRecord, string) error
-	GetVerificationRequest(context.Context, string, string) (*waappv1.VerificationCodeRequestRecord, error)
-	SaveRegistration(context.Context, *waappv1.RegistrationRecord, string) error
-	GetRegistration(context.Context, string, string) (*waappv1.RegistrationRecord, error)
-	SaveLoginState(context.Context, *waappv1.LoginState, string, string) error
-	GetLoginState(context.Context, string, string) (*waappv1.LoginState, error)
-	GetActiveLoginState(context.Context, string, string, string) (*waappv1.LoginState, error)
+	SaveAccountProbe(context.Context, *waappv1.AccountProbe) error
+	SaveVerificationRequest(context.Context, *waappv1.VerificationCodeRequestRecord) error
+	GetVerificationRequest(context.Context, string) (*waappv1.VerificationCodeRequestRecord, error)
+	SaveRegistration(context.Context, *waappv1.RegistrationRecord) error
+	GetRegistration(context.Context, string) (*waappv1.RegistrationRecord, error)
+	SaveLoginState(context.Context, *waappv1.LoginState, string) error
+	GetLoginState(context.Context, string) (*waappv1.LoginState, error)
+	GetActiveLoginState(context.Context, string, string) (*waappv1.LoginState, error)
 	ListActiveLoginStates(context.Context) ([]LoginStateRecord, error)
-	GetLoginStateByRegistration(context.Context, string, string) (*waappv1.LoginState, error)
-	GetLoginStateByRegisteredIdentity(context.Context, string, string) (*waappv1.LoginState, error)
+	GetLoginStateByRegistration(context.Context, string) (*waappv1.LoginState, error)
+	GetLoginStateByRegisteredIdentity(context.Context, string) (*waappv1.LoginState, error)
 
-	SaveMessageSession(context.Context, *waappv1.MessageSession, string) error
-	GetMessageSession(context.Context, string, string) (*waappv1.MessageSession, error)
-	SaveInboundMessages(context.Context, string, []*waappv1.InboundMessage) error
-	GetInboundMessage(context.Context, string, string) (*waappv1.InboundMessage, error)
-	ListPendingEncryptedInboundMessages(context.Context, string, string, string, int) ([]*waappv1.InboundMessage, error)
-	SaveDecryptedMessage(context.Context, *waappv1.DecryptedMessage, string) error
-	GetDecryptedMessage(context.Context, string, string) (*waappv1.DecryptedMessage, error)
-	SaveCandidates(context.Context, string, []*waappv1.ExtractedCandidate) error
-	SaveOTPMessage(context.Context, string, *waappv1.OtpMessage) error
-	ListAccountOTPMessages(context.Context, string, string, string, int, bool) ([]*waappv1.OtpMessage, string, error)
+	SaveMessageSession(context.Context, *waappv1.MessageSession) error
+	GetMessageSession(context.Context, string) (*waappv1.MessageSession, error)
+	SaveInboundMessages(context.Context, []*waappv1.InboundMessage) error
+	GetInboundMessage(context.Context, string) (*waappv1.InboundMessage, error)
+	ListPendingEncryptedInboundMessages(context.Context, string, string, int) ([]*waappv1.InboundMessage, error)
+	ListAccountMessages(context.Context, string, string, string, int, bool) ([]*waappv1.AccountMessage, string, error)
+	SaveDecryptedMessage(context.Context, *waappv1.DecryptedMessage) error
+	GetDecryptedMessage(context.Context, string) (*waappv1.DecryptedMessage, error)
+	SaveCandidates(context.Context, []*waappv1.ExtractedCandidate) error
+	SaveOTPMessage(context.Context, *waappv1.OtpMessage) error
+	ListAccountOTPMessages(context.Context, string, string, int, bool) ([]*waappv1.OtpMessage, string, error)
+	SaveWAContacts(context.Context, []*waappv1.WAContact) error
+	ListWAContacts(context.Context, string, string, int) ([]*waappv1.WAContact, string, error)
 }
 
 type RuntimeState interface {
@@ -59,13 +63,12 @@ type RuntimeState interface {
 }
 
 type NativeStateStore interface {
-	SaveNativeState(context.Context, string, string, nativeState) error
-	GetNativeState(context.Context, string, string) (nativeState, error)
+	SaveNativeState(context.Context, string, nativeState) error
+	GetNativeState(context.Context, string) (nativeState, error)
 }
 
 type LoginStateRecord struct {
-	WorkspaceID string
-	LoginState  *waappv1.LoginState
+	LoginState *waappv1.LoginState
 }
 
 type ProtocolEngine interface {
@@ -80,7 +83,6 @@ type ProtocolEngine interface {
 }
 
 type EngineProfileInput struct {
-	WorkspaceID       string
 	WAAccountID       string
 	ClientProfileID   string
 	ProtocolProfileID string
@@ -88,7 +90,6 @@ type EngineProfileInput struct {
 }
 
 type EngineRegistrationInput struct {
-	WorkspaceID       string
 	WAAccountID       string
 	ClientProfileID   string
 	ProtocolProfileID string
@@ -103,7 +104,6 @@ type EngineSubmitInput struct {
 }
 
 type EngineLoginCheckInput struct {
-	WorkspaceID          string
 	WAAccountID          string
 	ClientProfileID      string
 	RegisteredIdentityID string
@@ -111,7 +111,6 @@ type EngineLoginCheckInput struct {
 }
 
 type EngineMessageInput struct {
-	WorkspaceID          string
 	WAAccountID          string
 	ClientProfileID      string
 	RegisteredIdentityID string
@@ -122,7 +121,6 @@ type EngineMessageInput struct {
 }
 
 type EngineDecryptInput struct {
-	WorkspaceID          string
 	MessageID            string
 	MessageSessionID     string
 	ClientProfileID      string
@@ -132,7 +130,6 @@ type EngineDecryptInput struct {
 }
 
 type EngineAccountSettingsInput struct {
-	WorkspaceID          string
 	WAAccountID          string
 	ClientProfileID      string
 	RegisteredIdentityID string
@@ -145,6 +142,14 @@ type EngineAccountSettingsInput struct {
 	LocaleLanguage       string
 	LocaleCountry        string
 	Code                 string
+}
+
+type EngineContactResolveInput struct {
+	WAAccountID          string
+	ClientProfileID      string
+	RegisteredIdentityID string
+	JIDs                 []string
+	RemoteTimeout        time.Duration
 }
 
 type EngineProbeResult struct {
@@ -202,17 +207,26 @@ type EngineLoginCheckResult struct {
 
 type EngineMessageBatchResult struct {
 	Messages []*waappv1.InboundMessage
+	Contacts []*waappv1.WAContact
 	Err      error
 }
 
 type EngineDecryptResult struct {
 	DecryptedMessage *waappv1.DecryptedMessage
 	Candidates       []*waappv1.ExtractedCandidate
+	ContactHints     []waContactHint
 	Err              error
 }
 
 type EngineAccountSettingsResult struct {
 	Status   waappv1.AccountSettingsOperationStatus
 	WaitTime time.Duration
+	Err      error
+}
+
+type EngineContactResolveResult struct {
+	Contacts []*waappv1.WAContact
+	Queried  int
+	Resolved int
 	Err      error
 }

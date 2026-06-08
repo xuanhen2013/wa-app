@@ -99,13 +99,11 @@ func (s *Server) VerifyAccountEmailOtp(ctx context.Context, req *waappv1.VerifyA
 }
 
 func (s *Server) applyAccountSettings(ctx context.Context, requestContext *waappv1.RequestContext, selector *waappv1.AccountLoginSelector, kind waappv1.AccountSettingsOperationKind, enrich func(EngineAccountSettingsInput) EngineAccountSettingsInput) (*waappv1.AccountSettingsOperation, error) {
-	workspaceID := requestContext.GetWorkspaceId()
-	loginState, err := s.accountSettingsLoginState(ctx, workspaceID, selector)
+	loginState, err := s.accountSettingsLoginState(ctx, selector)
 	if err != nil {
 		return nil, err
 	}
 	input := EngineAccountSettingsInput{
-		WorkspaceID:          workspaceID,
 		WAAccountID:          loginState.GetWaAccountId(),
 		ClientProfileID:      loginState.GetClientProfileId(),
 		RegisteredIdentityID: loginState.GetRegisteredIdentityId(),
@@ -166,15 +164,15 @@ func (s *Server) accountSettingsRunner(ctx context.Context, requestContext *waap
 	return proxied, func() { _ = s.proxyRuntime.ReleaseProxyRoute(context.Background(), route) }, nil
 }
 
-func (s *Server) accountSettingsLoginState(ctx context.Context, workspaceID string, selector *waappv1.AccountLoginSelector) (*waappv1.LoginState, error) {
+func (s *Server) accountSettingsLoginState(ctx context.Context, selector *waappv1.AccountLoginSelector) (*waappv1.LoginState, error) {
 	if selector.GetLoginStateId() != "" {
 		return requireActiveLoginState(func() (*waappv1.LoginState, error) {
-			return s.store.GetLoginState(ctx, workspaceID, selector.GetLoginStateId())
+			return s.store.GetLoginState(ctx, selector.GetLoginStateId())
 		})
 	}
 	if selector.GetRegisteredIdentityId() != "" {
 		return requireActiveLoginState(func() (*waappv1.LoginState, error) {
-			return s.store.GetLoginStateByRegisteredIdentity(ctx, workspaceID, selector.GetRegisteredIdentityId())
+			return s.store.GetLoginStateByRegisteredIdentity(ctx, selector.GetRegisteredIdentityId())
 		})
 	}
 	accountID, err := requireWAAccountID(selector.GetWaAccountId())
@@ -183,7 +181,7 @@ func (s *Server) accountSettingsLoginState(ctx context.Context, workspaceID stri
 	}
 	if selector.GetClientProfileId() != "" {
 		return requireActiveLoginState(func() (*waappv1.LoginState, error) {
-			return s.store.GetActiveLoginState(ctx, workspaceID, accountID, selector.GetClientProfileId())
+			return s.store.GetActiveLoginState(ctx, accountID, selector.GetClientProfileId())
 		})
 	}
 	records, err := s.store.ListActiveLoginStates(ctx)
@@ -192,7 +190,7 @@ func (s *Server) accountSettingsLoginState(ctx context.Context, workspaceID stri
 	}
 	for _, record := range records {
 		loginState := record.LoginState
-		if record.WorkspaceID == workspaceID && loginState.GetWaAccountId() == accountID {
+		if loginState.GetWaAccountId() == accountID {
 			return loginState, nil
 		}
 	}

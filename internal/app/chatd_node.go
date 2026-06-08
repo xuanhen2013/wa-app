@@ -17,11 +17,17 @@ type chatdNode struct {
 }
 
 type chatdEncPayload struct {
-	StanzaID string
-	Sender   string
-	EncType  string
-	Path     string
-	Payload  []byte
+	StanzaID            string
+	Contact             string
+	Sender              string
+	ContactPN           string
+	SenderPN            string
+	NotifyName          string
+	ParticipantUsername string
+	ContactHints        []waContactHint
+	EncType             string
+	Path                string
+	Payload             []byte
 }
 
 type tokenDictionary struct {
@@ -47,40 +53,232 @@ func fallbackTokenDictionary() *tokenDictionary {
 		7:   "receipt",
 		8:   "id",
 		9:   "notification",
+		10:  "disappearing_mode",
+		11:  "status",
+		12:  "jid",
+		13:  "broadcast",
+		14:  "user",
+		15:  "devices",
+		16:  "device_hash",
 		17:  "to",
+		18:  "offline",
 		19:  "message",
 		20:  "result",
 		21:  "class",
 		22:  "xmlns",
+		23:  "duration",
+		24:  "notify",
 		25:  "iq",
+		26:  "t",
 		27:  "ack",
 		28:  "g.us",
 		29:  "enc",
 		30:  "urn:xmpp:whatsapp:push",
 		31:  "presence",
+		32:  "config_value",
+		33:  "picture",
+		34:  "verified_name",
+		35:  "config_code",
+		36:  "key-index-list",
+		37:  "contact",
+		38:  "mediatype",
 		39:  "routing_info",
 		40:  "edge_routing",
 		41:  "get",
 		42:  "read",
 		43:  "urn:xmpp:ping",
+		44:  "fallback_hostname",
+		45:  "0",
+		46:  "chatstate",
+		47:  "business_hours_config",
 		48:  "unavailable",
+		49:  "download_buckets",
 		50:  "skmsg",
+		51:  "verified_level",
 		52:  "composing",
+		53:  "handshake",
+		54:  "device-list",
+		55:  "media",
+		56:  "text",
+		57:  "fallback_ip4",
+		58:  "media_conn",
+		59:  "device",
+		60:  "creation",
+		61:  "location",
+		62:  "config",
+		63:  "item",
+		64:  "fallback_ip6",
 		65:  "count",
+		66:  "w:profile:picture",
+		67:  "image",
+		68:  "business",
+		69:  "2",
+		70:  "hostname",
+		71:  "call-creator",
+		72:  "display_name",
+		73:  "relaylatency",
+		74:  "platform",
 		75:  "abprops",
 		76:  "success",
 		77:  "msg",
+		78:  "offline_preview",
+		79:  "prop",
+		80:  "key-index",
+		81:  "v",
+		82:  "day_of_week",
 		83:  "pkmsg",
+		84:  "version",
+		85:  "1",
 		86:  "ping",
+		87:  "w:p",
+		88:  "download",
+		89:  "video",
 		90:  "set",
-		105: "value",
-		108: "code",
-		117: "lid",
+		91:  "specific_hours",
+		92:  "props",
+		93:  "primary",
+		94:  "unknown",
+		95:  "hash",
+		96:  "commerce_experience",
+		97:  "last",
+		98:  "subscribe",
+		99:  "max_buckets",
+		100: "call",
+		101: "profile",
+		102: "member_since_text",
+		103: "close_time",
+		104: "call-id",
+		105: "sticker",
+		106: "mode",
+		107: "participants",
+		108: "value",
+		109: "query",
+		110: "profile_options",
+		111: "open_time",
+		112: "code",
+		113: "list",
+		114: "host",
+		115: "ts",
+		116: "contacts",
+		117: "upload",
+		118: "lid",
+		119: "preview",
+		120: "update",
+		121: "usync",
+		122: "w:stats",
 		123: "delivery",
-		129: "fail",
+		124: "auth_ttl",
+		125: "context",
+		126: "fail",
+		127: "cart_enabled",
+		128: "appdata",
+		129: "category",
+		130: "atn",
+		131: "direct_connection",
+		132: "decrypt-fail",
+		133: "relay_id",
+		134: "mmg-fallback.whatsapp.net",
+		135: "target",
+		136: "available",
+		137: "name",
+		138: "last_id",
+		139: "mmg.whatsapp.net",
+		140: "categories",
+		141: "401",
+		142: "is_new",
+		143: "index",
+		144: "tctoken",
+		145: "ip4",
+		146: "token_id",
+		147: "latency",
+		148: "recipient",
+		149: "edit",
+		150: "ip6",
+		151: "add",
+		152: "thumbnail-document",
+		153: "26",
+		154: "paused",
+		155: "true",
+		156: "identity",
 		157: "stream:error",
+		158: "key",
+		159: "sidelist",
+		160: "background",
+		161: "audio",
+		162: "3",
+		163: "thumbnail-image",
+		164: "biz-cover-photo",
+		165: "cat",
+		166: "gcm",
+		167: "thumbnail-video",
 		168: "error",
+		169: "auth",
+		170: "deny",
+		171: "serial",
+		172: "in",
+		173: "registration",
+		174: "thumbnail-link",
+		175: "remove",
+		176: "00",
+		177: "gif",
+		178: "thumbnail-gif",
+		179: "tag",
+		180: "capability",
+		181: "multicast",
+		182: "item-not-found",
+		183: "description",
+		184: "business_hours",
+		185: "config_expo_key",
+		186: "md-app-state",
+		187: "expiration",
+		188: "fallback",
+		189: "ttl",
+		190: "300",
+		191: "md-msg-hist",
+		192: "device_orientation",
+		193: "out",
+		194: "w:m",
+		195: "open_24h",
+		196: "side_list",
+		197: "token",
+		198: "inactive",
+		199: "01",
+		200: "document",
+		201: "te2",
+		202: "played",
 		203: "encrypt",
+		204: "msgr",
+		205: "hide",
+		206: "direct_path",
+		207: "12",
+		208: "state",
+		209: "not-authorized",
+		210: "url",
+		211: "terminate",
+		212: "signature",
+		213: "status-revoke-delay",
+		214: "02",
+		215: "te",
+		216: "linked_accounts",
+		217: "trusted_contact",
+		218: "timezone",
+		219: "ptt",
+		220: "kyc-id",
+		221: "privacy_token",
+		222: "readreceipts",
+		223: "appointment_only",
+		224: "address",
+		225: "expected_ts",
+		226: "privacy",
+		227: "7",
+		228: "android",
+		229: "interactive",
+		230: "device-identity",
+		231: "enabled",
+		232: "attribute_padding",
+		233: "1080",
+		234: "03",
+		235: "screen_height",
 	}
 	reverse := map[string]tokenRef{}
 	for idx, value := range known {
@@ -90,13 +288,23 @@ func fallbackTokenDictionary() *tokenDictionary {
 	secondary := [][]string{
 		tokenDictionaryBucket(map[int]string{
 			14:  "conflict",
+			50:  "refresh",
+			81:  "pn",
+			82:  "delete",
+			88:  "delta",
+			109: "privacy_mode_ts",
+			118: "actual_actors",
 			123: "notice",
+			125: "host_storage",
 		}),
 		tokenDictionaryBucket(map[int]string{
-			1: "dirty",
+			1:   "dirty",
+			10:  "full",
+			191: "val",
 		}),
 		tokenDictionaryBucket(map[int]string{
-			60: "failure",
+			60:  "failure",
+			123: "invalid",
 		}),
 		{},
 	}
@@ -581,30 +789,63 @@ func buildAckForNode(node chatdNode) (chatdNode, bool) {
 
 func iterEncPayloads(node chatdNode) []chatdEncPayload {
 	out := []chatdEncPayload{}
-	var walk func(chatdNode, []string, string, string)
-	walk = func(current chatdNode, path []string, sender string, stanzaID string) {
+	var walk func(chatdNode, []string, chatdMessageRefs)
+	walk = func(current chatdNode, path []string, refs chatdMessageRefs) {
 		currentPath := append(append([]string{}, path...), current.Tag)
-		currentSender := sender
-		currentStanzaID := stanzaID
 		if id := current.Attrs["id"]; id != "" {
-			currentStanzaID = id
+			refs.StanzaID = id
 		}
 		if current.Tag == "message" {
-			currentSender = firstNonEmpty(current.Attrs["participant"], current.Attrs["from"], sender)
+			senderLID := firstChatdAttr(current.Attrs, "sender_lid", "participant_lid")
+			senderPN := firstChatdAttr(current.Attrs, "sender_pn", "sender_pn_jid", "participant_pn", "participant_pn_jid")
+			peerLID := firstChatdAttr(current.Attrs, "peer_recipient_lid", "recipient_latest_lid", "recipient_lid", "peer_lid")
+			peerPN := firstChatdAttr(current.Attrs, "peer_recipient_pn", "peer_recipient_pn_jid", "recipient_pn", "recipient_pn_jid", "peer_pn", "peer_pn_jid")
+			contactLID := firstChatdAttr(current.Attrs, "contact_lid", "author_lid", "creator_lid", "caller_lid", "invitee_lid")
+			contactPN := firstChatdAttr(current.Attrs, "contact_pn", "contact_pn_jid", "author_pn", "author_pn_jid", "creator_pn", "creator_pn_jid", "caller_pn", "caller_pn_jid", "invitee_pn", "invitee_pn_jid")
+			refs.Contact = firstNonEmpty(firstChatdAttr(current.Attrs, "from"), peerLID, senderLID, firstChatdAttr(current.Attrs, "participant"), refs.Contact)
+			refs.Sender = firstNonEmpty(senderLID, contactLID, firstChatdAttr(current.Attrs, "participant", "from"), refs.Sender, refs.Contact)
+			refs.ContactPN = firstNonEmpty(firstChatdAttr(current.Attrs, "from_pn", "from_pn_jid", "pn_jid", "new_jid"), peerPN, contactPN, senderPN, refs.ContactPN)
+			refs.SenderPN = firstNonEmpty(firstChatdAttr(current.Attrs, "participant_pn", "participant_pn_jid", "sender_pn", "sender_pn_jid"), contactPN, firstChatdAttr(current.Attrs, "from_pn", "from_pn_jid", "pn_jid"), refs.SenderPN, refs.ContactPN)
+			refs.NotifyName = firstNonEmpty(firstChatdAttr(current.Attrs, "notify", "notify_name", "display_name", "contact_push_name"), refs.NotifyName)
+			refs.ParticipantUsername = firstNonEmpty(firstChatdAttr(current.Attrs, "participant_username", "peer_recipient_username", "contact_username", "username"), refs.ParticipantUsername)
+			refs.ContactHints = dedupeWAContactHints(append(refs.ContactHints, contactHintsFromChatdNode(current)...))
 		}
 		if current.Tag == "enc" {
 			if raw, ok := current.Content.([]byte); ok {
-				out = append(out, chatdEncPayload{StanzaID: currentStanzaID, Sender: currentSender, EncType: firstNonEmpty(current.Attrs["type"], current.Attrs["v"], "auto"), Path: strings.Join(currentPath, "/"), Payload: raw})
+				out = append(out, chatdEncPayload{
+					StanzaID:            refs.StanzaID,
+					Contact:             refs.Contact,
+					Sender:              refs.Sender,
+					ContactPN:           refs.ContactPN,
+					SenderPN:            refs.SenderPN,
+					NotifyName:          refs.NotifyName,
+					ParticipantUsername: refs.ParticipantUsername,
+					ContactHints:        refs.ContactHints,
+					EncType:             firstNonEmpty(current.Attrs["type"], current.Attrs["v"], "auto"),
+					Path:                strings.Join(currentPath, "/"),
+					Payload:             raw,
+				})
 			}
 		}
 		if children, ok := current.Content.([]chatdNode); ok {
 			for _, child := range children {
-				walk(child, currentPath, currentSender, currentStanzaID)
+				walk(child, currentPath, refs)
 			}
 		}
 	}
-	walk(node, nil, "", "")
+	walk(node, nil, chatdMessageRefs{})
 	return out
+}
+
+type chatdMessageRefs struct {
+	StanzaID            string
+	Contact             string
+	Sender              string
+	ContactPN           string
+	SenderPN            string
+	NotifyName          string
+	ParticipantUsername string
+	ContactHints        []waContactHint
 }
 
 func routingInfoFromNode(node chatdNode) string {

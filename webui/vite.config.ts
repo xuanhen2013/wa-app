@@ -4,6 +4,7 @@ import react from '@vitejs/plugin-react';
 import tailwindcss from '@tailwindcss/vite';
 
 const linkedAliases = [
+  { find: /^@assistant-ui\/react$/, replacement: path.resolve(__dirname, 'node_modules/@assistant-ui/react') },
   { find: /^@tanstack\/react-query$/, replacement: path.resolve(__dirname, 'node_modules/@tanstack/react-query') },
   { find: /^class-variance-authority$/, replacement: path.resolve(__dirname, 'node_modules/class-variance-authority') },
   { find: /^clsx$/, replacement: path.resolve(__dirname, 'node_modules/clsx') },
@@ -22,5 +23,17 @@ export default defineConfig({
   base: '/',
   plugins: [react(), tailwindcss()],
   resolve: { preserveSymlinks: true, alias: [...linkedAliases, { find: '@', replacement: path.resolve(__dirname, './src') }] },
-  build: { target: 'esnext', modulePreload: false, cssCodeSplit: true }
+  build: {
+    target: 'esnext',
+    modulePreload: false,
+    cssCodeSplit: true,
+    rollupOptions: {
+      output: {
+        manualChunks(id) {
+          if (id.includes('/node_modules/@assistant-ui/') || id.includes('/node_modules/assistant-')) return 'assistant-ui';
+          return undefined;
+        },
+      },
+    },
+  },
 });

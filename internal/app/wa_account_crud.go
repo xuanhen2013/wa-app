@@ -3,119 +3,54 @@ package app
 import (
 	"context"
 	"errors"
-	"log"
-	"time"
+	"strings"
 
-	"github.com/byte-v-forge/common-lib/accountcrud"
-	accountv1 "github.com/byte-v-forge/common-lib/gen/go/byte/v/forge/contracts/account/v1"
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 )
 
-type waAccountStore struct {
-	store       Store
-	workspaceID string
-}
-
-func (s *Server) waAccounts(workspaceID string) *accountcrud.Manager[*waappv1.WAAccount] {
-	store := waAccountStore{store: s.store, workspaceID: workspaceID}
-	return accountcrud.New[*waappv1.WAAccount](accountcrud.Config[*waappv1.WAAccount]{
-		Store: accountcrud.StoreFuncs[*waappv1.WAAccount]{
-			Name:       "wa account store",
-			ListFunc:   store.list,
-			GetFunc:    store.get,
-			UpsertFunc: store.upsert,
-			DeleteFunc: store.delete,
-		},
-		Descriptor: waAccountDescriptor,
-		AccountOf: func(account *waappv1.WAAccount) *accountv1.Account {
-			if account == nil {
-				return nil
-			}
-			return account.GetAccount()
-		},
-		Publishers: s.waAccountPublishers(),
-		IDField:    "wa_account_id",
-	})
-}
-
-func (s *Server) saveWAAccount(ctx context.Context, workspaceID string, account *waappv1.WAAccount) (*waappv1.WAAccount, error) {
-	return s.waAccounts(workspaceID).Upsert(ctx, account)
-}
-
-func (s *Server) getWAAccount(ctx context.Context, workspaceID string, accountID string) (*waappv1.WAAccount, error) {
-	account, found, err := s.waAccounts(workspaceID).Get(ctx, accountID)
+func (s *Server) saveWAAccount(ctx context.Context, account *waappv1.WAAccount) (*waappv1.WAAccount, error) {
+	if account == nil {
+		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "WA account is required", false)
+	}
+	accountID, err := requireWAAccountID(account.GetWaAccountId())
 	if err != nil {
 		return nil, err
 	}
-	if !found {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_WA_ACCOUNT_NOT_FOUND, "WA account not found", false)
-	}
-	return account, nil
-}
-
-func (s *Server) listWAAccounts(ctx context.Context, workspaceID string, cursor string, limit int) ([]*waappv1.WAAccount, string, error) {
-	page, err := s.waAccounts(workspaceID).List(ctx, accountcrud.ListRequest{Cursor: cursor, Limit: limit})
-	if err != nil {
-		return nil, "", err
-	}
-	return page.Records, page.NextCursor, nil
-}
-
-func (s waAccountStore) list(ctx context.Context, req accountcrud.ListRequest) (accountcrud.Page[*waappv1.WAAccount], error) {
-	accounts, nextCursor, err := s.store.ListWAAccounts(ctx, s.workspaceID, req.Cursor, req.Limit)
-	if err != nil {
-		return accountcrud.Page[*waappv1.WAAccount]{}, err
-	}
-	return accountcrud.Page[*waappv1.WAAccount]{Records: accounts, NextCursor: nextCursor}, nil
-}
-
-func (s waAccountStore) get(ctx context.Context, accountID string) (*waappv1.WAAccount, bool, error) {
-	account, err := s.store.GetWAAccount(ctx, s.workspaceID, accountID)
-	if isWAAccountNotFound(err) {
-		return nil, false, nil
-	}
-	if err != nil {
-		return nil, false, err
-	}
-	return account, true, nil
-}
-
-func (s waAccountStore) upsert(ctx context.Context, account *waappv1.WAAccount) (*waappv1.WAAccount, error) {
+	account.WaAccountId = accountID
+	account.Phone = normalizePhone(account.GetPhone())
+	account.Status = normalizeWAAccountStatus(account.GetStatus())
 	if err := s.store.SaveWAAccount(ctx, account); err != nil {
 		return nil, err
 	}
-	return s.store.GetWAAccount(ctx, s.workspaceID, waAccountID(account))
+	return s.store.GetWAAccount(ctx, accountID)
 }
 
-func (s waAccountStore) delete(ctx context.Context, accountID string) (*waappv1.WAAccount, bool, error) {
-	account, err := s.store.GetWAAccount(ctx, s.workspaceID, accountID)
-	if isWAAccountNotFound(err) {
-		return nil, false, nil
-	}
+func (s *Server) getWAAccount(ctx context.Context, accountID string) (*waappv1.WAAccount, error) {
+	accountID, err := requireWAAccountID(accountID)
 	if err != nil {
-		return nil, false, err
+		return nil, err
 	}
-	if err := s.store.DeleteWAAccount(ctx, s.workspaceID, accountID); err != nil {
-		return nil, false, err
+	account, err := s.store.GetWAAccount(ctx, accountID)
+	if isWAAccountNotFound(err) {
+		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_WA_ACCOUNT_NOT_FOUND, "WA account not found", false)
 	}
-	return account, true, nil
+	return account, err
 }
 
-func (s *Server) waAccountPublishers() []accountcrud.ChangePublisher {
-	if s == nil || s.accountPublisher == nil {
-		return nil
+func (s *Server) listWAAccounts(ctx context.Context, cursor string, limit int) ([]*waappv1.WAAccount, string, error) {
+	return s.store.ListWAAccounts(ctx, strings.TrimSpace(cursor), limit)
+}
+
+func (s *Server) deleteWAAccount(ctx context.Context, accountID string) (bool, error) {
+	accountID, err := requireWAAccountID(accountID)
+	if err != nil {
+		return false, err
 	}
-	publisher := accountcrud.WrapPublisher(accountcrud.FromEventBusPublisher(s.accountPublisher), accountcrud.PublisherOptions{
-		Detached:     true,
-		Timeout:      5 * time.Second,
-		IgnoreErrors: true,
-		OnError: func(_ context.Context, _ accountv1.AccountChangeKind, account *accountv1.Account, err error) {
-			if account != nil {
-				log.Printf("publish WA account event failed account=%s: %v", account.GetKey().GetAccountId(), sanitizeEventPublishError(err))
-			}
-		},
-	})
-	return []accountcrud.ChangePublisher{publisher}
+	err = s.store.DeleteWAAccount(ctx, accountID)
+	if isWAAccountNotFound(err) {
+		return false, nil
+	}
+	return err == nil, err
 }
 
 func isWAAccountNotFound(err error) bool {

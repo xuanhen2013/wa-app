@@ -37,33 +37,35 @@ func (e *longConnectionNativeEngine) ReceiveMessageBatch(ctx context.Context, in
 		e.closeLocked()
 		return EngineMessageBatchResult{Err: chatdReceiveError(err)}
 	}
-	messages, payloads, update, err := session.receiveBatch(input, e.clock.Now())
+	now := e.clock.Now()
+	messages, payloads, update, err := session.receiveBatch(input, now)
 	if err != nil {
 		e.closeLocked()
 		session, retryErr := e.ensureSessionWithTimeoutLocked(ctx, input)
 		if retryErr != nil {
 			return EngineMessageBatchResult{Err: chatdReceiveError(retryErr)}
 		}
-		messages, payloads, update, err = session.receiveBatch(input, e.clock.Now())
+		now = e.clock.Now()
+		messages, payloads, update, err = session.receiveBatch(input, now)
 		if err != nil {
 			e.closeLocked()
 			return EngineMessageBatchResult{Err: chatdReceiveError(err)}
 		}
 	}
-	if len(payloads) > 0 || update.RoutingInfo != "" || update.Endpoint.Host != "" || update.ServerStaticPublic != "" {
-		state, err := e.loadState(ctx, input.WorkspaceID, input.ClientProfileID)
+	if len(payloads) > 0 || len(update.ContactHints) > 0 || update.RoutingInfo != "" || update.Endpoint.Host != "" || update.ServerStaticPublic != "" {
+		state, err := e.loadState(ctx, input.ClientProfileID)
 		if err != nil {
 			e.closeLocked()
 			return EngineMessageBatchResult{Err: err}
 		}
 		if applyChatdReceiveState(&state, input, payloads, update) {
-			if err := e.saveState(ctx, input.WorkspaceID, input.ClientProfileID, state); err != nil {
+			if err := e.saveState(ctx, input.ClientProfileID, state); err != nil {
 				e.closeLocked()
 				return EngineMessageBatchResult{Err: err}
 			}
 		}
 	}
-	return EngineMessageBatchResult{Messages: messages}
+	return EngineMessageBatchResult{Messages: messages, Contacts: contactsFromContactHints(input.WAAccountID, nil, update.ContactHints, now)}
 }
 
 func (e *longConnectionNativeEngine) ensureSessionWithTimeoutLocked(ctx context.Context, input EngineMessageInput) (*chatdSession, error) {
@@ -79,14 +81,14 @@ func (e *longConnectionNativeEngine) ensureSessionLocked(ctx context.Context, in
 	if e.session != nil {
 		return e.session, nil
 	}
-	state, err := e.loadState(ctx, input.WorkspaceID, input.ClientProfileID)
+	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
 		return nil, err
 	}
 	state.ensureMaps()
 	if state.ChatStatic.Private == "" || state.ChatStatic.Public == "" {
 		state.ChatStatic = ensureChatStatic(state.ChatStatic)
-		if err := e.saveState(ctx, input.WorkspaceID, input.ClientProfileID, state); err != nil {
+		if err := e.saveState(ctx, input.ClientProfileID, state); err != nil {
 			return nil, err
 		}
 	}

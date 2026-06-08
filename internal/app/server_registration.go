@@ -12,15 +12,14 @@ func (s *Server) ProbeAccount(ctx context.Context, req *waappv1.ProbeAccountRequ
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.ProbeAccountResponse{Error: ToProtoError(err)}, nil
 	}
-	workspaceID := req.GetContext().GetWorkspaceId()
-	account, profile, err := s.waAccountAndProfile(ctx, workspaceID, req.GetWaAccountId(), req.GetClientProfileId())
+	account, profile, err := s.waAccountAndProfile(ctx, req.GetWaAccountId(), req.GetClientProfileId())
 	if err != nil {
 		return &waappv1.ProbeAccountResponse{Error: ToProtoError(err)}, nil
 	}
-	result := s.runner.ProbeAccount(ctx, EngineRegistrationInput{WorkspaceID: workspaceID, WAAccountID: waAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: req.GetProtocolProfileId(), Phone: account.GetPhone()})
+	result := s.runner.ProbeAccount(ctx, EngineRegistrationInput{WAAccountID: waAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: req.GetProtocolProfileId(), Phone: account.GetPhone()})
 	now := s.clock.Now()
 	probe := &waappv1.AccountProbe{AccountProbeId: s.ids.NewID("waprobe_"), WaAccountId: waAccountID(account), ClientProfileId: profile.GetClientProfileId(), Status: result.Status, SupportedMethods: result.SupportedMethods, ProbedAt: timestamppb.New(now), LastError: ToProtoError(result.Err)}
-	if err := s.store.SaveAccountProbe(ctx, probe, workspaceID); err != nil {
+	if err := s.store.SaveAccountProbe(ctx, probe); err != nil {
 		return &waappv1.ProbeAccountResponse{Error: ToProtoError(err)}, nil
 	}
 	return &waappv1.ProbeAccountResponse{Probe: probe, Error: probe.GetLastError()}, nil
@@ -34,8 +33,7 @@ func (s *Server) requestVerificationCode(ctx context.Context, req *waappv1.Reque
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.RequestVerificationCodeResponse{Error: ToProtoError(err)}, nil
 	}
-	workspaceID := req.GetContext().GetWorkspaceId()
-	account, profile, err := s.waAccountAndProfile(ctx, workspaceID, req.GetWaAccountId(), req.GetClientProfileId())
+	account, profile, err := s.waAccountAndProfile(ctx, req.GetWaAccountId(), req.GetClientProfileId())
 	if err != nil {
 		return &waappv1.RequestVerificationCodeResponse{Error: ToProtoError(err)}, nil
 	}
@@ -43,9 +41,9 @@ func (s *Server) requestVerificationCode(ctx context.Context, req *waappv1.Reque
 	if method == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_UNSPECIFIED {
 		method = waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS
 	}
-	result := runner.RequestVerificationCode(ctx, EngineRegistrationInput{WorkspaceID: workspaceID, WAAccountID: waAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: req.GetProtocolProfileId(), Phone: account.GetPhone()})
+	result := runner.RequestVerificationCode(ctx, EngineRegistrationInput{WAAccountID: waAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: req.GetProtocolProfileId(), Phone: account.GetPhone()})
 	record := s.newVerificationCodeRequestRecord(account, profile, method, result)
-	if err := s.store.SaveVerificationRequest(ctx, record, workspaceID); err != nil {
+	if err := s.store.SaveVerificationRequest(ctx, record); err != nil {
 		return &waappv1.RequestVerificationCodeResponse{Error: ToProtoError(err)}, nil
 	}
 	return &waappv1.RequestVerificationCodeResponse{VerificationRequest: record, Error: record.GetLastError()}, nil
@@ -59,18 +57,17 @@ func (s *Server) submitVerificationCode(ctx context.Context, req *waappv1.Submit
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.SubmitVerificationCodeResponse{Error: ToProtoError(err)}, nil
 	}
-	workspaceID := req.GetContext().GetWorkspaceId()
-	verification, err := s.store.GetVerificationRequest(ctx, workspaceID, req.GetVerificationRequestId())
+	verification, err := s.store.GetVerificationRequest(ctx, req.GetVerificationRequestId())
 	if err != nil {
 		return &waappv1.SubmitVerificationCodeResponse{Error: ToProtoError(err)}, nil
 	}
-	account, profile, err := s.waAccountAndProfile(ctx, workspaceID, verification.GetWaAccountId(), verification.GetClientProfileId())
+	account, profile, err := s.waAccountAndProfile(ctx, verification.GetWaAccountId(), verification.GetClientProfileId())
 	if err != nil {
 		return &waappv1.SubmitVerificationCodeResponse{Error: ToProtoError(err)}, nil
 	}
 	now := s.clock.Now()
 	registration := &waappv1.RegistrationRecord{RegistrationId: s.ids.NewID("wareg_"), VerificationRequestId: verification.GetVerificationRequestId(), WaAccountId: waAccountID(account), ClientProfileId: profile.GetClientProfileId(), Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_SUBMITTED, SubmittedAt: timestamppb.New(now)}
-	result := runner.SubmitVerificationCode(ctx, EngineSubmitInput{EngineRegistrationInput: EngineRegistrationInput{WorkspaceID: workspaceID, WAAccountID: waAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: profile.GetProtocolProfileId(), Phone: account.GetPhone()}, VerificationRequestID: verification.GetVerificationRequestId(), Code: req.GetCode(), CodeSecretRef: req.GetCodeSecretRef()})
+	result := runner.SubmitVerificationCode(ctx, EngineSubmitInput{EngineRegistrationInput: EngineRegistrationInput{WAAccountID: waAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: profile.GetProtocolProfileId(), Phone: account.GetPhone()}, VerificationRequestID: verification.GetVerificationRequestId(), Code: req.GetCode(), CodeSecretRef: req.GetCodeSecretRef()})
 	registration.Status = result.Status
 	registration.LastError = ToProtoError(result.Err)
 	if result.Status == waappv1.RegistrationStatus_REGISTRATION_STATUS_REGISTERED {
@@ -81,11 +78,11 @@ func (s *Server) submitVerificationCode(ctx context.Context, req *waappv1.Submit
 		registration.CompletedAt = timestamppb.New(completedAt)
 		registration.Identity = &waappv1.RegisteredIdentity{RegisteredIdentityId: firstNonEmpty(result.RegisteredID, s.ids.NewID("waid_")), WaAccountId: waAccountID(account), ClientProfileId: profile.GetClientProfileId(), ServiceAccountId: result.ServiceAccountID, ServiceLoginId: result.ServiceLoginID, RegisteredAt: timestamppb.New(completedAt)}
 	}
-	if err := s.store.SaveRegistration(ctx, registration, workspaceID); err != nil {
+	if err := s.store.SaveRegistration(ctx, registration); err != nil {
 		return &waappv1.SubmitVerificationCodeResponse{Error: ToProtoError(err)}, nil
 	}
 	if registration.GetStatus() == waappv1.RegistrationStatus_REGISTRATION_STATUS_REGISTERED {
-		if _, err := s.saveWAAccount(ctx, workspaceID, withWAAccountStatus(account, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_ACTIVE, s.clock.Now())); err != nil {
+		if _, err := s.saveWAAccount(ctx, withWAAccountStatus(account, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_ACTIVE, s.clock.Now())); err != nil {
 			return &waappv1.SubmitVerificationCodeResponse{Registration: registration, Error: ToProtoError(err)}, nil
 		}
 	}
@@ -94,10 +91,10 @@ func (s *Server) submitVerificationCode(ctx context.Context, req *waappv1.Submit
 		return &waappv1.SubmitVerificationCodeResponse{Registration: registration, Error: ToProtoError(err)}, nil
 	}
 	if loginState != nil {
-		if err := s.store.SaveLoginState(ctx, loginState, workspaceID, "native-db:"+profile.GetClientProfileId()); err != nil {
+		if err := s.store.SaveLoginState(ctx, loginState, "native-db:"+profile.GetClientProfileId()); err != nil {
 			return &waappv1.SubmitVerificationCodeResponse{Registration: registration, Error: ToProtoError(err)}, nil
 		}
-		s.ensureLongConnection(ctx, workspaceID, loginState)
+		s.ensureLongConnection(ctx, loginState)
 	}
 	return &waappv1.SubmitVerificationCodeResponse{Registration: registration, LoginState: loginState, Error: registration.GetLastError()}, nil
 }
@@ -106,7 +103,7 @@ func (s *Server) GetRegistration(ctx context.Context, req *waappv1.GetRegistrati
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.GetRegistrationResponse{Error: ToProtoError(err)}, nil
 	}
-	registration, err := s.store.GetRegistration(ctx, req.GetContext().GetWorkspaceId(), req.GetRegistrationId())
+	registration, err := s.store.GetRegistration(ctx, req.GetRegistrationId())
 	if err != nil {
 		return &waappv1.GetRegistrationResponse{Error: ToProtoError(err)}, nil
 	}
@@ -117,7 +114,7 @@ func (s *Server) GetLoginState(ctx context.Context, req *waappv1.GetLoginStateRe
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.GetLoginStateResponse{Error: ToProtoError(err)}, nil
 	}
-	loginState, err := s.store.GetLoginState(ctx, req.GetContext().GetWorkspaceId(), req.GetLoginStateId())
+	loginState, err := s.store.GetLoginState(ctx, req.GetLoginStateId())
 	if err != nil {
 		return &waappv1.GetLoginStateResponse{Error: ToProtoError(err)}, nil
 	}
@@ -132,7 +129,7 @@ func (s *Server) GetActiveLoginState(ctx context.Context, req *waappv1.GetActive
 	if err != nil {
 		return &waappv1.GetActiveLoginStateResponse{Error: ToProtoError(err)}, nil
 	}
-	loginState, err := s.store.GetActiveLoginState(ctx, req.GetContext().GetWorkspaceId(), accountID, req.GetClientProfileId())
+	loginState, err := s.store.GetActiveLoginState(ctx, accountID, req.GetClientProfileId())
 	if err != nil {
 		return &waappv1.GetActiveLoginStateResponse{Error: ToProtoError(err)}, nil
 	}
@@ -147,12 +144,11 @@ func (s *Server) checkLoginState(ctx context.Context, req *waappv1.CheckLoginSta
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.CheckLoginStateResponse{Error: ToProtoError(err)}, nil
 	}
-	workspaceID := req.GetContext().GetWorkspaceId()
-	loginState, err := s.loginStateForCheck(ctx, workspaceID, req)
+	loginState, err := s.loginStateForCheck(ctx, req)
 	if err != nil {
 		return &waappv1.CheckLoginStateResponse{Error: ToProtoError(err)}, nil
 	}
-	result := runner.CheckLoginState(ctx, EngineLoginCheckInput{WorkspaceID: workspaceID, WAAccountID: loginState.GetWaAccountId(), ClientProfileID: loginState.GetClientProfileId(), RegisteredIdentityID: loginState.GetRegisteredIdentityId(), RemoteTimeout: durationFromProto(req.GetRemoteTimeout())})
+	result := runner.CheckLoginState(ctx, EngineLoginCheckInput{WAAccountID: loginState.GetWaAccountId(), ClientProfileID: loginState.GetClientProfileId(), RegisteredIdentityID: loginState.GetRegisteredIdentityId(), RemoteTimeout: durationFromProto(req.GetRemoteTimeout())})
 	now := s.clock.Now()
 	check := &waappv1.LoginStateCheck{
 		LoginStateCheckId:    s.ids.NewID("walogchk_"),
@@ -168,29 +164,29 @@ func (s *Server) checkLoginState(ctx context.Context, req *waappv1.CheckLoginSta
 		check.Status = waappv1.LoginStateCheckStatus_LOGIN_STATE_CHECK_STATUS_ACTIVE
 	}
 	if s.applyLoginStateCheck(loginState, check, now) {
-		if err := s.store.SaveLoginState(ctx, loginState, workspaceID, "native-db:"+loginState.GetClientProfileId()); err != nil {
+		if err := s.store.SaveLoginState(ctx, loginState, "native-db:"+loginState.GetClientProfileId()); err != nil {
 			return &waappv1.CheckLoginStateResponse{LoginState: loginState, Check: check, Error: ToProtoError(err)}, nil
 		}
 	}
 	if check.GetStatus() == waappv1.LoginStateCheckStatus_LOGIN_STATE_CHECK_STATUS_ACTIVE && loginState.GetStatus() == waappv1.LoginStateStatus_LOGIN_STATE_STATUS_ACTIVE {
-		s.ensureLongConnection(ctx, workspaceID, loginState)
+		s.ensureLongConnection(ctx, loginState)
 	}
 	return &waappv1.CheckLoginStateResponse{LoginState: loginState, Check: check, Error: check.GetError()}, nil
 }
 
-func (s *Server) loginStateForCheck(ctx context.Context, workspaceID string, req *waappv1.CheckLoginStateRequest) (*waappv1.LoginState, error) {
+func (s *Server) loginStateForCheck(ctx context.Context, req *waappv1.CheckLoginStateRequest) (*waappv1.LoginState, error) {
 	if req.GetLoginStateId() != "" {
-		return s.store.GetLoginState(ctx, workspaceID, req.GetLoginStateId())
+		return s.store.GetLoginState(ctx, req.GetLoginStateId())
 	}
 	if req.GetRegisteredIdentityId() != "" {
-		return s.store.GetLoginStateByRegisteredIdentity(ctx, workspaceID, req.GetRegisteredIdentityId())
+		return s.store.GetLoginStateByRegisteredIdentity(ctx, req.GetRegisteredIdentityId())
 	}
 	if req.GetWaAccountId() != "" && req.GetClientProfileId() != "" {
 		accountID, err := requireWAAccountID(req.GetWaAccountId())
 		if err != nil {
 			return nil, err
 		}
-		return s.store.GetActiveLoginState(ctx, workspaceID, accountID, req.GetClientProfileId())
+		return s.store.GetActiveLoginState(ctx, accountID, req.GetClientProfileId())
 	}
 	return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "login_state_id, registered_identity_id, or wa_account_id/client_profile_id is required", false)
 }
@@ -247,16 +243,16 @@ func (s *Server) loginStateFromRegistration(registration *waappv1.RegistrationRe
 	}, nil
 }
 
-func (s *Server) waAccountAndProfile(ctx context.Context, workspaceID string, waAccountIDValue string, clientProfileID string) (*waappv1.WAAccount, *waappv1.ClientProfile, error) {
+func (s *Server) waAccountAndProfile(ctx context.Context, waAccountIDValue string, clientProfileID string) (*waappv1.WAAccount, *waappv1.ClientProfile, error) {
 	accountID, err := requireWAAccountID(waAccountIDValue)
 	if err != nil {
 		return nil, nil, err
 	}
-	account, err := s.getWAAccount(ctx, workspaceID, accountID)
+	account, err := s.getWAAccount(ctx, accountID)
 	if err != nil {
 		return nil, nil, err
 	}
-	profile, err := s.store.GetClientProfile(ctx, workspaceID, clientProfileID)
+	profile, err := s.store.GetClientProfile(ctx, clientProfileID)
 	if err != nil {
 		return nil, nil, err
 	}

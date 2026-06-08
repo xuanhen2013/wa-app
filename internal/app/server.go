@@ -5,8 +5,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/byte-v-forge/common-lib/accountevent"
-	"github.com/byte-v-forge/common-lib/eventbus"
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -17,6 +15,7 @@ type Server struct {
 	waappv1.UnimplementedWaRegistrationServiceServer
 	waappv1.UnimplementedWaMessagingServiceServer
 	waappv1.UnimplementedWaExtractionServiceServer
+	waappv1.UnimplementedWaContactServiceServer
 	waappv1.UnimplementedWaToolingServiceServer
 	waappv1.UnimplementedWaAccountSettingsServiceServer
 
@@ -32,8 +31,6 @@ type Server struct {
 	registrationProxyUsername    string
 	accountSettingsProxyUsername string
 	loginStateCheckProxyUsername string
-	platformPublisher            eventbus.Publisher
-	accountPublisher             *accountevent.Publisher
 	longConnections              *LongConnectionManager
 }
 
@@ -61,16 +58,6 @@ func (s *Server) SetGatewayProxyUsernames(longConnection string, numberProbe str
 	s.loginStateCheckProxyUsername = strings.TrimSpace(loginStateCheck)
 }
 
-func (s *Server) SetPlatformPublisher(publisher eventbus.Publisher) {
-	if publisher == nil {
-		s.platformPublisher = nil
-		s.accountPublisher = nil
-		return
-	}
-	s.platformPublisher = publisher
-	s.accountPublisher = accountevent.NewPublisher(accountevent.Config{Publisher: publisher, Descriptor: waAccountDescriptor})
-}
-
 func (s *Server) RunLongConnections(ctx context.Context) error {
 	if s == nil || s.longConnections == nil {
 		return nil
@@ -87,7 +74,7 @@ func (s *Server) RegisterAppArtifact(ctx context.Context, req *waappv1.RegisterA
 	}
 	now := s.clock.Now()
 	artifact := &waappv1.AppArtifact{ArtifactId: s.ids.NewID("waart_"), Label: req.GetLabel(), VersionLabel: req.GetVersionLabel(), Sha256: req.GetSha256(), ObservedAt: timestamppb.New(now)}
-	if err := s.store.SaveAppArtifact(ctx, artifact, req.GetContext().GetWorkspaceId()); err != nil {
+	if err := s.store.SaveAppArtifact(ctx, artifact); err != nil {
 		return &waappv1.RegisterAppArtifactResponse{Error: ToProtoError(err)}, nil
 	}
 	return &waappv1.RegisterAppArtifactResponse{Artifact: artifact}, nil
@@ -97,8 +84,7 @@ func (s *Server) RecordProtocolProfile(ctx context.Context, req *waappv1.RecordP
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.RecordProtocolProfileResponse{Error: ToProtoError(err)}, nil
 	}
-	workspaceID := req.GetContext().GetWorkspaceId()
-	if _, err := s.store.GetAppArtifact(ctx, workspaceID, req.GetAppArtifactId()); err != nil {
+	if _, err := s.store.GetAppArtifact(ctx, req.GetAppArtifactId()); err != nil {
 		return &waappv1.RecordProtocolProfileResponse{Error: ToProtoError(err)}, nil
 	}
 	now := s.clock.Now()
@@ -114,7 +100,7 @@ func (s *Server) RecordProtocolProfile(ctx context.Context, req *waappv1.RecordP
 		DiscoveredAt:      timestamppb.New(now),
 		Audit:             &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)},
 	}
-	if err := s.store.SaveProtocolProfile(ctx, profile, workspaceID); err != nil {
+	if err := s.store.SaveProtocolProfile(ctx, profile); err != nil {
 		return &waappv1.RecordProtocolProfileResponse{Error: ToProtoError(err)}, nil
 	}
 	return &waappv1.RecordProtocolProfileResponse{ProtocolProfile: profile}, nil
@@ -124,7 +110,7 @@ func (s *Server) GetProtocolProfile(ctx context.Context, req *waappv1.GetProtoco
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.GetProtocolProfileResponse{Error: ToProtoError(err)}, nil
 	}
-	profile, err := s.store.GetProtocolProfile(ctx, req.GetContext().GetWorkspaceId(), req.GetProtocolProfileId())
+	profile, err := s.store.GetProtocolProfile(ctx, req.GetProtocolProfileId())
 	if err != nil {
 		return &waappv1.GetProtocolProfileResponse{Error: ToProtoError(err)}, nil
 	}
@@ -139,13 +125,12 @@ func (s *Server) CreateWAAccount(ctx context.Context, req *waappv1.CreateWAAccou
 	if phone.GetE164Number() == "" {
 		return &waappv1.CreateWAAccountResponse{Error: ToProtoError(NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "phone is required", false))}, nil
 	}
-	workspaceID := req.GetContext().GetWorkspaceId()
-	if existing, err := s.store.FindWAAccountByPhone(ctx, workspaceID, phone.GetE164Number()); err == nil {
+	if existing, err := s.store.FindWAAccountByPhone(ctx, phone.GetE164Number()); err == nil {
 		return &waappv1.CreateWAAccountResponse{Account: existing}, nil
 	}
 	now := s.clock.Now()
-	account := newWAAccount(s.ids.NewID("waacc_"), workspaceID, phone, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_PENDING_REGISTRATION, &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)})
-	account, err := s.saveWAAccount(ctx, workspaceID, account)
+	account := newWAAccount(s.ids.NewID("waacc_"), phone, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_PENDING_REGISTRATION, &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)})
+	account, err := s.saveWAAccount(ctx, account)
 	if err != nil {
 		return &waappv1.CreateWAAccountResponse{Error: ToProtoError(err)}, nil
 	}
@@ -160,7 +145,7 @@ func (s *Server) GetWAAccount(ctx context.Context, req *waappv1.GetWAAccountRequ
 	if err != nil {
 		return &waappv1.GetWAAccountResponse{Error: ToProtoError(err)}, nil
 	}
-	account, err := s.getWAAccount(ctx, req.GetContext().GetWorkspaceId(), accountID)
+	account, err := s.getWAAccount(ctx, accountID)
 	if err != nil {
 		return &waappv1.GetWAAccountResponse{Error: ToProtoError(err)}, nil
 	}
@@ -171,7 +156,7 @@ func (s *Server) ListWAAccounts(ctx context.Context, req *waappv1.ListWAAccounts
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.ListWAAccountsResponse{Error: ToProtoError(err)}, nil
 	}
-	accounts, nextCursor, err := s.listWAAccounts(ctx, req.GetContext().GetWorkspaceId(), req.GetCursor(), int(req.GetLimit()))
+	accounts, nextCursor, err := s.listWAAccounts(ctx, req.GetCursor(), int(req.GetLimit()))
 	if err != nil {
 		return &waappv1.ListWAAccountsResponse{Error: ToProtoError(err)}, nil
 	}
@@ -186,7 +171,7 @@ func (s *Server) DeleteWAAccount(ctx context.Context, req *waappv1.DeleteWAAccou
 	if err != nil {
 		return &waappv1.DeleteWAAccountResponse{Error: ToProtoError(err)}, nil
 	}
-	found, err := s.waAccounts(req.GetContext().GetWorkspaceId()).Delete(ctx, accountID)
+	found, err := s.deleteWAAccount(ctx, accountID)
 	if err != nil {
 		return &waappv1.DeleteWAAccountResponse{Error: ToProtoError(err)}, nil
 	}
@@ -200,24 +185,23 @@ func (s *Server) PrepareClientProfile(ctx context.Context, req *waappv1.PrepareC
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.PrepareClientProfileResponse{Error: ToProtoError(err)}, nil
 	}
-	workspaceID := req.GetContext().GetWorkspaceId()
 	accountID, err := requireWAAccountID(req.GetWaAccountId())
 	if err != nil {
 		return &waappv1.PrepareClientProfileResponse{Error: ToProtoError(err)}, nil
 	}
-	account, err := s.getWAAccount(ctx, workspaceID, accountID)
+	account, err := s.getWAAccount(ctx, accountID)
 	if err != nil {
 		return &waappv1.PrepareClientProfileResponse{Error: ToProtoError(err)}, nil
 	}
-	if _, err := s.store.GetProtocolProfile(ctx, workspaceID, req.GetProtocolProfileId()); err != nil {
+	if _, err := s.store.GetProtocolProfile(ctx, req.GetProtocolProfileId()); err != nil {
 		return &waappv1.PrepareClientProfileResponse{Error: ToProtoError(err)}, nil
 	}
 	now := s.clock.Now()
 	profile := &waappv1.ClientProfile{ClientProfileId: s.ids.NewID("wacp_"), WaAccountId: waAccountID(account), ProtocolProfileId: req.GetProtocolProfileId(), Status: waappv1.ClientProfileStatus_CLIENT_PROFILE_STATUS_PREPARING, RegistrationKeyState: waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_PENDING, MessagingKeyState: waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_PENDING, Audit: &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)}}
-	if err := s.store.SaveClientProfile(ctx, profile, workspaceID); err != nil {
+	if err := s.store.SaveClientProfile(ctx, profile); err != nil {
 		return &waappv1.PrepareClientProfileResponse{Error: ToProtoError(err)}, nil
 	}
-	runErr := s.runner.PrepareClientProfile(ctx, EngineProfileInput{WorkspaceID: workspaceID, WAAccountID: waAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: req.GetProtocolProfileId(), Phone: account.GetPhone()})
+	runErr := s.runner.PrepareClientProfile(ctx, EngineProfileInput{WAAccountID: waAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: req.GetProtocolProfileId(), Phone: account.GetPhone()})
 	profile.Audit.UpdatedAt = timestamppb.New(s.clock.Now())
 	if runErr != nil {
 		profile.Status = waappv1.ClientProfileStatus_CLIENT_PROFILE_STATUS_REJECTED
@@ -229,7 +213,7 @@ func (s *Server) PrepareClientProfile(ctx context.Context, req *waappv1.PrepareC
 		profile.RegistrationKeyState = waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_READY
 		profile.MessagingKeyState = waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_READY
 	}
-	if err := s.store.SaveClientProfile(ctx, profile, workspaceID); err != nil {
+	if err := s.store.SaveClientProfile(ctx, profile); err != nil {
 		return &waappv1.PrepareClientProfileResponse{Error: ToProtoError(err)}, nil
 	}
 	return &waappv1.PrepareClientProfileResponse{ClientProfile: profile, Error: profile.GetLastError()}, nil
@@ -239,25 +223,42 @@ func (s *Server) GetClientProfile(ctx context.Context, req *waappv1.GetClientPro
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.GetClientProfileResponse{Error: ToProtoError(err)}, nil
 	}
-	profile, err := s.store.GetClientProfile(ctx, req.GetContext().GetWorkspaceId(), req.GetClientProfileId())
+	profile, err := s.store.GetClientProfile(ctx, req.GetClientProfileId())
 	if err != nil {
 		return &waappv1.GetClientProfileResponse{Error: ToProtoError(err)}, nil
 	}
-	return &waappv1.GetClientProfileResponse{ClientProfile: profile}, nil
+	return &waappv1.GetClientProfileResponse{ClientProfile: s.attachClientProfileRuntime(ctx, profile)}, nil
+}
+
+func (s *Server) ListClientProfiles(ctx context.Context, req *waappv1.ListClientProfilesRequest) (*waappv1.ListClientProfilesResponse, error) {
+	if err := validateContext(req.GetContext()); err != nil {
+		return &waappv1.ListClientProfilesResponse{Error: ToProtoError(err)}, nil
+	}
+	accountID, err := requireWAAccountID(req.GetWaAccountId())
+	if err != nil {
+		return &waappv1.ListClientProfilesResponse{Error: ToProtoError(err)}, nil
+	}
+	if _, err := s.getWAAccount(ctx, accountID); err != nil {
+		return &waappv1.ListClientProfilesResponse{Error: ToProtoError(err)}, nil
+	}
+	profiles, nextCursor, err := s.store.ListClientProfiles(ctx, accountID, req.GetCursor(), int(req.GetLimit()))
+	if err != nil {
+		return &waappv1.ListClientProfilesResponse{Error: ToProtoError(err)}, nil
+	}
+	return &waappv1.ListClientProfilesResponse{ClientProfiles: s.attachClientProfilesRuntime(ctx, profiles), NextCursor: nextCursor}, nil
 }
 
 func (s *Server) RetireClientProfile(ctx context.Context, req *waappv1.RetireClientProfileRequest) (*waappv1.RetireClientProfileResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.RetireClientProfileResponse{Error: ToProtoError(err)}, nil
 	}
-	workspaceID := req.GetContext().GetWorkspaceId()
-	profile, err := s.store.GetClientProfile(ctx, workspaceID, req.GetClientProfileId())
+	profile, err := s.store.GetClientProfile(ctx, req.GetClientProfileId())
 	if err != nil {
 		return &waappv1.RetireClientProfileResponse{Error: ToProtoError(err)}, nil
 	}
 	profile.Status = waappv1.ClientProfileStatus_CLIENT_PROFILE_STATUS_RETIRED
 	profile.Audit.UpdatedAt = timestamppb.New(s.clock.Now())
-	if err := s.store.SaveClientProfile(ctx, profile, workspaceID); err != nil {
+	if err := s.store.SaveClientProfile(ctx, profile); err != nil {
 		return &waappv1.RetireClientProfileResponse{Error: ToProtoError(err)}, nil
 	}
 	return &waappv1.RetireClientProfileResponse{ClientProfile: profile}, nil

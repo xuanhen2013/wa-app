@@ -1,7 +1,6 @@
 package app
 
 import (
-	"context"
 	"crypto/rand"
 	"crypto/sha256"
 	"encoding/hex"
@@ -68,9 +67,7 @@ func errorFromProto(err *waappv1.WaError) *AppError {
 }
 
 func validateContext(ctx *waappv1.RequestContext) error {
-	if strings.TrimSpace(ctx.GetWorkspaceId()) == "" {
-		return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "workspace_id is required", false)
-	}
+	_ = ctx
 	return nil
 }
 
@@ -88,11 +85,6 @@ func timestampOrNow(t time.Time, now time.Time) *timestamppb.Timestamp {
 	return timestamppb.New(t.UTC())
 }
 
-func workspace(ctx context.Context, request *waappv1.RequestContext) string {
-	_ = ctx
-	return request.GetWorkspaceId()
-}
-
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {
@@ -107,10 +99,11 @@ func redacted(value string) string {
 	if trimmed == "" {
 		return ""
 	}
-	if len(trimmed) <= 4 {
+	runes := []rune(trimmed)
+	if len(runes) <= 4 {
 		return "****"
 	}
-	return trimmed[:2] + strings.Repeat("*", len(trimmed)-4) + trimmed[len(trimmed)-2:]
+	return string(runes[:2]) + strings.Repeat("*", len(runes)-4) + string(runes[len(runes)-2:])
 }
 
 func phoneCC(phone *waappv1.PhoneTarget) string {

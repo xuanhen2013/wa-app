@@ -9,13 +9,13 @@ import (
 	"strings"
 	"syscall"
 
-	"github.com/byte-v-forge/common-lib/grpchealth"
-	"github.com/byte-v-forge/common-lib/natseventbus"
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/app"
 	"github.com/byte-v-forge/wa-app/internal/config"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
+	"google.golang.org/grpc/health"
+	healthv1 "google.golang.org/grpc/health/grpc_health_v1"
 )
 
 func main() {
@@ -50,15 +50,6 @@ func main() {
 		cfg.AccountSettingsProxyUsername,
 		cfg.LoginStateCheckProxyUsername,
 	)
-	platformBus, err := newPlatformEventBus(cfg)
-	if err != nil {
-		log.Fatalf("initialize wa-app platform event bus: %v", err)
-	}
-	if platformBus != nil {
-		defer platformBus.Close()
-		service.SetPlatformPublisher(platformBus)
-	}
-
 	listener, err := net.Listen("tcp", cfg.ListenAddr)
 	if err != nil {
 		log.Fatalf("listen %s: %v", cfg.ListenAddr, err)
@@ -69,9 +60,12 @@ func main() {
 	waappv1.RegisterWaRegistrationServiceServer(server, service)
 	waappv1.RegisterWaMessagingServiceServer(server, service)
 	waappv1.RegisterWaExtractionServiceServer(server, service)
+	waappv1.RegisterWaContactServiceServer(server, service)
 	waappv1.RegisterWaToolingServiceServer(server, service)
 	waappv1.RegisterWaAccountSettingsServiceServer(server, service)
-	grpchealth.RegisterServing(server)
+	healthServer := health.NewServer()
+	healthv1.RegisterHealthServer(server, healthServer)
+	healthServer.SetServingStatus("", healthv1.HealthCheckResponse_SERVING)
 
 	group, groupCtx := errgroup.WithContext(ctx)
 	group.Go(func() error {
@@ -87,7 +81,7 @@ func main() {
 		return nil
 	})
 	group.Go(func() error {
-		return runDashboardHTTP(groupCtx, cfg.DashboardHTTPAddr, cfg.DashboardStaticDir, cfg.N8NWebhookBaseURL, service, newWAActionHandler(service))
+		return runDashboardHTTP(groupCtx, cfg.DashboardHTTPAddr, cfg.DashboardStaticDir, service, newWAActionHandler(service))
 	})
 	group.Go(func() error {
 		return service.RunLongConnections(groupCtx)
@@ -110,17 +104,6 @@ func newRuntimeState(ctx context.Context, cfg config.Config) (app.RuntimeState, 
 	if strings.TrimSpace(cfg.RedisURL) != "" {
 		return app.NewRedisRuntime(ctx, cfg.RedisURL)
 	}
-	log.Printf("PLATFORM_REDIS_URL is not configured; wa-app uses sqlite runtime state in %s", cfg.DataDir)
+	log.Printf("WA_APP_REDIS_URL is not configured; wa-app uses sqlite runtime state in %s", cfg.DataDir)
 	return app.NewSQLiteRuntime(ctx, cfg.DataDir)
-}
-
-func newPlatformEventBus(cfg config.Config) (*natseventbus.Bus, error) {
-	if strings.TrimSpace(cfg.PlatformNATSURL) == "" {
-		log.Printf("PLATFORM_NATS_URL is not configured; WA platform events are disabled")
-		return nil, nil
-	}
-	return natseventbus.ConnectRequired(
-		natseventbus.Config{URL: cfg.PlatformNATSURL, ClientName: "wa-app-service"},
-		"connect WA platform events",
-	)
 }

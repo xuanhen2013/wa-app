@@ -60,6 +60,7 @@ type chatdSessionUpdate struct {
 	RoutingInfo        string
 	Endpoint           chatdEndpoint
 	ServerStaticPublic string
+	ContactHints       []waContactHint
 }
 
 func chatdPhase(phase string, err error) error {
@@ -249,20 +250,22 @@ func (s *chatdSession) receiveBatch(input EngineMessageInput, now time.Time) ([]
 		if nextRouting := routingInfoFromNode(node); nextRouting != "" {
 			update.RoutingInfo = nextRouting
 		}
+		update.ContactHints = dedupeWAContactHints(append(update.ContactHints, contactHintsFromChatdNode(node)...))
 		encs := iterEncPayloads(node)
 		if len(encs) == 0 {
 			if node.Tag != "message" {
 				continue
 			}
+			contact := firstNonEmpty(node.Attrs["from"], node.Attrs["participant"])
 			sender := firstNonEmpty(node.Attrs["participant"], node.Attrs["from"])
 			payloadSummary := nodePayloadSummary(node)
-			messages = append(messages, &waappv1.InboundMessage{MessageId: inboundMessageID(input.WAAccountID, node.Attrs["id"], node.Tag, sender, payloadSummary), MessageSessionId: input.MessageSessionID, Kind: inboundKind(node.Tag), EncryptionState: waappv1.MessageEncryptionState_MESSAGE_ENCRYPTION_STATE_PLAINTEXT, AckStatus: ackStatusForNode(node), SenderRef: sender, PayloadRef: "node:" + redacted(payloadSummary), ReceivedAt: timestamppb.New(now)})
+			messages = append(messages, &waappv1.InboundMessage{MessageId: inboundMessageID(input.WAAccountID, node.Attrs["id"], node.Tag, sender, payloadSummary), MessageSessionId: input.MessageSessionID, Kind: inboundKind(node.Tag), EncryptionState: waappv1.MessageEncryptionState_MESSAGE_ENCRYPTION_STATE_PLAINTEXT, AckStatus: ackStatusForNode(node), ContactRef: contact, SenderRef: sender, PayloadRef: "node:" + redacted(payloadSummary), ReceivedAt: timestamppb.New(now)})
 			continue
 		}
 		for _, enc := range encs {
 			payloadRef := payloadRefForEnc(input.WAAccountID, enc.Payload)
 			payloads = append(payloads, enc)
-			messages = append(messages, &waappv1.InboundMessage{MessageId: inboundMessageID(input.WAAccountID, enc.StanzaID, node.Tag, enc.Sender, enc.Path+":"+hexKey(enc.Payload)), MessageSessionId: input.MessageSessionID, Kind: inboundKind(node.Tag), EncryptionState: waappv1.MessageEncryptionState_MESSAGE_ENCRYPTION_STATE_ENCRYPTED, AckStatus: ackStatusForNode(node), SenderRef: enc.Sender, PayloadRef: payloadRef, ReceivedAt: timestamppb.New(now)})
+			messages = append(messages, &waappv1.InboundMessage{MessageId: inboundMessageID(input.WAAccountID, enc.StanzaID, node.Tag, enc.Sender, enc.Path+":"+hexKey(enc.Payload)), MessageSessionId: input.MessageSessionID, Kind: inboundKind(node.Tag), EncryptionState: waappv1.MessageEncryptionState_MESSAGE_ENCRYPTION_STATE_ENCRYPTED, AckStatus: ackStatusForNode(node), ContactRef: enc.Contact, SenderRef: enc.Sender, PayloadRef: payloadRef, ReceivedAt: timestamppb.New(now)})
 			if len(messages) >= maxMessages {
 				break
 			}

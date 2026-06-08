@@ -8,7 +8,6 @@ import (
 	"sync"
 	"time"
 
-	wav1 "github.com/byte-v-forge/common-lib/gen/go/byte/v/forge/contracts/wa/v1"
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -59,12 +58,8 @@ func (m *LongConnectionManager) Run(ctx context.Context) error {
 	return nil
 }
 
-func (m *LongConnectionManager) Ensure(ctx context.Context, workspaceID string, loginState *waappv1.LoginState) {
+func (m *LongConnectionManager) Ensure(ctx context.Context, loginState *waappv1.LoginState) {
 	if m == nil || loginState == nil || loginState.GetStatus() != waappv1.LoginStateStatus_LOGIN_STATE_STATUS_ACTIVE {
-		return
-	}
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
 		return
 	}
 	m.mu.Lock()
@@ -73,14 +68,13 @@ func (m *LongConnectionManager) Ensure(ctx context.Context, workspaceID string, 
 		m.mu.Unlock()
 		return
 	}
-	key := longConnectionKey(workspaceID, loginState)
+	key := longConnectionKey(loginState)
 	if existing, ok := m.entries[key]; ok && existing.cancel != nil {
 		m.mu.Unlock()
 		return
 	}
 	entryCtx, cancel := context.WithCancel(rootCtx)
 	snapshot := &waappv1.LongConnectionState{
-		WorkspaceId:          workspaceID,
 		LoginStateId:         loginState.GetLoginStateId(),
 		WaAccountId:          loginState.GetWaAccountId(),
 		ClientProfileId:      loginState.GetClientProfileId(),
@@ -91,7 +85,7 @@ func (m *LongConnectionManager) Ensure(ctx context.Context, workspaceID string, 
 	}
 	m.entries[key] = &longConnectionEntry{cancel: cancel, snapshot: snapshot}
 	m.mu.Unlock()
-	go m.runEntry(entryCtx, workspaceID, proto.Clone(loginState).(*waappv1.LoginState), key)
+	go m.runEntry(entryCtx, proto.Clone(loginState).(*waappv1.LoginState), key)
 	_ = ctx
 }
 
@@ -99,7 +93,6 @@ func (m *LongConnectionManager) Snapshots(req *waappv1.GetLongConnectionStatusRe
 	if m == nil || req == nil {
 		return nil
 	}
-	workspaceID := req.GetContext().GetWorkspaceId()
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	out := []*waappv1.LongConnectionState{}
@@ -108,9 +101,6 @@ func (m *LongConnectionManager) Snapshots(req *waappv1.GetLongConnectionStatusRe
 			continue
 		}
 		s := entry.snapshot
-		if workspaceID != "" && s.GetWorkspaceId() != workspaceID {
-			continue
-		}
 		if req.GetLoginStateId() != "" && s.GetLoginStateId() != req.GetLoginStateId() {
 			continue
 		}
@@ -137,12 +127,12 @@ func (m *LongConnectionManager) restore(ctx context.Context) error {
 		if ctx.Err() != nil {
 			return nil
 		}
-		m.Ensure(ctx, record.WorkspaceID, record.LoginState)
+		m.Ensure(ctx, record.LoginState)
 	}
 	return nil
 }
 
-func (m *LongConnectionManager) runEntry(ctx context.Context, workspaceID string, loginState *waappv1.LoginState, key string) {
+func (m *LongConnectionManager) runEntry(ctx context.Context, loginState *waappv1.LoginState, key string) {
 	backoff := 2 * time.Second
 	reconnects := int32(0)
 	defer m.markStopped(key)
@@ -155,7 +145,7 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, workspaceID string
 			}
 			snapshot.ReconnectCount = reconnects
 		})
-		session, err := m.openSession(ctx, workspaceID, loginState)
+		session, err := m.openSession(ctx, loginState)
 		if err != nil {
 			m.recordLoopError(key, reconnects, err)
 			if !sleepContext(ctx, backoff) {
@@ -172,7 +162,7 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, workspaceID string
 		runner, err := m.server.longConnectionRunner(ctx, loginState)
 		if err != nil {
 			m.recordLoopError(key, reconnects, err)
-			_, _ = m.server.CloseMessageSession(context.WithoutCancel(ctx), &waappv1.CloseMessageSessionRequest{Context: &waappv1.RequestContext{WorkspaceId: workspaceID}, MessageSessionId: session.GetMessageSessionId(), Reason: "long connection runner unavailable"})
+			_, _ = m.server.CloseMessageSession(context.WithoutCancel(ctx), &waappv1.CloseMessageSessionRequest{Context: &waappv1.RequestContext{}, MessageSessionId: session.GetMessageSessionId(), Reason: "long connection runner unavailable"})
 			if !sleepContext(ctx, backoff) {
 				return
 			}
@@ -180,10 +170,10 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, workspaceID string
 			reconnects++
 			continue
 		}
-		m.decryptPendingMessages(ctx, workspaceID, session, runner)
+		m.decryptPendingMessages(ctx, session, runner)
 		receivedHeartbeat := false
 		for ctx.Err() == nil {
-			resp, err := m.server.receiveMessageBatch(ctx, &waappv1.ReceiveMessageBatchRequest{Context: &waappv1.RequestContext{WorkspaceId: workspaceID, RequestId: m.server.ids.NewID("wa-rx_"), CorrelationId: loginState.GetLoginStateId()}, MessageSessionId: session.GetMessageSessionId(), MaxMessages: 10, WaitTimeout: durationpb.New(longConnectionWaitTimeout)}, runner)
+			resp, err := m.server.receiveMessageBatch(ctx, &waappv1.ReceiveMessageBatchRequest{Context: &waappv1.RequestContext{RequestId: m.server.ids.NewID("wa-rx_"), CorrelationId: loginState.GetLoginStateId()}, MessageSessionId: session.GetMessageSessionId(), MaxMessages: 10, WaitTimeout: durationpb.New(longConnectionWaitTimeout)}, runner)
 			if err != nil {
 				m.recordLoopError(key, reconnects, err)
 				break
@@ -208,7 +198,7 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, workspaceID string
 			})
 			receivedHeartbeat = true
 			backoff = 2 * time.Second
-			m.decryptReceivedMessages(ctx, workspaceID, session, messages, runner)
+			m.decryptReceivedMessages(ctx, session, messages, runner)
 		}
 		if ctx.Err() != nil {
 			closeLongConnectionRunner(runner)
@@ -219,7 +209,7 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, workspaceID string
 			backoff = nextBackoff(backoff)
 		}
 		reconnects++
-		_, _ = m.server.CloseMessageSession(context.WithoutCancel(ctx), &waappv1.CloseMessageSessionRequest{Context: &waappv1.RequestContext{WorkspaceId: workspaceID}, MessageSessionId: session.GetMessageSessionId(), Reason: "long connection reconnect"})
+		_, _ = m.server.CloseMessageSession(context.WithoutCancel(ctx), &waappv1.CloseMessageSessionRequest{Context: &waappv1.RequestContext{}, MessageSessionId: session.GetMessageSessionId(), Reason: "long connection reconnect"})
 		if !sleepContext(ctx, backoff) {
 			return
 		}
@@ -232,9 +222,9 @@ func closeLongConnectionRunner(runner ProtocolEngine) {
 	}
 }
 
-func (m *LongConnectionManager) openSession(ctx context.Context, workspaceID string, loginState *waappv1.LoginState) (*waappv1.MessageSession, error) {
+func (m *LongConnectionManager) openSession(ctx context.Context, loginState *waappv1.LoginState) (*waappv1.MessageSession, error) {
 	resp, err := m.server.OpenMessageSession(ctx, &waappv1.OpenMessageSessionRequest{
-		Context:              &waappv1.RequestContext{WorkspaceId: workspaceID, RequestId: m.server.ids.NewID("wa-open_"), CorrelationId: loginState.GetLoginStateId()},
+		Context:              &waappv1.RequestContext{RequestId: m.server.ids.NewID("wa-open_"), CorrelationId: loginState.GetLoginStateId()},
 		WaAccountId:          loginState.GetWaAccountId(),
 		ClientProfileId:      loginState.GetClientProfileId(),
 		RegisteredIdentityId: loginState.GetRegisteredIdentityId(),
@@ -248,27 +238,27 @@ func (m *LongConnectionManager) openSession(ctx context.Context, workspaceID str
 	return resp.GetSession(), nil
 }
 
-func (m *LongConnectionManager) decryptPendingMessages(ctx context.Context, workspaceID string, session *waappv1.MessageSession, runner ProtocolEngine) {
-	messages, err := m.server.store.ListPendingEncryptedInboundMessages(ctx, workspaceID, session.GetWaAccountId(), session.GetClientProfileId(), longConnectionDecryptLimit)
+func (m *LongConnectionManager) decryptPendingMessages(ctx context.Context, session *waappv1.MessageSession, runner ProtocolEngine) {
+	messages, err := m.server.store.ListPendingEncryptedInboundMessages(ctx, session.GetWaAccountId(), session.GetClientProfileId(), longConnectionDecryptLimit)
 	if err != nil {
-		log.Printf("WA long connection pending decrypt load failed: %v", sanitizeEventPublishError(err))
+		log.Printf("WA long connection pending decrypt load failed: %v", sanitizeLogError(err))
 		return
 	}
 	if len(messages) == 0 {
 		return
 	}
 	log.Printf("WA long connection retry pending decrypt: count=%d", len(messages))
-	m.decryptReceivedMessages(ctx, workspaceID, session, messages, runner)
+	m.decryptReceivedMessages(ctx, session, messages, runner)
 }
 
-func (m *LongConnectionManager) decryptReceivedMessages(ctx context.Context, workspaceID string, session *waappv1.MessageSession, messages []*waappv1.InboundMessage, runner ProtocolEngine) {
+func (m *LongConnectionManager) decryptReceivedMessages(ctx context.Context, session *waappv1.MessageSession, messages []*waappv1.InboundMessage, runner ProtocolEngine) {
 	for _, msg := range messages {
 		if msg.GetEncryptionState() == waappv1.MessageEncryptionState_MESSAGE_ENCRYPTION_STATE_PLAINTEXT && !strings.HasPrefix(msg.GetPayloadRef(), "plaintext:") {
 			continue
 		}
-		resp, err := m.server.decryptMessage(ctx, &waappv1.DecryptMessageRequest{Context: &waappv1.RequestContext{WorkspaceId: workspaceID, RequestId: m.server.ids.NewID("wa-dec_"), CorrelationId: session.GetRegisteredIdentityId()}, MessageId: msg.GetMessageId(), SessionCommitPolicy: waappv1.SessionCommitPolicy_SESSION_COMMIT_POLICY_COMMIT_LEARNED_STATE, IncludeSensitivePlaintext: true}, runner, wav1.WaOtpSource_WA_OTP_SOURCE_LONG_CONNECTION)
+		resp, err := m.server.decryptMessage(ctx, &waappv1.DecryptMessageRequest{Context: &waappv1.RequestContext{RequestId: m.server.ids.NewID("wa-dec_"), CorrelationId: session.GetRegisteredIdentityId()}, MessageId: msg.GetMessageId(), SessionCommitPolicy: waappv1.SessionCommitPolicy_SESSION_COMMIT_POLICY_COMMIT_LEARNED_STATE, IncludeSensitivePlaintext: true}, runner, waappv1.WaOtpSource_WA_OTP_SOURCE_LONG_CONNECTION)
 		if err != nil && !errors.Is(err, context.Canceled) {
-			log.Printf("WA long connection decrypt failed: message_id=%s error=%v", msg.GetMessageId(), sanitizeEventPublishError(err))
+			log.Printf("WA long connection decrypt failed: message_id=%s error=%v", msg.GetMessageId(), sanitizeLogError(err))
 		}
 		if resp != nil && resp.GetError() != nil {
 			log.Printf("WA long connection decrypt failed: message_id=%s code=%s retryable=%t", msg.GetMessageId(), resp.GetError().GetCode().String(), resp.GetError().GetRetryable())
@@ -326,9 +316,9 @@ func (m *LongConnectionManager) stopAll() {
 	}
 }
 
-func (s *Server) ensureLongConnection(ctx context.Context, workspaceID string, loginState *waappv1.LoginState) {
+func (s *Server) ensureLongConnection(ctx context.Context, loginState *waappv1.LoginState) {
 	if s != nil && s.longConnections != nil {
-		s.longConnections.Ensure(ctx, workspaceID, loginState)
+		s.longConnections.Ensure(ctx, loginState)
 	}
 }
 
@@ -341,15 +331,16 @@ func (s *Server) longConnectionRunner(ctx context.Context, _ *waappv1.LoginState
 		return newLongConnectionNativeEngine(engine), nil
 	}
 	if s.proxyRuntime == nil {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_ROUTE_UNAVAILABLE, "PROXY_RUNTIME_API_BASE_URL is required for WA long connection", true)
+		return newLongConnectionNativeEngine(engine), nil
 	}
 	username := strings.TrimSpace(s.longProxyUsername)
 	if username == "" {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_ROUTE_UNAVAILABLE, "WA_LONG_CONNECTION_PROXY_USERNAME is required", true)
+		return newLongConnectionNativeEngine(engine), nil
 	}
 	proxyURL, err := s.proxyRuntime.GatewayProxyURL(ctx, username)
 	if err != nil {
-		return nil, err
+		log.Printf("WA long connection proxy unavailable; using direct connection: %v", sanitizeLogError(err))
+		return newLongConnectionNativeEngine(engine), nil
 	}
 	proxyEngine, err := engine.WithProxyURL(proxyURL)
 	if err != nil {
@@ -358,8 +349,8 @@ func (s *Server) longConnectionRunner(ctx context.Context, _ *waappv1.LoginState
 	return newLongConnectionNativeEngine(proxyEngine), nil
 }
 
-func longConnectionKey(workspaceID string, loginState *waappv1.LoginState) string {
-	return workspaceID + ":" + firstNonEmpty(loginState.GetRegisteredIdentityId(), loginState.GetLoginStateId())
+func longConnectionKey(loginState *waappv1.LoginState) string {
+	return firstNonEmpty(loginState.GetRegisteredIdentityId(), loginState.GetLoginStateId())
 }
 
 func nextBackoff(current time.Duration) time.Duration {

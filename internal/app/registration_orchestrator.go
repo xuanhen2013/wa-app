@@ -34,37 +34,35 @@ func (s *Server) StartRegistration(ctx context.Context, payload map[string]any) 
 		return nil, err
 	}
 	phone := normalizePhone(phoneFromAction(basePayload))
-	reqCtx := actionContext(basePayload)
-	codeResult, updatedState := runner.requestVerificationCodeWithState(ctx, EngineRegistrationInput{WorkspaceID: reqCtx.GetWorkspaceId(), Phone: phone}, state)
+	codeResult, updatedState := runner.requestVerificationCodeWithState(ctx, EngineRegistrationInput{Phone: phone}, state)
 	runner.CloseIdleConnections()
 	_ = gateway.server.runtime.DeleteTransientState(context.Background(), fingerprintRef)
 	if !verificationCodeRequestAccepted(codeResult) {
 		return rejectedRegistrationResult(basePayload, registrationRequestFailureMap(codeResult, route, managedRoute)), nil
 	}
-	account, profile, protocol, err := gateway.server.commitNativeState(ctx, reqCtx, phone, updatedState)
+	account, profile, protocol, err := gateway.server.commitNativeState(ctx, phone, updatedState)
 	if err != nil {
 		return nil, err
 	}
 	record := gateway.server.newVerificationCodeRequestRecord(account, profile, waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS, codeResult)
-	if err := gateway.server.store.SaveVerificationRequest(ctx, record, reqCtx.GetWorkspaceId()); err != nil {
+	if err := gateway.server.store.SaveVerificationRequest(ctx, record); err != nil {
 		_ = gateway.discardRejectedRegistration(context.Background(), basePayload, waAccountID(account), record.GetVerificationRequestId())
 		return nil, err
 	}
 	verificationRequestID := record.GetVerificationRequestId()
 	if managedRoute {
-		if err := gateway.saveRegistrationProxyRoute(ctx, reqCtx.GetWorkspaceId(), verificationRequestID, route); err != nil {
+		if err := gateway.saveRegistrationProxyRoute(ctx, verificationRequestID, route); err != nil {
 			_ = gateway.discardRejectedRegistration(context.Background(), basePayload, waAccountID(account), verificationRequestID)
 			return nil, err
 		}
 	}
 	wait := registrationOTPWait{
-		WorkspaceID:           reqCtx.GetWorkspaceId(),
 		WAAccountID:           waAccountID(account),
 		VerificationRequestID: verificationRequestID,
 		CreatedAtUnix:         time.Now().UTC().Unix(),
 	}
 	if err := gateway.saveRegistrationOTPWait(ctx, wait, registrationOTPWaitDefaultTTL); err != nil {
-		_ = gateway.releaseRegistrationProxyRoute(context.Background(), wait.WorkspaceID, wait.VerificationRequestID)
+		_ = gateway.releaseRegistrationProxyRoute(context.Background(), wait.VerificationRequestID)
 		_ = gateway.discardRejectedRegistration(context.Background(), basePayload, waAccountID(account), verificationRequestID)
 		return nil, err
 	}
@@ -116,15 +114,13 @@ func registrationRequestFailureMap(result EngineCodeResult, route DynamicProxyRo
 }
 
 func (g *actionGateway) discardRejectedRegistration(ctx context.Context, basePayload map[string]any, waAccountID string, verificationRequestID string) error {
-	workspaceID := actionContext(basePayload).GetWorkspaceId()
 	if strings.TrimSpace(verificationRequestID) != "" {
-		_ = g.releaseRegistrationProxyRoute(context.Background(), workspaceID, verificationRequestID)
+		_ = g.releaseRegistrationProxyRoute(context.Background(), verificationRequestID)
 	}
 	if strings.TrimSpace(waAccountID) == "" {
 		return nil
 	}
 	result, err := g.cleanupFailedRegistration(ctx, map[string]any{
-		"workspace_id":            workspaceID,
 		"wa_account_id":           waAccountID,
 		"verification_request_id": verificationRequestID,
 	})

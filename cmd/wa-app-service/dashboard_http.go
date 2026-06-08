@@ -27,23 +27,19 @@ import (
 )
 
 type dashboardHTTP struct {
-	staticDir      string
-	n8nWebhookBase string
-	client         *http.Client
-	service        *app.Server
-	actionHandler  http.Handler
+	staticDir     string
+	service       *app.Server
+	actionHandler http.Handler
 }
 
-func runDashboardHTTP(ctx context.Context, listenAddr, staticDir, n8nWebhookBase string, service *app.Server, actionHandler http.Handler) error {
+func runDashboardHTTP(ctx context.Context, listenAddr, staticDir string, service *app.Server, actionHandler http.Handler) error {
 	if strings.TrimSpace(listenAddr) == "" {
 		return nil
 	}
 	server := &dashboardHTTP{
-		staticDir:      firstNonEmpty(staticDir, "/app/dashboard/wa"),
-		n8nWebhookBase: strings.TrimRight(strings.TrimSpace(n8nWebhookBase), "/"),
-		client:         &http.Client{Timeout: 7 * time.Minute},
-		service:        service,
-		actionHandler:  actionHandler,
+		staticDir:     firstNonEmpty(staticDir, "/app/dashboard/wa"),
+		service:       service,
+		actionHandler: actionHandler,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/wa/health", server.handleHealth)
@@ -56,7 +52,11 @@ func runDashboardHTTP(ctx context.Context, listenAddr, staticDir, n8nWebhookBase
 	mux.HandleFunc("/api/wa/account-settings/email/otp/verify", server.handleVerifyAccountEmailOtp)
 	mux.HandleFunc("/api/wa/accounts", server.handleAccounts)
 	mux.HandleFunc("/api/wa/accounts/", server.handleAccount)
+	mux.HandleFunc("/api/wa/client-profiles", server.handleClientProfiles)
 	mux.HandleFunc("/api/wa/account-otp-messages", server.handleAccountOTPMessages)
+	mux.HandleFunc("/api/wa/messages", server.handleMessages)
+	mux.HandleFunc("/api/wa/contacts/resolve", server.handleResolveContacts)
+	mux.HandleFunc("/api/wa/contacts", server.handleContacts)
 	mux.HandleFunc("/api/wa/long-connections", server.handleLongConnections)
 	mux.Handle("/api/wa/actions/", server.actionHandler)
 	mux.HandleFunc("/mf/wa/", http.NotFound)
@@ -87,7 +87,7 @@ func (s *dashboardHTTP) handleLongConnections(w http.ResponseWriter, r *http.Req
 	}
 	q := r.URL.Query()
 	resp, err := s.service.GetLongConnectionStatus(r.Context(), &waappv1.GetLongConnectionStatusRequest{
-		Context:              &waappv1.RequestContext{WorkspaceId: firstNonEmpty(q.Get("workspace_id"), "default"), RequestId: newRequestID("wa-conn-status")},
+		Context:              &waappv1.RequestContext{RequestId: newRequestID("wa-conn-status")},
 		LoginStateId:         q.Get("login_state_id"),
 		WaAccountId:          q.Get("wa_account_id"),
 		ClientProfileId:      q.Get("client_profile_id"),
@@ -115,7 +115,7 @@ func (s *dashboardHTTP) handleAccounts(w http.ResponseWriter, r *http.Request) {
 	}
 	q := r.URL.Query()
 	resp, err := s.service.ListWAAccounts(r.Context(), &waappv1.ListWAAccountsRequest{
-		Context: &waappv1.RequestContext{WorkspaceId: firstNonEmpty(q.Get("workspace_id"), "default"), RequestId: newRequestID("wa-account-list")},
+		Context: &waappv1.RequestContext{RequestId: newRequestID("wa-account-list")},
 		Limit:   int32(positiveInt(q.Get("limit"), 100)),
 		Cursor:  q.Get("cursor"),
 	})
@@ -136,17 +136,16 @@ func (s *dashboardHTTP) handleAccount(w http.ResponseWriter, r *http.Request) {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "wa_account_id is required"})
 		return
 	}
-	workspaceID := firstNonEmpty(r.URL.Query().Get("workspace_id"), "default")
 	switch r.Method {
 	case http.MethodGet:
-		resp, err := s.service.GetWAAccount(r.Context(), &waappv1.GetWAAccountRequest{Context: &waappv1.RequestContext{WorkspaceId: workspaceID, RequestId: newRequestID("wa-account-get")}, WaAccountId: accountID})
+		resp, err := s.service.GetWAAccount(r.Context(), &waappv1.GetWAAccountRequest{Context: &waappv1.RequestContext{RequestId: newRequestID("wa-account-get")}, WaAccountId: accountID})
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "load WA account failed"})
 			return
 		}
 		writeProtoJSON(w, http.StatusOK, resp)
 	case http.MethodDelete:
-		resp, err := s.service.DeleteWAAccount(r.Context(), &waappv1.DeleteWAAccountRequest{Context: &waappv1.RequestContext{WorkspaceId: workspaceID, RequestId: newRequestID("wa-account-delete")}, WaAccountId: accountID})
+		resp, err := s.service.DeleteWAAccount(r.Context(), &waappv1.DeleteWAAccountRequest{Context: &waappv1.RequestContext{RequestId: newRequestID("wa-account-delete")}, WaAccountId: accountID})
 		if err != nil {
 			writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "delete WA account failed"})
 			return
@@ -180,8 +179,7 @@ func (s *dashboardHTTP) handleCreateAccount(w http.ResponseWriter, r *http.Reque
 	phone := objectField(payload, "phone")
 	resp, err := s.service.CreateWAAccount(r.Context(), &waappv1.CreateWAAccountRequest{
 		Context: &waappv1.RequestContext{
-			WorkspaceId: textField(payload, "workspace_id"),
-			RequestId:   textField(payload, "request_id"),
+			RequestId: textField(payload, "request_id"),
 		},
 		Phone: &waappv1.PhoneTarget{
 			E164Number:         textField(phone, "e164_number"),
@@ -192,6 +190,29 @@ func (s *dashboardHTTP) handleCreateAccount(w http.ResponseWriter, r *http.Reque
 	})
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "create WA account failed"})
+		return
+	}
+	writeProtoJSON(w, http.StatusOK, resp)
+}
+
+func (s *dashboardHTTP) handleClientProfiles(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if s.service == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "wa-app service is not configured"})
+		return
+	}
+	q := r.URL.Query()
+	resp, err := s.service.ListClientProfiles(r.Context(), &waappv1.ListClientProfilesRequest{
+		Context:     &waappv1.RequestContext{RequestId: newRequestID("wa-profile-list")},
+		WaAccountId: q.Get("wa_account_id"),
+		Limit:       int32(positiveInt(q.Get("limit"), 20)),
+		Cursor:      q.Get("cursor"),
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "load WA client profiles failed"})
 		return
 	}
 	writeProtoJSON(w, http.StatusOK, resp)
@@ -209,8 +230,7 @@ func (s *dashboardHTTP) handleAccountOTPMessages(w http.ResponseWriter, r *http.
 	q := r.URL.Query()
 	resp, err := s.service.ListAccountOtpMessages(r.Context(), &waappv1.ListAccountOtpMessagesRequest{
 		Context: &waappv1.RequestContext{
-			WorkspaceId: firstNonEmpty(q.Get("workspace_id"), "default"),
-			RequestId:   newRequestID("wa-otp-list"),
+			RequestId: newRequestID("wa-otp-list"),
 		},
 		WaAccountId:            q.Get("wa_account_id"),
 		Limit:                  int32(positiveInt(q.Get("limit"), 20)),
@@ -224,17 +244,104 @@ func (s *dashboardHTTP) handleAccountOTPMessages(w http.ResponseWriter, r *http.
 	writeProtoJSON(w, http.StatusOK, resp)
 }
 
+func (s *dashboardHTTP) handleMessages(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if s.service == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "wa-app service is not configured"})
+		return
+	}
+	q := r.URL.Query()
+	resp, err := s.service.ListAccountMessages(r.Context(), &waappv1.ListAccountMessagesRequest{
+		Context:              &waappv1.RequestContext{RequestId: newRequestID("wa-message-list")},
+		WaAccountId:          q.Get("wa_account_id"),
+		ContactRef:           q.Get("contact_ref"),
+		Limit:                int32(positiveInt(q.Get("limit"), 100)),
+		Cursor:               q.Get("cursor"),
+		IncludeSensitiveText: true,
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "load WA messages failed"})
+		return
+	}
+	writeProtoJSON(w, http.StatusOK, resp)
+}
+
+func (s *dashboardHTTP) handleContacts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		methodNotAllowed(w, http.MethodGet)
+		return
+	}
+	if s.service == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "wa-app service is not configured"})
+		return
+	}
+	q := r.URL.Query()
+	resp, err := s.service.ListWAContacts(r.Context(), &waappv1.ListWAContactsRequest{
+		Context:     &waappv1.RequestContext{RequestId: newRequestID("wa-contact-list")},
+		WaAccountId: q.Get("wa_account_id"),
+		Limit:       int32(positiveInt(q.Get("limit"), 500)),
+		Cursor:      q.Get("cursor"),
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "load WA contacts failed"})
+		return
+	}
+	writeProtoJSON(w, http.StatusOK, resp)
+}
+
+func (s *dashboardHTTP) handleResolveContacts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	if s.service == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "wa-app service is not configured"})
+		return
+	}
+	req := &waappv1.ResolveWAContactsRequest{}
+	body, err := io.ReadAll(http.MaxBytesReader(w, r.Body, 1<<20))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid request body"})
+		return
+	}
+	if len(bytes.TrimSpace(body)) > 0 {
+		if err := (protojson.UnmarshalOptions{DiscardUnknown: true}).Unmarshal(body, req); err != nil {
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "request body must be a ResolveWAContactsRequest JSON object"})
+			return
+		}
+	}
+	q := r.URL.Query()
+	if req.WaAccountId == "" {
+		req.WaAccountId = q.Get("wa_account_id")
+	}
+	if req.Limit == 0 {
+		req.Limit = int32(positiveInt(q.Get("limit"), 50))
+	}
+	if req.Context == nil {
+		req.Context = &waappv1.RequestContext{RequestId: newRequestID("wa-contact-resolve")}
+	}
+	ctx, cancel := context.WithTimeout(r.Context(), 45*time.Second)
+	defer cancel()
+	resp, err := s.service.ResolveWAContacts(ctx, req)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "resolve WA contacts failed"})
+		return
+	}
+	writeProtoJSON(w, http.StatusOK, resp)
+}
+
 func newWAActionHandler(service *app.Server) http.Handler {
 	return app.NewActionGateway(service)
 }
 
 func (s *dashboardHTTP) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	writeJSON(w, http.StatusOK, map[string]any{
-		"ok":                     true,
-		"n8n_webhook_configured": s.n8nWebhookBase != "",
+		"ok": true,
 		"workflows": []map[string]string{
 			{"key": "register-native", "label": "WA 原生注册流程", "webhook_path": "/api/wa/register"},
-			{"key": "register-n8n", "label": "WA n8n 外部编排", "webhook_path": "wa/register"},
 		},
 	})
 }
@@ -324,18 +431,17 @@ func (s *dashboardHTTP) handleLoginStateCheck(w http.ResponseWriter, r *http.Req
 			return
 		}
 	}
-	payload["workspace_id"] = firstNonEmpty(textField(payload, "workspace_id"), "default")
 	payload["request_id"] = firstNonEmpty(textField(payload, "request_id"), newRequestID("wa-req"))
 	payload["job_id"] = firstNonEmpty(textField(payload, "job_id"), newRequestID("wa-login-state-check"))
 	if textField(payload, "proxy_url") == "" && textField(objectField(payload, "proxy"), "proxy_url") == "" && s.service != nil {
 		route, err := s.service.LoginStateCheckProxyRoute(r.Context(), firstNonEmpty(textField(payload, "job_id"), textField(payload, "request_id")), 10*time.Minute)
 		if err != nil {
-			writeJSON(w, http.StatusBadGateway, map[string]any{"success": false, "status": "US_DYNAMIC_IP_UNAVAILABLE", "error_message": "US rotating dynamic IP unavailable", "proxy": map[string]string{"proxy_mode": "US_ROTATING_DYNAMIC_IP", "country_code": "US"}})
-			return
+			log.Printf("WA login-state check proxy unavailable; using direct connection: %v", err)
+		} else {
+			defer s.service.ReleaseProxyRoute(context.Background(), route)
+			payload["proxy_url"] = route.ProxyURL
+			payload["proxy"] = map[string]any{"proxy_mode": route.ProxyMode, "country_code": route.CountryCode, "account_id": route.AccountID, "route_id": route.RouteID, "proxy_username": route.Username}
 		}
-		defer s.service.ReleaseProxyRoute(context.Background(), route)
-		payload["proxy_url"] = route.ProxyURL
-		payload["proxy"] = map[string]any{"proxy_mode": route.ProxyMode, "country_code": route.CountryCode, "account_id": route.AccountID, "route_id": route.RouteID, "proxy_username": route.Username}
 	}
 	encoded, err := json.Marshal(payload)
 	if err != nil {
@@ -358,15 +464,10 @@ func normalizeWorkflowBody(body []byte, workflowPath string) ([]byte, error) {
 			return nil, fmt.Errorf("request body must be json")
 		}
 	}
-	workspaceID := textField(payload, "workspace_id")
-	if workspaceID == "" {
-		workspaceID = "default"
-	}
 	phone, err := normalizePhonePayload(payload)
 	if err != nil {
 		return nil, err
 	}
-	payload["workspace_id"] = workspaceID
 	payload["request_id"] = firstNonEmpty(textField(payload, "request_id"), newRequestID("wa-req"))
 	payload["job_id"] = firstNonEmpty(textField(payload, "job_id"), newRequestID(workflowJobPrefix(workflowPath)))
 	payload["country_region"] = phone.countryISO2

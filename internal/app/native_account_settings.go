@@ -8,13 +8,13 @@ import (
 )
 
 func (e *NativeEngine) ApplyAccountSettings(ctx context.Context, input EngineAccountSettingsInput) EngineAccountSettingsResult {
-	state, err := e.loadState(ctx, input.WorkspaceID, input.ClientProfileID)
+	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
 		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: err}
 	}
 	if state.ChatStatic.Private == "" || state.ChatStatic.Public == "" {
 		state.ChatStatic = ensureChatStatic(state.ChatStatic)
-		_ = e.saveState(ctx, input.WorkspaceID, input.ClientProfileID, state)
+		_ = e.saveState(ctx, input.ClientProfileID, state)
 	}
 	proxyURL, err := e.proxyURL()
 	if err != nil {
@@ -27,7 +27,7 @@ func (e *NativeEngine) ApplyAccountSettings(ctx context.Context, input EngineAcc
 	client := newChatdClient(chatdConfigForState(proxyURL, state, defaultAccountIQTimeout))
 	response, update, err := client.sendAccountIQ(ctx, state, input, defaultWAAppVersion, request)
 	if applyChatdConnectionState(&state, update) {
-		_ = e.saveState(ctx, input.WorkspaceID, input.ClientProfileID, state)
+		_ = e.saveState(ctx, input.ClientProfileID, state)
 	}
 	if err != nil {
 		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "native account settings request failed", accountSettingsRetryableError(err))}

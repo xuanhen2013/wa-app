@@ -2,7 +2,7 @@ package app
 
 import (
 	"context"
-	"fmt"
+	"errors"
 	"net"
 	"strconv"
 	"strings"
@@ -14,7 +14,11 @@ import (
 const defaultAccountIQTimeout = 32 * time.Second
 
 func (c *chatdClient) sendAccountIQ(ctx context.Context, state nativeState, input EngineAccountSettingsInput, appVersion string, request chatdNode) (chatdNode, chatdSessionUpdate, error) {
-	session, err := c.openSession(ctx, state, input.RegisteredIdentityID, defaultLoginPayload, appVersion)
+	return c.sendIQ(ctx, state, input.RegisteredIdentityID, appVersion, request, "account settings iq timed out")
+}
+
+func (c *chatdClient) sendIQ(ctx context.Context, state nativeState, registeredIdentityID string, appVersion string, request chatdNode, timeoutMessage string) (chatdNode, chatdSessionUpdate, error) {
+	session, err := c.openSession(ctx, state, registeredIdentityID, defaultLoginPayload, appVersion)
 	if err != nil {
 		return chatdNode{}, chatdSessionUpdate{}, err
 	}
@@ -34,7 +38,7 @@ func (c *chatdClient) sendAccountIQ(ctx context.Context, state nativeState, inpu
 		node, err := transport.readNode()
 		if err != nil {
 			if ne, ok := err.(net.Error); ok && ne.Timeout() {
-				return chatdNode{}, update, fmt.Errorf("account settings iq timed out")
+				return chatdNode{}, update, errors.New(timeoutMessage)
 			}
 			return chatdNode{}, update, chatdPhase("chatd iq read", err)
 		}
@@ -50,7 +54,7 @@ func (c *chatdClient) sendAccountIQ(ctx context.Context, state nativeState, inpu
 			return node, update, nil
 		}
 	}
-	return chatdNode{}, update, fmt.Errorf("account settings iq timed out")
+	return chatdNode{}, update, errors.New(timeoutMessage)
 }
 
 func chatdIQError(node chatdNode) error {

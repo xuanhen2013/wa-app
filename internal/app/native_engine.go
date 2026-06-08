@@ -71,7 +71,7 @@ func (e *NativeEngine) PrepareClientProfile(ctx context.Context, input EnginePro
 	if err != nil {
 		return err
 	}
-	return e.saveState(ctx, input.WorkspaceID, input.ClientProfileID, state)
+	return e.saveState(ctx, input.ClientProfileID, state)
 }
 
 func (e *NativeEngine) ProbeAccount(ctx context.Context, input EngineRegistrationInput) EngineProbeResult {
@@ -104,12 +104,12 @@ func (e *NativeEngine) probeAccountWithState(ctx context.Context, input EngineRe
 }
 
 func (e *NativeEngine) RequestVerificationCode(ctx context.Context, input EngineRegistrationInput) EngineCodeResult {
-	state, err := e.loadState(ctx, input.WorkspaceID, input.ClientProfileID)
+	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
 		return EngineCodeResult{Status: waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED, Err: err}
 	}
 	result, updated := e.requestVerificationCodeWithState(ctx, input, state)
-	_ = e.saveState(ctx, input.WorkspaceID, input.ClientProfileID, updated)
+	_ = e.saveState(ctx, input.ClientProfileID, updated)
 	return result
 }
 
@@ -143,7 +143,7 @@ func (e *NativeEngine) SubmitVerificationCode(ctx context.Context, input EngineS
 	if strings.TrimSpace(input.Code) == "" {
 		return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "verification code is required", false)}
 	}
-	state, err := e.loadState(ctx, input.WorkspaceID, input.ClientProfileID)
+	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
 		return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: err}
 	}
@@ -162,11 +162,11 @@ func (e *NativeEngine) SubmitVerificationCode(ctx context.Context, input EngineS
 		state.LastRegister["enc_sha256"] = encHash(enc)
 	}
 	if err != nil {
-		_ = e.saveState(ctx, input.WorkspaceID, input.ClientProfileID, state)
+		_ = e.saveState(ctx, input.ClientProfileID, state)
 		return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: classifyHTTPError(data, err)}
 	}
 	if status := responseStatus(data); status != "ok" && status != "registered" {
-		_ = e.saveState(ctx, input.WorkspaceID, input.ClientProfileID, state)
+		_ = e.saveState(ctx, input.ClientProfileID, state)
 		return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: waProtocolError(data, "registration was rejected")}
 	}
 	login := firstNonEmpty(jsonString(data["login"]), jsonString(data["jid"]), jsonString(data["registration_jid"]), state.CC+state.Phone)
@@ -174,13 +174,13 @@ func (e *NativeEngine) SubmitVerificationCode(ctx context.Context, input EngineS
 	if login != "" {
 		state.RegistrationJID = normalizeJID(login)
 	}
-	_ = e.saveState(ctx, input.WorkspaceID, input.ClientProfileID, state)
+	_ = e.saveState(ctx, input.ClientProfileID, state)
 	completedAt := e.clock.Now()
 	return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REGISTERED, RegisteredID: "waid_" + stableID(login), ServiceAccountID: lid, ServiceLoginID: login, CompletedAt: completedAt}
 }
 
 func (e *NativeEngine) CheckLoginState(ctx context.Context, input EngineLoginCheckInput) EngineLoginCheckResult {
-	state, err := e.loadState(ctx, input.WorkspaceID, input.ClientProfileID)
+	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
 		return EngineLoginCheckResult{Status: waappv1.LoginStateCheckStatus_LOGIN_STATE_CHECK_STATUS_INVALID, Err: err}
 	}
@@ -195,7 +195,7 @@ func (e *NativeEngine) CheckLoginState(ctx context.Context, input EngineLoginChe
 	client := newChatdClient(chatdConfigForState(proxyURL, state, timeout))
 	update, err := client.checkLoginState(ctx, state, input, defaultWAAppVersion)
 	if applyChatdConnectionState(&state, update) {
-		_ = e.saveState(ctx, input.WorkspaceID, input.ClientProfileID, state)
+		_ = e.saveState(ctx, input.ClientProfileID, state)
 	}
 	if err != nil {
 		status := loginCheckStatusForError(err)
@@ -222,28 +222,29 @@ func loginCheckStatusForError(err error) waappv1.LoginStateCheckStatus {
 }
 
 func (e *NativeEngine) ReceiveMessageBatch(ctx context.Context, input EngineMessageInput) EngineMessageBatchResult {
-	state, err := e.loadState(ctx, input.WorkspaceID, input.ClientProfileID)
+	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
 		return EngineMessageBatchResult{Err: err}
 	}
 	state.ensureMaps()
 	if state.ChatStatic.Private == "" || state.ChatStatic.Public == "" {
 		state.ChatStatic = ensureChatStatic(state.ChatStatic)
-		_ = e.saveState(ctx, input.WorkspaceID, input.ClientProfileID, state)
+		_ = e.saveState(ctx, input.ClientProfileID, state)
 	}
 	proxyURL, err := e.proxyURL()
 	if err != nil {
 		return EngineMessageBatchResult{Err: err}
 	}
 	client := newChatdClient(chatdConfigForState(proxyURL, state, 0))
-	messages, payloads, update, err := client.receiveBatch(ctx, state, input, defaultWAAppVersion, e.clock.Now())
+	now := e.clock.Now()
+	messages, payloads, update, err := client.receiveBatch(ctx, state, input, defaultWAAppVersion, now)
 	if err != nil {
 		return EngineMessageBatchResult{Err: chatdReceiveError(err)}
 	}
 	if applyChatdReceiveState(&state, input, payloads, update) {
-		_ = e.saveState(ctx, input.WorkspaceID, input.ClientProfileID, state)
+		_ = e.saveState(ctx, input.ClientProfileID, state)
 	}
-	return EngineMessageBatchResult{Messages: messages}
+	return EngineMessageBatchResult{Messages: messages, Contacts: contactsFromContactHints(input.WAAccountID, nil, update.ContactHints, now)}
 }
 
 func applyChatdReceiveState(state *nativeState, input EngineMessageInput, payloads []chatdEncPayload, update chatdSessionUpdate) bool {
@@ -254,7 +255,22 @@ func applyChatdReceiveState(state *nativeState, input EngineMessageInput, payloa
 	state.ensureMaps()
 	for _, payload := range payloads {
 		ref := payloadRefForEnc(input.WAAccountID, payload.Payload)
-		state.MessagePayloads[ref] = nativeMessagePayload{Sender: payload.Sender, EncType: payload.EncType, Path: payload.Path, Payload: b64u(payload.Payload)}
+		state.MessagePayloads[ref] = nativeMessagePayload{
+			Contact:             payload.Contact,
+			Sender:              payload.Sender,
+			ContactPN:           payload.ContactPN,
+			SenderPN:            payload.SenderPN,
+			NotifyName:          payload.NotifyName,
+			ParticipantUsername: payload.ParticipantUsername,
+			ContactHints:        dedupeWAContactHints(payload.ContactHints),
+			EncType:             payload.EncType,
+			Path:                payload.Path,
+			Payload:             b64u(payload.Payload),
+		}
+		changed = true
+	}
+	if len(update.ContactHints) > 0 {
+		state.ContactHints = dedupeWAContactHints(append(state.ContactHints, update.ContactHints...))
 		changed = true
 	}
 	if applyChatdConnectionState(state, update) {
@@ -421,7 +437,7 @@ func (e *NativeEngine) DecryptMessage(ctx context.Context, input EngineDecryptIn
 		return EngineDecryptResult{DecryptedMessage: msg, Candidates: extractCandidates(input.MessageID, decryptedID, plain, input.IncludePlaintextText, e.clock.Now(), e.ids)}
 	}
 	if strings.HasPrefix(input.PayloadRef, "native-enc:") {
-		state, err := e.loadState(ctx, input.WorkspaceID, input.ClientProfileID)
+		state, err := e.loadState(ctx, input.ClientProfileID)
 		if err != nil {
 			return EngineDecryptResult{Err: err}
 		}
@@ -435,7 +451,7 @@ func (e *NativeEngine) DecryptMessage(ctx context.Context, input EngineDecryptIn
 			return EngineDecryptResult{Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_DECRYPTION_FAILED, "native Signal message decryption failed", true)}
 		}
 		if commit {
-			_ = e.saveState(ctx, input.WorkspaceID, input.ClientProfileID, state)
+			_ = e.saveState(ctx, input.ClientProfileID, state)
 		}
 		decryptedID := e.ids.NewID("wadec_")
 		plain := nativePlaintextText(output.plaintext)
@@ -444,7 +460,9 @@ func (e *NativeEngine) DecryptMessage(ctx context.Context, input EngineDecryptIn
 			text.Value = plain
 		}
 		msg := &waappv1.DecryptedMessage{DecryptedMessageId: decryptedID, MessageId: input.MessageID, Status: waappv1.DecryptionStatus_DECRYPTION_STATUS_DECRYPTED, PlaintextRef: "native-plain:" + decryptedID, PlaintextText: text, DecryptedAt: timestamppb.New(e.clock.Now())}
-		return EngineDecryptResult{DecryptedMessage: msg, Candidates: extractCandidates(input.MessageID, decryptedID, plain, input.IncludePlaintextText, e.clock.Now(), e.ids)}
+		contactHints := nativeContactHints(output.plaintext)
+		contactHints = append(contactHints, contactHintsFromNativePayloadMetadata(payload)...)
+		return EngineDecryptResult{DecryptedMessage: msg, Candidates: extractCandidates(input.MessageID, decryptedID, plain, input.IncludePlaintextText, e.clock.Now(), e.ids), ContactHints: dedupeWAContactHints(contactHints)}
 	}
 	return EngineDecryptResult{Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "payload ref scheme is not supported by native decryptor", false)}
 }
@@ -453,11 +471,17 @@ func nativePlaintextText(raw []byte) string {
 	if len(raw) == 0 {
 		return ""
 	}
+	if text, ok := nativeMessageDisplayText(raw); ok {
+		return text
+	}
 	plain := string(raw)
+	if text := waJSONDisplayText(plain); text != "" {
+		return text
+	}
 	if readableText(plain) {
 		return strings.TrimSpace(plain)
 	}
-	return strings.TrimSpace(strings.Join(printableSegments(raw), "\n"))
+	return nativePrintableDisplayText(raw)
 }
 
 func readableText(value string) bool {
@@ -584,8 +608,8 @@ func applyRegisterCodeResultParams(params map[string]string, state nativeState) 
 	}
 }
 
-func (e *NativeEngine) loadState(ctx context.Context, workspaceID string, clientProfileID string) (nativeState, error) {
-	state, err := e.stateStore.GetNativeState(ctx, workspaceID, clientProfileID)
+func (e *NativeEngine) loadState(ctx context.Context, clientProfileID string) (nativeState, error) {
+	state, err := e.stateStore.GetNativeState(ctx, clientProfileID)
 	if err != nil {
 		return nativeState{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_PROFILE_NOT_FOUND, "native client profile state not found", false)
 	}
@@ -596,8 +620,8 @@ func (e *NativeEngine) newState(phone *waappv1.PhoneTarget) (nativeState, error)
 	return newNativeState(phone, defaultWAAppVersion)
 }
 
-func (e *NativeEngine) saveState(ctx context.Context, workspaceID string, clientProfileID string, state nativeState) error {
-	return e.stateStore.SaveNativeState(ctx, workspaceID, clientProfileID, state)
+func (e *NativeEngine) saveState(ctx context.Context, clientProfileID string, state nativeState) error {
+	return e.stateStore.SaveNativeState(ctx, clientProfileID, state)
 }
 
 func sanitizeResponse(data map[string]any) map[string]any {

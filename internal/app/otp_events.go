@@ -5,26 +5,19 @@ import (
 	"fmt"
 	"log"
 	"strings"
-	"time"
 
-	"github.com/byte-v-forge/common-lib/eventbus"
-	"github.com/byte-v-forge/common-lib/eventcatalog"
-	wav1 "github.com/byte-v-forge/common-lib/gen/go/byte/v/forge/contracts/wa/v1"
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-const waPlatformEventSource = "wa-app-service"
-
-func (s *Server) publishOTPCandidates(ctx context.Context, reqCtx *waappv1.RequestContext, workspaceID string, msg *waappv1.InboundMessage, session *waappv1.MessageSession, candidates []*waappv1.ExtractedCandidate, source wav1.WaOtpSource) {
+func (s *Server) publishOTPCandidates(ctx context.Context, msg *waappv1.InboundMessage, session *waappv1.MessageSession, candidates []*waappv1.ExtractedCandidate, source waappv1.WaOtpSource) {
 	if s == nil || len(candidates) == 0 {
 		return
 	}
-	if source == wav1.WaOtpSource_WA_OTP_SOURCE_UNSPECIFIED {
-		source = wav1.WaOtpSource_WA_OTP_SOURCE_AUTO_EXTRACTION
+	if source == waappv1.WaOtpSource_WA_OTP_SOURCE_UNSPECIFIED {
+		source = waappv1.WaOtpSource_WA_OTP_SOURCE_AUTO_EXTRACTION
 	}
 	sourceParty := strings.TrimSpace(msg.GetSenderRef())
-	account, _ := s.getWAAccount(ctx, workspaceID, session.GetWaAccountId())
 	for _, candidate := range candidates {
 		if candidate.GetKind() != waappv1.CandidateKind_CANDIDATE_KIND_OTP {
 			continue
@@ -34,9 +27,8 @@ func (s *Server) publishOTPCandidates(ctx context.Context, reqCtx *waappv1.Reque
 			continue
 		}
 		receivedAtTS := firstTimestamp(candidate.GetExtractedAt(), msg.GetReceivedAt())
-		receivedAt := timeFromProto(receivedAtTS)
 		otpMessage := &waappv1.OtpMessage{
-			OtpMessageId:         stableOTPMessageID(workspaceID, session.GetWaAccountId(), sourceParty, otp),
+			OtpMessageId:         stableOTPMessageID(session.GetWaAccountId(), sourceParty, otp),
 			WaAccountId:          session.GetWaAccountId(),
 			ClientProfileId:      session.GetClientProfileId(),
 			RegisteredIdentityId: session.GetRegisteredIdentityId(),
@@ -47,67 +39,14 @@ func (s *Server) publishOTPCandidates(ctx context.Context, reqCtx *waappv1.Reque
 			Otp:                  &waappv1.SensitiveText{Value: otp, RedactedValue: redacted(otp), SecretRef: "candidate:" + candidate.GetCandidateId()},
 			ReceivedAt:           receivedAtTS,
 		}
-		if err := s.store.SaveOTPMessage(ctx, workspaceID, otpMessage); err != nil && ctx.Err() == nil {
-			log.Printf("save WA OTP history failed: %v", sanitizeEventPublishError(err))
-		}
-		if s.platformPublisher == nil {
-			continue
-		}
-		eventCtx := eventbus.NewEventMetadata(eventbus.EventMetadataConfig{
-			EventID:        eventbus.StableEventID("wa-otp-", workspaceID, msg.GetMessageId(), otp),
-			EventName:      eventcatalog.WAOTPReceived.EventName,
-			EventVersion:   eventcatalog.WAOTPReceived.EventVersion,
-			OccurredAt:     receivedAt,
-			SourceService:  waPlatformEventSource,
-			CorrelationID:  firstNonEmpty(reqCtx.GetCorrelationId(), session.GetRegisteredIdentityId(), session.GetWaAccountId()),
-			TraceID:        reqCtx.GetTraceId(),
-			IdempotencyKey: eventbus.StableEventID("wa-otp-", workspaceID, msg.GetMessageId(), otp),
-		})
-		e164Number := ""
-		if account != nil && account.GetPhone() != nil {
-			e164Number = account.GetPhone().GetE164Number()
-		}
-		event := &wav1.WaOtpReceivedEvent{
-			Metadata:             eventCtx,
-			WorkspaceId:          workspaceID,
-			E164Number:           e164Number,
-			Source:               source,
-			Otp:                  otp,
-			WaAccountId:          session.GetWaAccountId(),
-			ClientProfileId:      session.GetClientProfileId(),
-			RegisteredIdentityId: session.GetRegisteredIdentityId(),
-			MessageId:            msg.GetMessageId(),
-			CandidateId:          candidate.GetCandidateId(),
-			ReceivedAt:           receivedAtTS,
-			SourceParty:          sourceParty,
-		}
-		attrs := eventbus.Attributes(
-			"workspace_id", workspaceID,
-			"wa_account_id", session.GetWaAccountId(),
-			"client_profile_id", session.GetClientProfileId(),
-			"registered_identity_id", session.GetRegisteredIdentityId(),
-			"message_id", msg.GetMessageId(),
-			"source", source.String(),
-			"source_party", sourceParty,
-		)
-		eventMessage, err := eventcatalog.WAOTPReceived.NewMessage(event, eventCtx, attrs)
-		if err != nil {
-			if ctx.Err() == nil {
-				log.Printf("prepare WA OTP event failed: %v", sanitizeEventPublishError(err))
-			}
-			continue
-		}
-		publishCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
-		_, err = s.platformPublisher.Publish(publishCtx, eventMessage)
-		cancel()
-		if err != nil && ctx.Err() == nil {
-			log.Printf("publish WA OTP event failed: %v", sanitizeEventPublishError(err))
+		if err := s.store.SaveOTPMessage(ctx, otpMessage); err != nil && ctx.Err() == nil {
+			log.Printf("save WA OTP history failed: %v", sanitizeLogError(err))
 		}
 	}
 }
 
-func stableOTPMessageID(workspaceID string, accountID string, sourceParty string, otp string) string {
-	return "waotp_" + stableID(strings.Join([]string{workspaceID, accountID, sourceParty, otp}, ":"))
+func stableOTPMessageID(accountID string, sourceParty string, otp string) string {
+	return "waotp_" + stableID(strings.Join([]string{accountID, sourceParty, otp}, ":"))
 }
 
 func firstTimestamp(values ...*timestamppb.Timestamp) *timestamppb.Timestamp {
@@ -119,7 +58,7 @@ func firstTimestamp(values ...*timestamppb.Timestamp) *timestamppb.Timestamp {
 	return nil
 }
 
-func sanitizeEventPublishError(err error) error {
+func sanitizeLogError(err error) error {
 	if err == nil {
 		return nil
 	}

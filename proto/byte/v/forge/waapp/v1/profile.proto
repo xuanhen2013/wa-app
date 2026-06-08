@@ -3,7 +3,6 @@ syntax = "proto3";
 package byte.v.forge.waapp.v1;
 
 import "byte/v/forge/waapp/v1/common.proto";
-import "byte/v/forge/contracts/account/v1/account.proto";
 import "google/protobuf/timestamp.proto";
 
 option csharp_namespace = "ByteVForge.WaApp.V1";
@@ -20,6 +19,7 @@ service WaProfileService {
   rpc DeleteWAAccount(DeleteWAAccountRequest) returns (DeleteWAAccountResponse);
   rpc PrepareClientProfile(PrepareClientProfileRequest) returns (PrepareClientProfileResponse);
   rpc GetClientProfile(GetClientProfileRequest) returns (GetClientProfileResponse);
+  rpc ListClientProfiles(ListClientProfilesRequest) returns (ListClientProfilesResponse);
   rpc RetireClientProfile(RetireClientProfileRequest) returns (RetireClientProfileResponse);
 }
 
@@ -48,11 +48,10 @@ enum KeyMaterialStatus {
 }
 
 message WAAccount {
-  byte.v.forge.contracts.account.v1.Account account = 1;
-  string workspace_id = 2;
+  string wa_account_id = 1;
   PhoneTarget phone = 3;
-  reserved 4, 5;
-  reserved "status", "audit";
+  WAAccountStatus status = 4;
+  AuditStamp audit = 5;
 }
 
 message ClientProfile {
@@ -65,6 +64,25 @@ message ClientProfile {
   google.protobuf.Timestamp last_used_at = 7;
   AuditStamp audit = 8;
   WaError last_error = 9;
+  DeviceFingerprint device_fingerprint = 10;
+}
+
+message DeviceFingerprint {
+  string fingerprint_id = 1;
+  string user_agent = 2;
+  string app_version = 3;
+  string device_vendor = 4;
+  string device_model = 5;
+  string android_version = 6;
+  string fdid = 7;
+  string phone_sha256_prefix = 8;
+  string device_ram_gib = 9;
+  string mcc = 10;
+  string mnc = 11;
+  string sim_mcc = 12;
+  string sim_mnc = 13;
+  string network_radio_type = 14;
+  google.protobuf.Timestamp created_at = 15;
 }
 
 message CreateWAAccountRequest {
@@ -128,6 +146,19 @@ message GetClientProfileRequest {
 message GetClientProfileResponse {
   ClientProfile client_profile = 1;
   WaError error = 2;
+}
+
+message ListClientProfilesRequest {
+  RequestContext context = 1;
+  string wa_account_id = 2;
+  int32 limit = 3;
+  string cursor = 4;
+}
+
+message ListClientProfilesResponse {
+  repeated ClientProfile client_profiles = 1;
+  string next_cursor = 2;
+  WaError error = 3;
 }
 
 message RetireClientProfileRequest {

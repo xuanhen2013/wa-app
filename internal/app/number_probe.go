@@ -91,7 +91,7 @@ func (s *Server) probeNumberSMSAttempt(ctx context.Context, payload map[string]a
 		"fingerprint_persistence": "RANDOM_NOT_COMMITTED",
 		"fingerprint":             fingerprintSummary(phoneProfileToProto(phone, state.Profile)),
 	}
-	probeResult := probeEngine.probeAccountWithState(ctx, EngineRegistrationInput{WorkspaceID: ctxData.GetWorkspaceId(), Phone: phone}, state)
+	probeResult := probeEngine.probeAccountWithState(ctx, EngineRegistrationInput{Phone: phone}, state)
 	account := probeResultMap(probeResult)
 	sms := smsProbeMap(account)
 	result := buildNumberProbeResult(payload, proxy, fingerprint, account, sms)
@@ -104,7 +104,7 @@ func (s *Server) probeNumberSMSAttempt(ctx context.Context, payload map[string]a
 
 func (s *Server) numberProbeGatewayProxy(ctx context.Context, correlationID string) (DynamicProxyRoute, error) {
 	if s == nil || s.proxyRuntime == nil {
-		return DynamicProxyRoute{}, fmt.Errorf("PROXY_RUNTIME_API_BASE_URL is required")
+		return DynamicProxyRoute{}, fmt.Errorf("WA_APP_PROXY_RUNTIME_API_BASE_URL is not configured")
 	}
 	username := strings.TrimSpace(s.numberProbeProxyUsername)
 	if username == "" {
@@ -393,8 +393,7 @@ func logNumberProbeResult(ctxData *waappv1.RequestContext, phone *waappv1.PhoneT
 		phoneHash = stableID(phone.GetE164Number())
 	}
 	log.Printf(
-		"wa_phone_probe_result workspace=%s correlation=%s phone_hash=%s proxy_account=%s route_id=%s request_failed=%t success=%t account_flow=%s account_status=%s raw_status=%s raw_reason=%s sms_status=%s sms_available=%t sms_wait_seconds=%v error=%s",
-		probeLogValue(ctxData.GetWorkspaceId()),
+		"wa_phone_probe_result correlation=%s phone_hash=%s proxy_account=%s route_id=%s request_failed=%t success=%t account_flow=%s account_status=%s raw_status=%s raw_reason=%s sms_status=%s sms_available=%t sms_wait_seconds=%v error=%s",
 		probeLogValue(ctxData.GetCorrelationId()),
 		phoneHash,
 		probeLogValue(route.AccountID),
@@ -418,8 +417,7 @@ func logNumberProbeRetry(ctxData *waappv1.RequestContext, phone *waappv1.PhoneTa
 		phoneHash = stableID(phone.GetE164Number())
 	}
 	log.Printf(
-		"wa_phone_probe_retry workspace=%s correlation=%s phone_hash=%s proxy_account=%s route_id=%s attempt=%d max_attempts=%d reason=%s",
-		probeLogValue(ctxData.GetWorkspaceId()),
+		"wa_phone_probe_retry correlation=%s phone_hash=%s proxy_account=%s route_id=%s attempt=%d max_attempts=%d reason=%s",
 		probeLogValue(ctxData.GetCorrelationId()),
 		phoneHash,
 		probeLogValue(route.AccountID),

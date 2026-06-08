@@ -1,21 +1,11 @@
 import { useMemo } from 'react';
-import { Badge, useQuery } from '@byte-v-forge/common-ui';
+import { useQuery } from '@tanstack/react-query';
 import { LongConnectionStatus, type LongConnectionState } from '../proto/byte/v/forge/waapp/v1/messaging';
 import { getWaConnections, waKeys } from './wa-api';
+import { Badge, type BadgeVariant } from './ui';
 
-type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline';
-
-type StatusView = {
-  label: string;
-  variant: BadgeVariant;
-};
-
-export function useWaLongConnectionIndex(workspaceId = 'default') {
-  const query = useQuery({
-    queryKey: waKeys.connections(workspaceId),
-    queryFn: () => getWaConnections(workspaceId),
-    refetchInterval: 5000,
-  });
+export function useWaLongConnectionIndex() {
+  const query = useQuery({ queryKey: waKeys.connections(), queryFn: () => getWaConnections(), refetchInterval: 5000 });
   const byAccount = useMemo(() => indexConnections(query.data?.connections || []), [query.data?.connections]);
   return { byAccount, loading: query.isLoading };
 }
@@ -27,10 +17,8 @@ export function WaLongConnectionBadge({ connection, loading }: { connection?: Lo
 
 function indexConnections(connections: LongConnectionState[]) {
   return connections.reduce((acc, connection) => {
-    const accountID = connection.wa_account_id;
-    if (!accountID) return acc;
-    const current = acc.get(accountID);
-    acc.set(accountID, betterConnection(current, connection));
+    if (!connection.wa_account_id) return acc;
+    acc.set(connection.wa_account_id, betterConnection(acc.get(connection.wa_account_id), connection));
     return acc;
   }, new Map<string, LongConnectionState>());
 }
@@ -40,39 +28,21 @@ function betterConnection(current: LongConnectionState | undefined, next: LongCo
   return statusRank(next.status) < statusRank(current.status) ? next : current;
 }
 
-function statusView(status: LongConnectionStatus | undefined, loading?: boolean): StatusView {
+function statusView(status: LongConnectionStatus | undefined, loading?: boolean): { label: string; variant: BadgeVariant } {
   if (loading && !status) return { label: '加载中', variant: 'secondary' };
-  switch (status) {
-    case LongConnectionStatus.LONG_CONNECTION_STATUS_CONNECTED:
-    case LongConnectionStatus.LONG_CONNECTION_STATUS_HEARTBEAT_WAITING:
-      return { label: '已连接', variant: 'default' };
-    case LongConnectionStatus.LONG_CONNECTION_STATUS_RECONNECTING:
-      return { label: '重连中', variant: 'secondary' };
-    case LongConnectionStatus.LONG_CONNECTION_STATUS_STARTING:
-      return { label: '启动中', variant: 'secondary' };
-    case LongConnectionStatus.LONG_CONNECTION_STATUS_FAILED:
-      return { label: '失败', variant: 'destructive' };
-    case LongConnectionStatus.LONG_CONNECTION_STATUS_STOPPED:
-      return { label: '已停止', variant: 'outline' };
-    default:
-      return { label: '未启动', variant: 'outline' };
-  }
+  if (status === LongConnectionStatus.LONG_CONNECTION_STATUS_CONNECTED || status === LongConnectionStatus.LONG_CONNECTION_STATUS_HEARTBEAT_WAITING) return { label: '已连接', variant: 'default' };
+  if (status === LongConnectionStatus.LONG_CONNECTION_STATUS_RECONNECTING) return { label: '重连中', variant: 'secondary' };
+  if (status === LongConnectionStatus.LONG_CONNECTION_STATUS_STARTING) return { label: '启动中', variant: 'secondary' };
+  if (status === LongConnectionStatus.LONG_CONNECTION_STATUS_FAILED) return { label: '失败', variant: 'destructive' };
+  if (status === LongConnectionStatus.LONG_CONNECTION_STATUS_STOPPED) return { label: '已停止', variant: 'outline' };
+  return { label: '未启动', variant: 'outline' };
 }
 
 function statusRank(status: LongConnectionStatus | undefined) {
-  switch (status) {
-    case LongConnectionStatus.LONG_CONNECTION_STATUS_CONNECTED:
-    case LongConnectionStatus.LONG_CONNECTION_STATUS_HEARTBEAT_WAITING:
-      return 0;
-    case LongConnectionStatus.LONG_CONNECTION_STATUS_RECONNECTING:
-      return 1;
-    case LongConnectionStatus.LONG_CONNECTION_STATUS_STARTING:
-      return 2;
-    case LongConnectionStatus.LONG_CONNECTION_STATUS_FAILED:
-      return 3;
-    case LongConnectionStatus.LONG_CONNECTION_STATUS_STOPPED:
-      return 4;
-    default:
-      return 5;
-  }
+  if (status === LongConnectionStatus.LONG_CONNECTION_STATUS_CONNECTED || status === LongConnectionStatus.LONG_CONNECTION_STATUS_HEARTBEAT_WAITING) return 0;
+  if (status === LongConnectionStatus.LONG_CONNECTION_STATUS_RECONNECTING) return 1;
+  if (status === LongConnectionStatus.LONG_CONNECTION_STATUS_STARTING) return 2;
+  if (status === LongConnectionStatus.LONG_CONNECTION_STATUS_FAILED) return 3;
+  if (status === LongConnectionStatus.LONG_CONNECTION_STATUS_STOPPED) return 4;
+  return 5;
 }

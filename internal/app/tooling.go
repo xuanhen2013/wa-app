@@ -166,9 +166,8 @@ func (e *NativeEngine) BuildRegistrationRequest(ctx context.Context, req *waappv
 	phone := normalizePhone(req.GetPhone())
 	var state nativeState
 	var hasState bool
-	workspaceID := req.GetContext().GetWorkspaceId()
 	if req.GetClientProfileId() != "" {
-		loaded, err := e.loadState(ctx, workspaceID, req.GetClientProfileId())
+		loaded, err := e.loadState(ctx, req.GetClientProfileId())
 		if err != nil {
 			return nil, err
 		}

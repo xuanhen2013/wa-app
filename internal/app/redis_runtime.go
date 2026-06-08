@@ -2,37 +2,40 @@ package app
 
 import (
 	"context"
+	"errors"
 	"fmt"
+	"strings"
 	"time"
 
-	"github.com/byte-v-forge/common-lib/redisx"
+	"github.com/redis/go-redis/v9"
 )
 
 type RedisRuntime struct {
-	clientClose func() error
-	idempotency *redisx.TTLFlagStore
-	transient   *redisx.StringStore
-	sessions    *redisx.TTLFlagStore
+	client *redis.Client
 }
 
-func NewRedisRuntime(ctx context.Context, url string) (*RedisRuntime, error) {
-	client, err := redisx.NewRequiredClient(ctx, url, "PLATFORM_REDIS_URL is required")
-	if err != nil {
-		return nil, err
+func NewRedisRuntime(ctx context.Context, rawURL string) (*RedisRuntime, error) {
+	rawURL = strings.TrimSpace(rawURL)
+	if rawURL == "" {
+		return nil, errors.New("WA_APP_REDIS_URL is required")
 	}
-	return &RedisRuntime{
-		clientClose: client.Close,
-		idempotency: redisx.NewTTLFlagStore(client, "wa-app:idempotency", 10*time.Minute, "1"),
-		transient:   redisx.NewStringStore(client, "wa-app:transient-state", 30*time.Minute),
-		sessions:    redisx.NewTTLFlagStore(client, "wa-app:message-session", 5*time.Minute, "open"),
-	}, nil
+	opts, err := redis.ParseURL(rawURL)
+	if err != nil {
+		return nil, fmt.Errorf("parse WA_APP_REDIS_URL: %w", err)
+	}
+	client := redis.NewClient(opts)
+	if err := client.Ping(ctx).Err(); err != nil {
+		_ = client.Close()
+		return nil, fmt.Errorf("ping redis: %w", err)
+	}
+	return &RedisRuntime{client: client}, nil
 }
 
 func (r *RedisRuntime) Close() error {
-	if r == nil || r.clientClose == nil {
+	if r == nil || r.client == nil {
 		return nil
 	}
-	return r.clientClose()
+	return r.client.Close()
 }
 
 func (r *RedisRuntime) ClaimRequest(ctx context.Context, requestID string, ttl time.Duration) (bool, error) {
@@ -42,47 +45,51 @@ func (r *RedisRuntime) ClaimRequest(ctx context.Context, requestID string, ttl t
 	if ttl <= 0 {
 		ttl = 10 * time.Minute
 	}
-	return r.idempotency.Claim(ctx, requestID, ttl)
+	return r.client.SetNX(ctx, redisKey("idempotency", requestID), "1", ttl).Result()
 }
 
 func (r *RedisRuntime) SaveTransientState(ctx context.Context, ref string, data []byte, ttl time.Duration) error {
-	if ref == "" {
+	if strings.TrimSpace(ref) == "" {
 		return fmt.Errorf("transient state ref is required")
 	}
 	if ttl <= 0 {
 		ttl = 30 * time.Minute
 	}
-	return r.transient.SaveTTL(ctx, ref, string(data), ttl)
+	return r.client.Set(ctx, redisKey("transient-state", ref), string(data), ttl).Err()
 }
 
 func (r *RedisRuntime) GetTransientState(ctx context.Context, ref string) ([]byte, error) {
-	if ref == "" {
+	if strings.TrimSpace(ref) == "" {
 		return nil, fmt.Errorf("transient state ref is required")
 	}
-	data, found, err := r.transient.Load(ctx, ref)
+	value, err := r.client.Get(ctx, redisKey("transient-state", ref)).Result()
+	if errors.Is(err, redis.Nil) {
+		return nil, fmt.Errorf("transient state ref not found")
+	}
 	if err != nil {
 		return nil, err
 	}
-	if !found {
-		return nil, fmt.Errorf("transient state ref not found")
-	}
-	return []byte(data), nil
+	return []byte(value), nil
 }
 
 func (r *RedisRuntime) DeleteTransientState(ctx context.Context, ref string) error {
-	if ref == "" {
+	if strings.TrimSpace(ref) == "" {
 		return nil
 	}
-	return r.transient.Delete(ctx, ref)
+	return r.client.Del(ctx, redisKey("transient-state", ref)).Err()
 }
 
 func (r *RedisRuntime) OpenSessionLease(ctx context.Context, sessionID string, ttl time.Duration) error {
 	if ttl <= 0 {
 		ttl = 5 * time.Minute
 	}
-	return r.sessions.Save(ctx, sessionID, ttl)
+	return r.client.Set(ctx, redisKey("message-session", sessionID), "open", ttl).Err()
 }
 
 func (r *RedisRuntime) CloseSessionLease(ctx context.Context, sessionID string) error {
-	return r.sessions.Delete(ctx, sessionID)
+	return r.client.Del(ctx, redisKey("message-session", sessionID)).Err()
+}
+
+func redisKey(scope string, key string) string {
+	return "wa-app:" + strings.Trim(scope, ":") + ":" + strings.Trim(strings.TrimSpace(key), ":")
 }

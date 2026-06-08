@@ -1,0 +1,171 @@
+package app
+
+import (
+	"context"
+	"strings"
+	"time"
+
+	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+)
+
+const defaultContactResolveLimit = 50
+
+type waContactResolver interface {
+	ResolveContacts(context.Context, EngineContactResolveInput) EngineContactResolveResult
+}
+
+func (s *Server) ListWAContacts(ctx context.Context, req *waappv1.ListWAContactsRequest) (*waappv1.ListWAContactsResponse, error) {
+	if err := validateContext(req.GetContext()); err != nil {
+		return &waappv1.ListWAContactsResponse{Error: ToProtoError(err)}, nil
+	}
+	accountID, err := requireWAAccountID(req.GetWaAccountId())
+	if err != nil {
+		return &waappv1.ListWAContactsResponse{Error: ToProtoError(err)}, nil
+	}
+	if _, err := s.getWAAccount(ctx, accountID); err != nil {
+		return &waappv1.ListWAContactsResponse{Error: ToProtoError(err)}, nil
+	}
+	contacts, nextCursor, err := s.store.ListWAContacts(ctx, accountID, req.GetCursor(), int(req.GetLimit()))
+	if err != nil {
+		return &waappv1.ListWAContactsResponse{Error: ToProtoError(err)}, nil
+	}
+	return &waappv1.ListWAContactsResponse{Contacts: contacts, NextCursor: nextCursor}, nil
+}
+
+func (s *Server) ResolveWAContacts(ctx context.Context, req *waappv1.ResolveWAContactsRequest) (*waappv1.ResolveWAContactsResponse, error) {
+	if err := validateContext(req.GetContext()); err != nil {
+		return &waappv1.ResolveWAContactsResponse{Error: ToProtoError(err)}, nil
+	}
+	accountID, err := requireWAAccountID(req.GetWaAccountId())
+	if err != nil {
+		return &waappv1.ResolveWAContactsResponse{Error: ToProtoError(err)}, nil
+	}
+	if _, err := s.getWAAccount(ctx, accountID); err != nil {
+		return &waappv1.ResolveWAContactsResponse{Error: ToProtoError(err)}, nil
+	}
+	jids, err := s.resolveContactJIDs(ctx, accountID, req.GetJids(), int(req.GetLimit()))
+	if err != nil {
+		return &waappv1.ResolveWAContactsResponse{Error: ToProtoError(err)}, nil
+	}
+	if len(jids) == 0 {
+		return &waappv1.ResolveWAContactsResponse{}, nil
+	}
+	loginState, err := s.activeContactResolveLoginState(ctx, accountID)
+	if err != nil {
+		return &waappv1.ResolveWAContactsResponse{Error: ToProtoError(err)}, nil
+	}
+	runner, release, err := s.contactResolverRunner(ctx, req.GetContext())
+	if err != nil {
+		return &waappv1.ResolveWAContactsResponse{Error: ToProtoError(err)}, nil
+	}
+	defer release()
+	resolver, ok := runner.(waContactResolver)
+	if !ok {
+		return &waappv1.ResolveWAContactsResponse{Error: ToProtoError(NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "WA contact resolver is not configured", false))}, nil
+	}
+	result := resolver.ResolveContacts(ctx, EngineContactResolveInput{
+		WAAccountID:          accountID,
+		ClientProfileID:      loginState.GetClientProfileId(),
+		RegisteredIdentityID: loginState.GetRegisteredIdentityId(),
+		JIDs:                 jids,
+		RemoteTimeout:        defaultContactUsyncTimeout,
+	})
+	if len(result.Contacts) > 0 {
+		_ = s.store.SaveWAContacts(ctx, result.Contacts)
+	}
+	if result.Err != nil {
+		return &waappv1.ResolveWAContactsResponse{Contacts: result.Contacts, QueriedCount: int32(result.Queried), ResolvedCount: int32(result.Resolved), Error: ToProtoError(result.Err)}, nil
+	}
+	return &waappv1.ResolveWAContactsResponse{Contacts: result.Contacts, QueriedCount: int32(result.Queried), ResolvedCount: int32(result.Resolved)}, nil
+}
+
+func (s *Server) resolveContactJIDs(ctx context.Context, accountID string, requested []string, limit int) ([]string, error) {
+	limit = normalizeContactResolveLimit(limit)
+	if len(requested) > 0 {
+		return firstNStrings(normalizeContactUsyncJIDs(requested), limit), nil
+	}
+	contacts, _, err := s.store.ListWAContacts(ctx, accountID, "", limit)
+	if err != nil {
+		return nil, err
+	}
+	jids := []string{}
+	for _, contact := range contacts {
+		if !needsContactResolution(contact) {
+			continue
+		}
+		jids = append(jids, contact.GetJid())
+	}
+	return normalizeContactUsyncJIDs(jids), nil
+}
+
+func needsContactResolution(contact *waappv1.WAContact) bool {
+	if contact == nil || !strings.HasSuffix(contact.GetJid(), "@lid") {
+		return false
+	}
+	return contact.GetNumber() == "" || contact.GetDisplayName() == "" || contact.GetDisplayName() == "未知联系人" || strings.HasPrefix(contact.GetDisplayName(), "LID ")
+}
+
+func (s *Server) activeContactResolveLoginState(ctx context.Context, accountID string) (*waappv1.LoginState, error) {
+	records, err := s.store.ListActiveLoginStates(ctx)
+	if err != nil {
+		return nil, err
+	}
+	for _, record := range records {
+		loginState := record.LoginState
+		if loginState.GetWaAccountId() == accountID && loginState.GetStatus() == waappv1.LoginStateStatus_LOGIN_STATE_STATUS_ACTIVE {
+			return loginState, nil
+		}
+	}
+	return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REGISTRATION_NOT_FOUND, "active login state not found", false)
+}
+
+func (s *Server) contactResolverRunner(ctx context.Context, requestContext *waappv1.RequestContext) (ProtocolEngine, func(), error) {
+	runner := s.runner
+	native, ok := runner.(*NativeEngine)
+	if !ok || strings.TrimSpace(native.activeProxyURL) != "" || s.proxyRuntime == nil {
+		return runner, func() {}, nil
+	}
+	username := strings.TrimSpace(s.longProxyUsername)
+	if username == "" {
+		return runner, func() {}, nil
+	}
+	route, err := s.proxyRuntime.GatewayProxyRoute(ctx, username, DynamicProxyRouteRequest{
+		Purpose:       "WA_CONTACT_SYNC",
+		CorrelationID: firstNonEmpty(requestContext.GetCorrelationId(), requestContext.GetRequestId()),
+		TTL:           defaultContactUsyncTimeout + 10*time.Second,
+		Mode:          DynamicProxySessionModeSticky,
+	})
+	if err != nil {
+		return runner, func() {}, nil
+	}
+	proxied, err := native.WithProxyURL(route.ProxyURL)
+	if err != nil {
+		_ = s.proxyRuntime.ReleaseProxyRoute(context.Background(), route)
+		return runner, func() {}, nil
+	}
+	return proxied, func() { _ = s.proxyRuntime.ReleaseProxyRoute(context.Background(), route) }, nil
+}
+
+func normalizeContactResolveLimit(limit int) int {
+	if limit <= 0 {
+		return defaultContactResolveLimit
+	}
+	if limit > maxContactUsyncBatchSize {
+		return maxContactUsyncBatchSize
+	}
+	return limit
+}
+
+func firstNStrings(values []string, limit int) []string {
+	if limit <= 0 || len(values) <= limit {
+		return values
+	}
+	return values[:limit]
+}
+
+func contactKindStorageValue(contact *waappv1.WAContact) string {
+	if contact.GetKind() == waappv1.WAContactKind_WA_CONTACT_KIND_UNSPECIFIED {
+		return waappv1.WAContactKind_WA_CONTACT_KIND_USER.String()
+	}
+	return contact.GetKind().String()
+}

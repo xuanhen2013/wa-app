@@ -1,7 +1,6 @@
 import { parsePhoneNumberFromString } from 'libphonenumber-js';
 import type { WaPhoneInput, WaWorkflowResponse } from './wa-api';
 
-const DEFAULT_WORKSPACE_ID = 'default';
 const PHONE_NOT_POSSIBLE_MESSAGE = '手机号位数不符合国家规则，请检查国家拨号码和手机号。';
 
 export type WaResolvedPhone = {
@@ -34,7 +33,6 @@ export function resolveWaPhoneTarget(value: string, countryCallingCode = ''): Wa
     target: {
       e164,
       input: {
-        workspace_id: DEFAULT_WORKSPACE_ID,
         region: countryCode,
         phone: phone.nationalNumber,
         e164_number: e164,

@@ -1,11 +1,25 @@
 @import "tailwindcss";
 @source "./";
-@source "../../../common-lib/ui/src";
-@import "@byte-v-forge/common-ui/styles.css";
+
+@theme {
+  --color-background: #f8fafc;
+  --color-foreground: #0f172a;
+  --color-card: #ffffff;
+  --color-muted: #e2e8f0;
+  --color-muted-foreground: #64748b;
+  --color-border: #cbd5e1;
+  --color-primary: #2563eb;
+  --color-primary-foreground: #ffffff;
+  --color-destructive: #dc2626;
+}
 
 html,
 body,
 #root {
   min-height: 100%;
   margin: 0;
+}
+
+body {
+  background: #f8fafc;
 }
