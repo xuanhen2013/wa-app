@@ -17,7 +17,7 @@ export function WaAccountDetail({ account, profiles, profilesLoading, busy, onDe
         <Badge variant="outline">{account.status || 'UNKNOWN'}</Badge>
       </header>
       {isRegistrationPending(account) && <ManualOtpSubmit account={account} busy={busy} onDone={onDone} onError={onError} />}
-      <details className="rounded-xl border border-border p-3"><summary className="cursor-pointer text-sm font-semibold">基础信息</summary><div className="mt-3"><InfoGrid account={account} /></div></details>
+      <section className="rounded-xl border border-border p-3"><h3 className="mb-2 text-sm font-semibold">基础信息</h3><InfoGrid account={account} /></section>
       <details className="rounded-xl border border-border p-3" open><summary className="cursor-pointer text-sm font-semibold">设备指纹</summary><div className="mt-3"><WaDeviceFingerprintPanel profiles={profiles} loading={profilesLoading} /></div></details>
       <details className="rounded-xl border border-border p-3"><summary className="inline-flex cursor-pointer items-center gap-2 text-sm font-semibold"><Shield size={15} />安全设置</summary><div className="mt-3"><WaAccountSecurityPanel account={account} onDone={onDone} onError={onError} /></div></details>
       <details className="rounded-xl border border-destructive/30 p-3"><summary className="cursor-pointer text-sm font-semibold text-destructive">危险操作</summary><div className="mt-3"><Button variant="destructive" disabled={busy} onClick={() => onDelete(account)}><Trash2 size={14} />删除账号</Button></div></details>
@@ -51,7 +51,7 @@ function InfoGrid({ account }: { account: WAAccount }) {
     ['拨号码', account.phone?.country_calling_code || '-'],
     ['更新时间', formatTime(account.audit?.updated_at)],
   ];
-  return <dl className="grid gap-2">{rows.map(([label, value]) => <div key={label} className="rounded-lg bg-muted/40 p-3"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="truncate text-sm">{value}</dd></div>)}</dl>;
+  return <dl className="grid gap-1.5 sm:grid-cols-2">{rows.map(([label, value]) => <div key={label} className="grid grid-cols-[4.5rem_minmax(0,1fr)] items-center gap-2 rounded-md bg-muted/40 px-2 py-1.5"><dt className="text-xs text-muted-foreground">{label}</dt><dd className="truncate font-mono text-xs">{value}</dd></div>)}</dl>;
 }
 
 function formatTime(value?: string) {
