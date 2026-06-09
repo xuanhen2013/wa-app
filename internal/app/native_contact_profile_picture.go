@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -17,8 +18,11 @@ const (
 	defaultContactProfilePictureTimeout = 20 * time.Second
 	profilePictureDirectPathHost        = "https://pps.whatsapp.net"
 	profilePictureDownloadMaxBytes      = 2 << 20
-	profilePictureQueryType             = "image"
+	profilePictureTypeImage             = "image"
+	profilePictureTypePreview           = "preview"
 )
+
+var contactProfilePictureQueryTypes = []string{profilePictureTypePreview, profilePictureTypeImage}
 
 type contactProfilePictureLocation struct {
 	ID         string
@@ -87,19 +91,54 @@ func (e *NativeEngine) contactProfilePictureLocationFromProfileIQ(ctx context.Co
 	if target == "" {
 		return contactProfilePictureLocation{}, chatdSessionUpdate{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "WA contact profile picture target is incomplete", false)
 	}
-	request := buildContactProfilePictureIQ(e.ids.NewID("wappic_"), target, profilePictureQueryType, input.ContactPictureID)
-	response, update, err := client.sendIQ(ctx, state, input.RegisteredIdentityID, defaultWAAppVersion, request, "profile picture iq timed out")
-	if err != nil {
-		return contactProfilePictureLocation{}, update, err
+	var lastUpdate chatdSessionUpdate
+	var lastErr error
+	for _, pictureType := range contactProfilePictureQueryTypes {
+		request := buildContactProfilePictureIQ(e.ids.NewID("wappic_"), target, pictureType, input.ContactPictureID)
+		response, update, err := client.sendIQ(ctx, state, input.RegisteredIdentityID, defaultWAAppVersion, request, "profile picture iq timed out")
+		lastUpdate = mergeContactProfilePictureUpdate(lastUpdate, update)
+		applyChatdConnectionState(&state, update)
+		if err != nil {
+			if !contactProfilePictureNotFound(err) {
+				return contactProfilePictureLocation{}, lastUpdate, err
+			}
+			lastErr = err
+			continue
+		}
+		location, err := contactProfilePictureLocationFromIQ(response)
+		if err != nil {
+			if !contactProfilePictureNotFound(err) {
+				return contactProfilePictureLocation{}, lastUpdate, err
+			}
+			lastErr = err
+			continue
+		}
+		if !contactProfilePictureLocationDownloadable(location) {
+			lastErr = NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture download location not found", false)
+			continue
+		}
+		return location, lastUpdate, nil
 	}
-	location, err := contactProfilePictureLocationFromIQ(response)
-	if err != nil {
-		return contactProfilePictureLocation{}, update, err
+	if lastErr == nil {
+		lastErr = NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)
 	}
-	if !contactProfilePictureLocationDownloadable(location) {
-		return contactProfilePictureLocation{}, update, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture download location not found", false)
+	return contactProfilePictureLocation{}, lastUpdate, lastErr
+}
+
+func mergeContactProfilePictureUpdate(current chatdSessionUpdate, next chatdSessionUpdate) chatdSessionUpdate {
+	if next.RoutingInfo != "" {
+		current.RoutingInfo = next.RoutingInfo
 	}
-	return location, update, nil
+	if next.Endpoint.Host != "" {
+		current.Endpoint = next.Endpoint
+	}
+	if next.ServerStaticPublic != "" {
+		current.ServerStaticPublic = next.ServerStaticPublic
+	}
+	if len(next.ContactHints) > 0 {
+		current.ContactHints = append(current.ContactHints, next.ContactHints...)
+	}
+	return current
 }
 
 func contactProfilePictureTarget(jid string, pnJID string) string {
@@ -114,9 +153,9 @@ func contactProfilePictureTarget(jid string, pnJID string) string {
 }
 
 func buildContactProfilePictureIQ(id string, jid string, pictureType string, pictureID string) chatdNode {
-	pictureType = firstNonEmpty(pictureType, profilePictureQueryType)
+	pictureType = firstNonEmpty(pictureType, profilePictureTypeImage)
 	pictureAttrs := map[string]string{"type": pictureType}
-	if pictureType == "image" {
+	if pictureType == profilePictureTypeImage {
 		pictureAttrs["query"] = "url"
 	}
 	if requestID := contactProfilePictureRequestID(pictureID); requestID != "" {
@@ -130,6 +169,11 @@ func buildContactProfilePictureIQ(id string, jid string, pictureType string, pic
 			Attrs: pictureAttrs,
 		}},
 	}
+}
+
+func contactProfilePictureNotFound(err error) bool {
+	var appErr *AppError
+	return errors.As(err, &appErr) && appErr.Code == waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND
 }
 
 func contactProfilePictureRequestID(value string) string {
