@@ -1,4 +1,5 @@
-import { useMemo, useState } from 'react';
+import type { MouseEvent } from 'react';
+import { useMemo, useRef, useState } from 'react';
 import { Loader2, Search, Trash2 } from 'lucide-react';
 import { NavLink } from 'react-router';
 import { WAContactKind } from '../proto/byte/v/forge/waapp/v1/contacts';
@@ -33,9 +34,29 @@ export function WaContactList({ accountID, contacts, selectedID, loading, error,
 
 function ContactRow({ accountID, contact, selected, deleting, onOpenContact, onDeleteContact }: { accountID: string; contact: WaContact; selected: boolean; deleting: boolean; onOpenContact: (contactID: string) => void; onDeleteContact: (contactID: string) => void }) {
   const unread = contact.unreadCount > 0;
+  const holdTimer = useRef<number | undefined>(undefined);
+  const revealedByHold = useRef(false);
+  const [deleteVisible, setDeleteVisible] = useState(false);
+  const revealDelete = (blockNextClick = true) => {
+    revealedByHold.current = blockNextClick;
+    setDeleteVisible(true);
+  };
+  const clearHold = () => window.clearTimeout(holdTimer.current);
+  const startHold = () => {
+    clearHold();
+    holdTimer.current = window.setTimeout(() => revealDelete(), 650);
+  };
+  const openOrReveal = (event: MouseEvent<HTMLAnchorElement>) => {
+    if (revealedByHold.current) {
+      event.preventDefault();
+      revealedByHold.current = false;
+      return;
+    }
+    if (unread) onOpenContact(contact.id);
+  };
   return (
-    <div className={`mb-1 grid grid-cols-[1fr_auto] items-center rounded-2xl transition hover:bg-muted/60 ${selected ? 'bg-primary/10' : unread ? 'bg-emerald-50/70' : ''}`}>
-      <NavLink className="grid min-w-0 grid-cols-[42px_1fr_auto] items-center gap-3 px-3 py-2 text-left" to={waContactPath(accountID, contact.id)} onClick={() => unread && onOpenContact(contact.id)}>
+    <div className={`mb-1 grid grid-cols-[1fr_auto] items-center rounded-2xl transition hover:bg-muted/60 ${selected ? 'bg-primary/10' : unread ? 'bg-emerald-50/70' : ''}`} onContextMenu={(event) => { event.preventDefault(); revealDelete(false); }}>
+      <NavLink className="grid min-w-0 grid-cols-[42px_1fr_auto] items-center gap-3 px-3 py-2 text-left" to={waContactPath(accountID, contact.id)} title="长按显示删除" onClick={openOrReveal} onPointerDown={startHold} onPointerLeave={clearHold} onPointerCancel={clearHold} onPointerUp={clearHold}>
         <ContactAvatar contact={contact} />
         <span className="min-w-0 space-y-0.5">
           <span className="flex min-w-0 items-center gap-2">
@@ -50,7 +71,7 @@ function ContactRow({ accountID, contact, selected, deleting, onOpenContact, onD
           {unread ? <Badge variant="default">{contact.unreadCount}</Badge> : contact.count > 0 ? <span className="text-[11px] text-muted-foreground">{contact.count}</span> : null}
         </span>
       </NavLink>
-      <button className="mr-2 grid size-8 place-items-center rounded-full text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" type="button" title="删除联系人" aria-label="删除联系人" disabled={deleting} onClick={() => onDeleteContact(contact.id)}>{deleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 size={14} />}</button>
+      {deleteVisible && <button className="mr-2 grid size-8 place-items-center rounded-full text-muted-foreground transition hover:bg-destructive/10 hover:text-destructive disabled:opacity-50" type="button" title="删除联系人" aria-label="删除联系人" disabled={deleting} onClick={() => onDeleteContact(contact.id)}>{deleting ? <Loader2 className="size-4 animate-spin" /> : <Trash2 size={14} />}</button>}
     </div>
   );
 }
