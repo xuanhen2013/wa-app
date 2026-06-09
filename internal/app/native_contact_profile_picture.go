@@ -3,6 +3,7 @@ package app
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -15,6 +16,7 @@ import (
 
 const (
 	defaultContactProfilePictureTimeout = 20 * time.Second
+	commonProxyContactProfilePictureTry = 10 * time.Second
 	profilePictureDirectPathHost        = "https://pps.whatsapp.net"
 	profilePictureMediaDirectPathHost   = "https://mmg.whatsapp.net"
 	profilePictureDownloadMaxBytes      = 2 << 20
@@ -28,6 +30,26 @@ type contactProfilePictureLocation struct {
 }
 
 func (e *NativeEngine) ResolveContactProfilePicture(ctx context.Context, input EngineContactProfilePictureInput) EngineContactProfilePictureResult {
+	attempt := input
+	if strings.TrimSpace(e.activeProxyURL) != "" && (attempt.RemoteTimeout <= 0 || attempt.RemoteTimeout > commonProxyContactProfilePictureTry) {
+		attempt.RemoteTimeout = commonProxyContactProfilePictureTry
+	}
+	result := e.resolveContactProfilePicture(ctx, attempt)
+	if result.Err == nil || strings.TrimSpace(e.activeProxyURL) == "" || !contactProfilePictureDirectFallbackAllowed(result.Err) {
+		return result
+	}
+	direct, err := e.WithProxyURL("")
+	if err != nil {
+		return result
+	}
+	fallback := direct.resolveContactProfilePicture(ctx, input)
+	if fallback.Err == nil {
+		return fallback
+	}
+	return result
+}
+
+func (e *NativeEngine) resolveContactProfilePicture(ctx context.Context, input EngineContactProfilePictureInput) EngineContactProfilePictureResult {
 	jid := normalizeWAJID(input.ContactJID)
 	if input.WAAccountID == "" || input.ClientProfileID == "" || input.RegisteredIdentityID == "" || jid == "" {
 		return EngineContactProfilePictureResult{Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "WA contact profile picture input is incomplete", false)}
@@ -75,6 +97,19 @@ func (e *NativeEngine) ResolveContactProfilePicture(ctx context.Context, input E
 	}
 	data, contentType, err := httpClient.getProfilePicture(ctx, location, state.UserAgent)
 	return EngineContactProfilePictureResult{ProfilePictureID: location.ID, ContentType: contentType, Data: data, Err: err}
+}
+
+func contactProfilePictureDirectFallbackAllowed(err error) bool {
+	var appErr *AppError
+	if err == nil || errors.As(err, &appErr) && appErr.Code == waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND {
+		return false
+	}
+	switch contactProfilePictureFailureReason(err) {
+	case "timeout", "proxy_auth_failed", "proxy_connect_failed", "proxy_failed", "dns_failed", "connect_refused", "tls_failed":
+		return true
+	default:
+		return false
+	}
 }
 
 func (e *NativeEngine) contactProfilePictureLocationFromUsync(ctx context.Context, client *chatdClient, state nativeState, input EngineContactProfilePictureInput, jid string) (contactProfilePictureLocation, chatdSessionUpdate, error) {
