@@ -24,12 +24,14 @@ jobs:
     steps:
       - name: Checkout
         uses: actions/checkout@v4
+        with:
+          path: wa-app
 
       - name: Checkout common-lib dependency
         uses: actions/checkout@v4
         with:
           repository: ${{ github.repository_owner }}/common-lib
-          path: ../common-lib
+          path: common-lib
           token: ${{ github.token }}
 
       - name: Set up Docker Buildx
@@ -56,8 +58,8 @@ jobs:
       - name: Build and push image
         uses: docker/build-push-action@v6
         with:
-          context: ${{ github.workspace }}/..
-          file: ${{ github.workspace }}/wa-app/Dockerfile
+          context: .
+          file: wa-app/Dockerfile
           push: ${{ github.event_name != 'pull_request' }}
           tags: ${{ steps.metadata.outputs.tags }}
           labels: ${{ steps.metadata.outputs.labels }}
