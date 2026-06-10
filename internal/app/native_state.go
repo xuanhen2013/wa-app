@@ -460,7 +460,20 @@ func renderNativePlain(params map[string]string, rawKeys map[string]struct{}) st
 }
 
 func stableParamOrder(params map[string]string) []string {
-	preferred := []string{"cc", "in", "method", "lg", "lc", "fdid", "expid", "access_session_id", "id", "backup_token", "code", "auth_response", "context", "advertising_id", "login", "type", "token", "authkey", "e_ident", "e_keytype", "e_regid", "e_skey_id", "e_skey_val", "e_skey_sig"}
+	preferred := []string{
+		"cc", "in", "method", "lg", "lc", "fdid", "expid", "access_session_id",
+		"id", "backup_token", "code", "auth_response", "context", "advertising_id",
+		"login", "type", "token", "authkey", "e_ident", "e_keytype", "e_regid",
+		"e_skey_id", "e_skey_val", "e_skey_sig",
+		"mistyped", "reason", "hasav", "offline_ab", "client_metrics", "entered",
+		"read_phone_permission_granted", "sim_state", "network_operator_name",
+		"sim_operator_name", "device_name", "backup_token_error", "mcc", "mnc",
+		"sim_mcc", "sim_mnc", "education_screen_displayed", "prefer_sms_over_flash",
+		"network_radio_type", "simnum", "hasinrc", "pid", "rc", "device_ram", "gpia",
+		"db", "recaptcha", "_ge", "_gi", "_gg", "_gp", "_ga", "aid",
+		"feo2_query_status", "is_foa_fdid_app_installed", "language_selector_time_spent",
+		"language_selector_clicked_count",
+	}
 	seen := map[string]struct{}{}
 	out := []string{}
 	for _, key := range preferred {

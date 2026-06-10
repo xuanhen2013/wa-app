@@ -101,7 +101,7 @@ Go 原生实现关系：
 
 - Go profile 已生成可验证的 Signal/X25519 key bundle：`e_skey_sig` 使用 identity private key 对带 Curve25519 type 前缀的 signed prekey public key 做 XEdDSA 签名，并在写入 state 前自校验。
 - 原生注册 HTTP 参数覆盖实际 App 主干形态：`/v2/exist`、`/v2/code`、`/v2/register` 统一复用稳定 profile/key bundle，发送 code/register 默认设备 map，并保留 SMS、voice、flash、WA old、email OTP、passkey、silent auth、recaptcha 等投递/挑战方式的协议枚举与等待状态解析。
-- WAMSYS 对齐记录见 `docs/registration-wamsys-re.md`。App 侧硬件/反滥用生成的 opaque WAMSYS 字段按逆向确认的输入、编码、签名或加密链路精准伪造；profile/default map 不承载 `gpia/_gi/_gg/_gp/_ga/aid`，这些字段只能由明确的 WAMSYS material source 注入，当前 source 为 `ImportWamsysCapture` / `BuildRegistrationRequest`，后续替换为 App/JNI precision provider 或纯 Go 复现 provider。
+- WAMSYS 对齐记录见 `docs/registration-wamsys-re.md`。App 侧硬件/反滥用生成的 opaque WAMSYS 字段按逆向确认的字段集、长度、编码和生命周期精准伪造；profile/default map 不承载 `gpia/_gi/_gg/_gp/_ga/aid`，这些字段只能由明确的 WAMSYS material source 注入。运行态 `/v2/exist`、`/v2/code` 使用 Pure-Go precision provider，授权分析场景可通过 `ImportWamsysCapture` / `BuildRegistrationRequest` 显式覆盖。
 - chatd token dictionary 目前使用最小 fallback 表，覆盖当前收消息与 ack 所需节点；如需更完整词表，应迁移为 Go 资源或生成物，而不是运行时读取 `wa-re` 脚本。
 - 跨步骤业务编排不依赖外部编排器；`StartRegistration` 提供本服务原生 HTTP 编排入口，外部自动化如需接入只能调用 wa-app 自有 HTTP/gRPC 原子能力。`BuildRegistrationRequest` 只产出请求材料，不替代 `RequestVerificationCode` / `SubmitVerificationCode` 的业务记录。
 

@@ -47,7 +47,7 @@ func NewNativeEngine(stateStore NativeStateStore, clock Clock, ids IDGenerator) 
 	if err != nil {
 		return nil, err
 	}
-	return &NativeEngine{stateStore: stateStore, http: hc, clock: clock, ids: ids, wamsys: captureWamsysMaterialProvider{}}, nil
+	return &NativeEngine{stateStore: stateStore, http: hc, clock: clock, ids: ids, wamsys: precisionWamsysMaterialProvider{}}, nil
 }
 
 func (e *NativeEngine) WithProxyURL(proxyURL string) (*NativeEngine, error) {
@@ -66,7 +66,7 @@ func (e *NativeEngine) wamsysProvider() wamsysMaterialProvider {
 	if e != nil && e.wamsys != nil {
 		return e.wamsys
 	}
-	return captureWamsysMaterialProvider{}
+	return precisionWamsysMaterialProvider{}
 }
 
 func (e *NativeEngine) CloseIdleConnections() {
@@ -95,6 +95,9 @@ func (e *NativeEngine) ProbeAccount(ctx context.Context, input EngineRegistratio
 
 func (e *NativeEngine) probeAccountWithState(ctx context.Context, input EngineRegistrationInput, state nativeState) EngineProbeResult {
 	params, rawKeys := e.existParams(input.Phone, state)
+	if err := e.applyRuntimeWamsys(ctx, waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_EXIST, input.Phone, state, params, rawKeys); err != nil {
+		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}
+	}
 	plain := renderNativePlain(params, rawKeys)
 	client, err := e.httpForProxy()
 	if err != nil {
@@ -126,6 +129,9 @@ func (e *NativeEngine) RequestVerificationCode(ctx context.Context, input Engine
 
 func (e *NativeEngine) requestVerificationCodeWithState(ctx context.Context, input EngineRegistrationInput, state nativeState) (EngineCodeResult, nativeState) {
 	params, rawKeys := e.codeParams(input.Phone, input.DeliveryMethod, state)
+	if err := e.applyRuntimeWamsys(ctx, waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_CODE, input.Phone, state, params, rawKeys); err != nil {
+		return EngineCodeResult{Status: waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED, Err: err}, state
+	}
 	plain := renderNativePlain(params, rawKeys)
 	client, err := e.httpForProxy()
 	if err != nil {

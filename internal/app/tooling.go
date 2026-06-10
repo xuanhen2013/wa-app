@@ -182,17 +182,22 @@ func (e *NativeEngine) BuildRegistrationRequest(ctx context.Context, req *waappv
 	if phoneCC(phone) == "" && phoneNational(phone) == "" {
 		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "phone is required", false)
 	}
+	kind := req.GetKind()
+	if kind == waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_UNSPECIFIED {
+		kind = waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_CODE
+	}
 	method := registrationMethodFromName(req.GetMethod())
 	methodName := registrationMethodName(method, "sms")
 	language := firstNonEmpty(req.GetLanguage(), "en")
 	locale := firstNonEmpty(req.GetLocale(), "US")
-	switch req.GetKind() {
+	switch kind {
 	case waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_EXIST:
 		if hasState {
 			base, raw := e.existParams(phone, state)
 			params.merge(base, raw)
 		} else {
 			profile := buildNativePhoneProfile(phone)
+			state = nativeState{CC: phoneCC(phone), Phone: phoneNational(phone), UserAgent: profile.UserAgent, Profile: profile}
 			params.set("cc", phoneCC(phone), false)
 			params.set("in", phoneNational(phone), false)
 			params.set("lg", language, false)
@@ -209,6 +214,7 @@ func (e *NativeEngine) BuildRegistrationRequest(ctx context.Context, req *waappv
 			params.merge(base, raw)
 		} else {
 			profile := buildNativePhoneProfile(phone)
+			state = nativeState{CC: phoneCC(phone), Phone: phoneNational(phone), UserAgent: profile.UserAgent, Profile: profile}
 			params.set("cc", phoneCC(phone), false)
 			params.set("in", phoneNational(phone), false)
 			params.set("method", methodName, false)
@@ -222,6 +228,7 @@ func (e *NativeEngine) BuildRegistrationRequest(ctx context.Context, req *waappv
 			params.merge(base, raw)
 		} else {
 			profile := buildNativePhoneProfile(phone)
+			state = nativeState{CC: phoneCC(phone), Phone: phoneNational(phone), UserAgent: profile.UserAgent, Profile: profile}
 			params.set("cc", phoneCC(phone), false)
 			params.set("in", phoneNational(phone), false)
 			params.set("method", methodName, false)
@@ -231,10 +238,10 @@ func (e *NativeEngine) BuildRegistrationRequest(ctx context.Context, req *waappv
 			applyNativeRawMapParams(&params, rawKeys, codeDeviceMap(methodName, nativeState{Profile: profile}), true)
 		}
 	}
-	if req.GetKind() != waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_EXIST {
+	if kind != waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_EXIST {
 		params.set("method", firstNonEmpty(params.get("method"), methodName), false)
 	}
-	wamsysCapture, err := e.wamsysProvider().RegistrationMaterial(ctx, wamsysMaterialInput{Capture: req.GetWamsysCapture()})
+	wamsysCapture, err := e.wamsysProvider().RegistrationMaterial(ctx, wamsysMaterialInput{Capture: req.GetWamsysCapture(), Kind: kind, Phone: phone, State: state})
 	if err != nil {
 		return nil, err
 	}

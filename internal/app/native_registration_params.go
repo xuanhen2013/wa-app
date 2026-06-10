@@ -281,6 +281,7 @@ func existDeviceMap(state nativeState) map[string]string {
 		"network_radio_type":              fields["network_radio_type"],
 		"simnum":                          fields["simnum"],
 		"hasinrc":                         fields["hasinrc"],
+		"pid":                             fields["pid"],
 		"rc":                              fields["rc"],
 		"_ge":                             `{"sb":false,"sv":false}`,
 		"mcc":                             fields["mcc"],
