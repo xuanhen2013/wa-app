@@ -33,3 +33,33 @@ scripts/generate-proto.sh
 (cd webui && npm run proto)
 git diff --check
 ```
+
+## Docker 部署（推荐）
+
+本仓库新增了 `docker-compose.yml` 与 `.env.example`，用于直接通过 GHCR 镜像启动服务。
+
+```sh
+# 1. 复制环境变量模板并按需修改
+cp .env.example .env
+
+# 2. 拉取镜像并启动
+docker compose pull
+docker compose up -d
+```
+
+`.env` 中可通过 `WA_APP_IMAGE_TAG` 控制镜像版本。建议：
+- `latest`：快速验证（取决于远端 latest 标签）
+- `sha-<短hash>` 或固定版本号：生产更推荐固定版本，避免漂移
+
+常用维护命令：
+
+```sh
+docker compose logs -f wa-app
+docker compose down
+```
+
+如果镜像仓库是私有的，在部署机上执行一次登录：
+
+```sh
+echo "<token>" | docker login ghcr.io -u <github-username> --password-stdin
+```
