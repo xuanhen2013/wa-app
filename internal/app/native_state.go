@@ -329,6 +329,7 @@ func buildNativePhoneProfile(phone *waappv1.PhoneTarget) nativePhoneProfile {
 	ram := model.MinRAMGiB + rng.Float64()*(model.MaxRAMGiB-model.MinRAMGiB)
 	additionalFields := map[string]string{
 		"network_radio_type":    "1",
+		"pid":                   fmt.Sprintf("%d", 10000+rng.Intn(50000)),
 		"simnum":                simnum,
 		"hasinrc":               "1",
 		"rc":                    "0",

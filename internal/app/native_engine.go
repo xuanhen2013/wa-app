@@ -638,7 +638,7 @@ func (e *NativeEngine) registerParams(phone *waappv1.PhoneTarget, method waappv1
 	}
 	applyRegisterCodeResultParams(params, state)
 	raw := map[string]struct{}{"id": {}, "backup_token": {}}
-	applyNativeRawParamMap(params, raw, registerDeviceMap(methodName, state, params["token"]), true)
+	applyNativeRawParamMap(params, raw, registerDeviceMap(methodName, state), true)
 	return params, raw
 }
 

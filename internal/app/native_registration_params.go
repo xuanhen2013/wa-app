@@ -146,13 +146,12 @@ func codeDeviceMap(method string, state nativeState) map[string]string {
 		"network_radio_type":         fields["network_radio_type"],
 		"simnum":                     fields["simnum"],
 		"hasinrc":                    fields["hasinrc"],
+		"pid":                        fields["pid"],
 		"rc":                         fields["rc"],
 		"device_ram":                 fields["device_ram"],
 		"db":                         fields["db"],
 		"recaptcha":                  fields["recaptcha"],
 		"feo2_query_status":          fields["feo2_query_status"],
-		"network_operator_name":      fields["network_operator_name"],
-		"sim_operator_name":          fields["sim_operator_name"],
 		"mcc":                        fields["mcc"],
 		"mnc":                        fields["mnc"],
 		"sim_mcc":                    fields["sim_mcc"],
@@ -164,31 +163,23 @@ func codeDeviceMap(method string, state nativeState) map[string]string {
 	return out
 }
 
-func registerDeviceMap(method string, state nativeState, token string) map[string]string {
+func registerDeviceMap(method string, state nativeState) map[string]string {
 	fields := nativeDeviceMapFields(state)
 	return map[string]string{
-		"token":                      token,
-		"mistyped":                   "7",
-		"reason":                     "",
-		"hasav":                      "2",
-		"client_metrics":             nativeRegisterClientMetrics(method),
-		"entered":                    nativeCodeEntryMethod(method),
-		"mcc":                        fields["mcc"],
-		"mnc":                        fields["mnc"],
-		"sim_mcc":                    fields["sim_mcc"],
-		"sim_mnc":                    fields["sim_mnc"],
-		"network_operator_name":      fields["network_operator_name"],
-		"sim_operator_name":          fields["sim_operator_name"],
-		"network_radio_type":         fields["network_radio_type"],
-		"simnum":                     fields["simnum"],
-		"hasinrc":                    fields["hasinrc"],
-		"rc":                         fields["rc"],
-		"db":                         fields["db"],
-		"device_ram":                 fields["device_ram"],
-		"education_screen_displayed": "false",
-		"prefer_sms_over_flash":      "false",
-		"recaptcha":                  fields["recaptcha"],
-		"feo2_query_status":          fields["feo2_query_status"],
+		"mistyped":              "7",
+		"client_metrics":        nativeRegisterClientMetrics(method),
+		"entered":               nativeCodeEntryMethod(method),
+		"mcc":                   fields["mcc"],
+		"mnc":                   fields["mnc"],
+		"sim_mcc":               fields["sim_mcc"],
+		"sim_mnc":               fields["sim_mnc"],
+		"network_operator_name": fields["network_operator_name"],
+		"sim_operator_name":     fields["sim_operator_name"],
+		"network_radio_type":    fields["network_radio_type"],
+		"simnum":                fields["simnum"],
+		"hasinrc":               fields["hasinrc"],
+		"pid":                   fields["pid"],
+		"rc":                    fields["rc"],
 	}
 }
 
@@ -202,6 +193,7 @@ func nativeDeviceMapFields(state nativeState) map[string]string {
 	}
 	defaults := map[string]string{
 		"network_radio_type":    "1",
+		"pid":                   "29418",
 		"simnum":                "0",
 		"hasinrc":               "1",
 		"rc":                    "0",

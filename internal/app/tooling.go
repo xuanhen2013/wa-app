@@ -214,7 +214,7 @@ func (e *NativeEngine) BuildRegistrationRequest(ctx context.Context, req *waappv
 			params.set("method", methodName, false)
 			params.set("code", req.GetVerificationCode(), false)
 			applyNativeProfileParams(&params, rawKeys, profile, false, true)
-			applyNativeRawMapParams(&params, rawKeys, registerDeviceMap(methodName, nativeState{Profile: profile}, ""), true)
+			applyNativeRawMapParams(&params, rawKeys, registerDeviceMap(methodName, nativeState{Profile: profile}), true)
 		}
 	default:
 		if hasState {
