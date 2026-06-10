@@ -51,9 +51,8 @@ export function WaHomeRoute() {
 }
 
 export function WaCreateAccountRoute() {
-  const navigate = useNavigate();
   const { deleting, refreshAccounts, done, error } = useWaContext();
-  return <PageShell title="添加账号"><WaAccountAdd disabled={deleting} onCreated={async () => { done('注册流程已发起'); await refreshAccounts(); navigate('/', { replace: true }); }} onError={error} /></PageShell>;
+  return <PageShell title="添加账号"><WaAccountAdd disabled={deleting} onChanged={refreshAccounts} onDone={done} onError={error} /></PageShell>;
 }
 
 export function WaAccountInfoRoute() {
