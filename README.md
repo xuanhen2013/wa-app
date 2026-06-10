@@ -52,7 +52,7 @@ docker compose up -d
 - `sha-<短hash>` 或固定版本号：生产更推荐固定版本，避免漂移
 
 鉴权配置：
-- `WA_APP_AUTH_USERNAME` / `WA_APP_AUTH_PASSWORD`：同时配置后启用 dashboard HTTP Basic Auth；两者都为空则关闭；只配置一个会拒绝启动。`/healthz` 保持免鉴权用于健康检查。
+- `WA_APP_AUTH_USERNAME` / `WA_APP_AUTH_PASSWORD`：同时配置后启用 dashboard 登录页；登录成功后使用 HttpOnly Cookie 保持 7 天登录态。两者都为空则关闭；只配置一个会拒绝启动。`/healthz` 保持免鉴权用于健康检查。
 
 代理配置：
 - `WA_COMMON_PROXY`：默认 WA 出站代理。

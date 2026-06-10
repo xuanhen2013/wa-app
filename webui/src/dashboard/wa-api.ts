@@ -23,9 +23,15 @@ export const waKeys = {
 };
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
-  const resp = await fetch(path, { ...init, headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) } });
+  const resp = await fetch(path, { ...init, credentials: 'same-origin', headers: { 'Content-Type': 'application/json', ...(init?.headers || {}) } });
+  if (resp.status === 401) redirectToLogin();
   if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
   return resp.json() as Promise<T>;
+}
+
+function redirectToLogin() {
+  const next = `${window.location.pathname}${window.location.search}${window.location.hash}`;
+  window.location.assign(`/login?next=${encodeURIComponent(next || '/')}`);
 }
 
 export function getWaConnections(filters: WaConnectionFilters = {}) {
