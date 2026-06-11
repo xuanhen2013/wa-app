@@ -47,6 +47,16 @@ docker compose up -d
 
 PostgreSQL 和 Redis 都是可选组件。需要启用时，在 `docker-compose.yml` 中取消对应服务注释，并在 `.env` 中填写 `WA_APP_PG_DSN` / `WA_APP_REDIS_URL`。
 
+### 源码构建镜像
+
+`Dockerfile` 使用 `byte-v-forge` 聚合目录作为构建上下文，需要同级存在 `common-lib/` 和 `wa-app/`：
+
+```sh
+cd ..
+git clone https://github.com/byte-v-forge/common-lib.git common-lib
+docker build -f wa-app/Dockerfile -t wa-app-service:local .
+```
+
 ## 友情链接
 
 - [LINUX DO - 新的理想型社区](https://linux.do/)
