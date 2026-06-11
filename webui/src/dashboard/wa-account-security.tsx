@@ -58,21 +58,16 @@ export function WaAccountSecurityPanel({ account, onDone, onError }: Props) {
     onError: handleError,
   });
   const emailSet = useMutation({
-    mutationFn: async () => {
-      const setResp = await setWaAccountEmail(account, { email_address: email });
-      const otpResp = shouldCollectEmailOtpAfterSet(setResp.operation?.status) ? await requestWaAccountEmailOtp(account) : undefined;
-      return { setResp, otpResp };
-    },
+    mutationFn: () => setWaAccountEmail(account, { email_address: email }),
     onSuccess: (resp) => {
-      const setStatus = resp.setResp.operation?.status;
-      const status = resp.otpResp?.operation?.status || setStatus;
+      const setStatus = resp.operation?.status;
       setEmailOtpVisible(shouldCollectEmailOtpAfterSet(setStatus));
       setEmailEditing(false);
       if (setStatus === AccountSettingsOperationStatus.ACCOUNT_SETTINGS_OPERATION_STATUS_VERIFIED) {
         setEmailOtp('');
         patchStatus({ email_configured: true });
       }
-      handleSuccess(resp.otpResp ? '邮箱 OTP 已请求' : emailConfigured ? '账户邮箱修改请求已提交' : '账户邮箱设置请求已提交', status);
+      handleSuccess(emailConfigured ? '账户邮箱修改请求已提交' : '账户邮箱设置请求已提交', setStatus);
     },
     onError: handleError,
   });
