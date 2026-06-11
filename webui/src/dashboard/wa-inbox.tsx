@@ -7,7 +7,7 @@ import { useWaContactAutoResolve } from './wa-contact-resolve';
 import { buildWaChatEvents, buildWaContacts } from './wa-chat-model';
 import { WaChatThread } from './wa-chat-thread';
 import { WaContactList } from './wa-contact-list';
-import { waContactPath } from './wa-route-paths';
+import { waAccountPath, waContactPath } from './wa-route-paths';
 
 type MarkReadInput = { contactID?: string };
 
@@ -55,7 +55,7 @@ export function WaInbox({ account, contactID }: { account: WAAccount; contactID:
   return (
     <section className="grid h-dvh min-h-0 md:grid-cols-[320px_minmax(0,1fr)]">
       <WaContactList accountID={accountID} contacts={contacts} selectedID={activeContactID} loading={contactsQuery.isLoading} error={error} deletingID={deleteContactMutation.variables} onOpenContact={(id) => openContact(id, markReadMutation.mutate)} onDeleteContact={(id) => deleteContact(id, deleteContactMutation.mutate)} />
-      <WaChatThread contact={activeContact} events={threadEvents} loading={messagesQuery.isFetching || contactsQuery.isFetching} sending={sendMutation.isPending} error={error} onSendMessage={(text) => sendMutation.mutateAsync(text)} />
+      <WaChatThread contact={activeContact} accountInfoURL={waAccountPath(accountID)} events={threadEvents} loading={messagesQuery.isFetching || contactsQuery.isFetching} sending={sendMutation.isPending} error={error} onSendMessage={(text) => sendMutation.mutateAsync(text)} />
     </section>
   );
 }

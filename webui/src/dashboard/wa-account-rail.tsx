@@ -1,5 +1,4 @@
 import { useMemo, useState } from 'react';
-import type { ReactNode } from 'react';
 import { Info, Loader2, Plus } from 'lucide-react';
 import { Link, NavLink } from 'react-router';
 import { Button } from '@/components/ui/button';
@@ -7,11 +6,11 @@ import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/u
 import {
   Sidebar,
   SidebarContent,
-  SidebarFooter,
   SidebarGroup,
   SidebarGroupContent,
   SidebarHeader,
   SidebarInput,
+  SidebarMenuAction,
   SidebarMenu,
   SidebarMenuButton,
   SidebarMenuItem,
@@ -58,9 +57,6 @@ export function WaAccountRail({ accounts, selectedID, avatarVersion, connections
           </SidebarGroupContent>
         </SidebarGroup>
       </SidebarContent>
-      <SidebarFooter className="border-t border-sidebar-border">
-        <RailFooter selectedID={selectedID} />
-      </SidebarFooter>
       <SidebarRail aria-label={expanded ? '收起账号栏' : '展开账号栏'} title={expanded ? '收起账号栏' : '展开账号栏'} />
     </Sidebar>
   );
@@ -70,6 +66,7 @@ function RailHeader({ value, onChange }: { value: string; onChange: (value: stri
   return (
     <div className="flex h-10 items-center gap-2 group-data-[collapsible=icon]:justify-center">
       <SidebarInput className="h-8 group-data-[collapsible=icon]:hidden" value={value} onChange={(event) => onChange(event.target.value)} placeholder="搜索手机号" aria-label="搜索账号" />
+      <Button asChild size="icon" variant="ghost" className="size-8 group-data-[collapsible=icon]:hidden" title="添加账号" aria-label="添加账号"><Link to="/accounts/new"><Plus size={16} /></Link></Button>
       <SidebarTrigger className="shrink-0" aria-label="切换账号栏" title="切换账号栏" />
     </div>
   );
@@ -91,21 +88,11 @@ function AccountItem({ account, selected, avatarVersion, connection, loading }: 
           </span>
         </NavLink>
       </SidebarMenuButton>
+      <SidebarMenuAction asChild showOnHover>
+        <Link to={waAccountPath(id)} title="账号信息" aria-label="账号信息"><Info /></Link>
+      </SidebarMenuAction>
     </SidebarMenuItem>
   );
-}
-
-function RailFooter({ selectedID }: { selectedID: string }) {
-  return (
-    <SidebarMenu>
-      <SidebarMenuItem>{selectedID ? <FooterLink title="账号信息" to={waAccountPath(selectedID)}><Info /></FooterLink> : <SidebarMenuButton size="lg" disabled tooltip="账号信息" aria-label="账号信息" className={railButtonClass}><Info /><span className={collapsedTextClass}>账号信息</span></SidebarMenuButton>}</SidebarMenuItem>
-      <SidebarMenuItem><FooterLink title="添加账号" to="/accounts/new"><Plus /></FooterLink></SidebarMenuItem>
-    </SidebarMenu>
-  );
-}
-
-function FooterLink({ children, title, to }: { children: ReactNode; title: string; to: string }) {
-  return <SidebarMenuButton asChild size="lg" tooltip={title} className={railButtonClass}><Link to={to} title={title} aria-label={title}>{children}<span className={collapsedTextClass}>{title}</span></Link></SidebarMenuButton>;
 }
 
 function LoadMoreButton({ loading, onLoadMore }: { loading: boolean; onLoadMore: () => void }) {
