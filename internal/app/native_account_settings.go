@@ -8,6 +8,10 @@ import (
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 )
 
+type accountSettingsIQSender interface {
+	sendIQ(context.Context, nativeState, string, string, chatdNode, string) (chatdNode, chatdSessionUpdate, error)
+}
+
 func (e *NativeEngine) ApplyAccountSettings(ctx context.Context, input EngineAccountSettingsInput) EngineAccountSettingsResult {
 	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
@@ -21,15 +25,18 @@ func (e *NativeEngine) ApplyAccountSettings(ctx context.Context, input EngineAcc
 	if err != nil {
 		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: err}
 	}
+	return e.applyAccountSettingsWithSender(ctx, input, state, newChatdClient(chatdConfigForState(proxyURL, state, defaultAccountIQTimeout)))
+}
+
+func (e *NativeEngine) applyAccountSettingsWithSender(ctx context.Context, input EngineAccountSettingsInput, state nativeState, sender accountSettingsIQSender) EngineAccountSettingsResult {
 	if input.Kind == waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_PROFILE_NAME_SET {
-		return e.applyAccountProfileName(ctx, input, state, proxyURL)
+		return e.applyAccountProfileName(ctx, input, state, sender)
 	}
 	request := buildAccountSettingsIQ(e.ids.NewID("waiq_"), input)
 	if request.Tag == "" {
 		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "account settings operation is not supported", false)}
 	}
-	client := newChatdClient(chatdConfigForState(proxyURL, state, defaultAccountIQTimeout))
-	response, update, err := client.sendAccountIQ(ctx, state, input, defaultWAAppVersion, request)
+	response, update, err := sender.sendIQ(ctx, state, input.RegisteredIdentityID, defaultWAAppVersion, request, "account settings iq timed out")
 	if applyChatdSessionUpdateState(&state, update) {
 		_ = e.saveState(ctx, input.ClientProfileID, state)
 	}
@@ -39,7 +46,7 @@ func (e *NativeEngine) ApplyAccountSettings(ctx context.Context, input EngineAcc
 	return accountSettingsResultFromIQ(input.Kind, response)
 }
 
-func (e *NativeEngine) applyAccountProfileName(ctx context.Context, input EngineAccountSettingsInput, state nativeState, proxyURL string) EngineAccountSettingsResult {
+func (e *NativeEngine) applyAccountProfileName(ctx context.Context, input EngineAccountSettingsInput, state nativeState, sender accountSettingsIQSender) EngineAccountSettingsResult {
 	state.PushName = input.DisplayName
 	if err := e.saveState(ctx, input.ClientProfileID, state); err != nil {
 		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native account profile name could not be saved", true)}
@@ -56,8 +63,7 @@ func (e *NativeEngine) applyAccountProfileName(ctx context.Context, input Engine
 		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: err}
 	}
 	request.Attrs["id"] = e.ids.NewID("waiq_")
-	client := newChatdClient(chatdConfigForState(proxyURL, state, defaultAccountIQTimeout))
-	response, update, err := client.sendAccountIQ(ctx, state, input, defaultWAAppVersion, request)
+	response, update, err := sender.sendIQ(ctx, state, input.RegisteredIdentityID, defaultWAAppVersion, request, "account settings iq timed out")
 	changed := applyChatdSessionUpdateState(&state, update)
 	if err != nil {
 		if changed {

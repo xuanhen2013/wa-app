@@ -110,6 +110,21 @@ func (e *longConnectionNativeEngine) ResolveContactProfilePicture(ctx context.Co
 	return e.NativeEngine.resolveContactProfilePictureWithSender(ctx, input, e)
 }
 
+func (e *longConnectionNativeEngine) ApplyAccountSettings(ctx context.Context, input EngineAccountSettingsInput) EngineAccountSettingsResult {
+	if e == nil || e.NativeEngine == nil {
+		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native engine is required", false)}
+	}
+	state, err := e.loadState(ctx, input.ClientProfileID)
+	if err != nil {
+		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: err}
+	}
+	if state.ChatStatic.Private == "" || state.ChatStatic.Public == "" {
+		state.ChatStatic = ensureChatStatic(state.ChatStatic)
+		_ = e.saveState(ctx, input.ClientProfileID, state)
+	}
+	return e.NativeEngine.applyAccountSettingsWithSender(ctx, input, state, e)
+}
+
 func (e *longConnectionNativeEngine) sendIQ(ctx context.Context, state nativeState, registeredIdentityID string, appVersion string, request chatdNode, timeoutMessage string) (chatdNode, chatdSessionUpdate, error) {
 	e.mu.Lock()
 	defer e.mu.Unlock()

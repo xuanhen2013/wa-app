@@ -195,7 +195,7 @@ func (s *Server) applyAccountSettingsResult(ctx context.Context, requestContext 
 	if enrich != nil {
 		input = enrich(input)
 	}
-	runner, release, err := s.accountSettingsRunner(ctx, requestContext, kind)
+	runner, release, err := s.accountSettingsRunner(ctx, requestContext, loginState, kind)
 	if err != nil {
 		return nil, EngineAccountSettingsResult{}, err
 	}
@@ -224,7 +224,7 @@ func (s *Server) queryAccountSettings(ctx context.Context, requestContext *waapp
 	if err != nil {
 		return EngineAccountSettingsResult{}, err
 	}
-	runner, release, err := s.accountSettingsRunner(ctx, requestContext, kind)
+	runner, release, err := s.accountSettingsRunner(ctx, requestContext, loginState, kind)
 	if err != nil {
 		return EngineAccountSettingsResult{}, err
 	}
@@ -258,7 +258,12 @@ func accountSettingsCompletedAt(op *waappv1.AccountSettingsOperation, fallback t
 	return completedAt
 }
 
-func (s *Server) accountSettingsRunner(ctx context.Context, requestContext *waappv1.RequestContext, kind waappv1.AccountSettingsOperationKind) (ProtocolEngine, func(), error) {
+func (s *Server) accountSettingsRunner(ctx context.Context, requestContext *waappv1.RequestContext, loginState *waappv1.LoginState, kind waappv1.AccountSettingsOperationKind) (ProtocolEngine, func(), error) {
+	if s.longConnections != nil {
+		if runner := s.longConnections.Runner(loginState); runner != nil {
+			return runner, func() {}, nil
+		}
+	}
 	runner := s.runner
 	native, ok := runner.(*NativeEngine)
 	if !ok || !accountSettingsUsesGatewayProxy(kind) {
