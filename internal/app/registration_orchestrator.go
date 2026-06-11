@@ -19,6 +19,10 @@ func (s *Server) StartRegistration(ctx context.Context, payload map[string]any) 
 	basePayload := cloneActionPayload(payload)
 	basePayload["purpose"] = firstNonEmpty(textField(basePayload, "purpose"), "WA_REGISTRATION")
 	basePayload["proxy_session_mode"] = firstNonEmpty(textField(basePayload, "proxy_session_mode"), "STICKY")
+	method := registrationMethodFromPayload(basePayload)
+	if reason := directRegistrationMethodUnsupportedReason(method); reason != "" {
+		return rejectedRegistrationResult(basePayload, registrationMethodUnsupportedMap(method, reason)), nil
+	}
 
 	fingerprint, err := gateway.generateTransientFingerprint(ctx, basePayload)
 	if err != nil {
@@ -44,7 +48,6 @@ func (s *Server) StartRegistration(ctx context.Context, payload map[string]any) 
 		}
 	}()
 	phone := normalizePhone(phoneFromAction(basePayload))
-	method := registrationMethodFromPayload(basePayload)
 	probeResult := runner.probeAccountWithState(ctx, EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone, DeliveryMethod: method}, state)
 	if !registrationProbeAllowsMethod(probeResult, method) {
 		return rejectedRegistrationResult(basePayload, registrationProbeFailureMap(probeResult, route, managedRoute)), nil
@@ -113,6 +116,36 @@ func registrationMethodFromPayload(payload map[string]any) waappv1.VerificationD
 		return waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS
 	}
 	return method
+}
+
+func directRegistrationMethodUnsupportedReason(method waappv1.VerificationDeliveryMethod) string {
+	switch method {
+	case waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_FLASH:
+		return "flash call verification requires Android missed-call/call-log runtime"
+	default:
+		return ""
+	}
+}
+
+func registrationMethodUnsupportedMap(method waappv1.VerificationDeliveryMethod, reason string) map[string]any {
+	return map[string]any{
+		"success":        false,
+		"request_failed": true,
+		"status":         "REGISTRATION_METHOD_UNSUPPORTED",
+		"error_message":  reason,
+		"reject_reason":  reason,
+		"phone_status": map[string]any{
+			"account_status":      waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED.String(),
+			"account_flow":        accountProbeFlowProbeFailed,
+			"account_reachable":   false,
+			"request_failed":      true,
+			"sms_available":       false,
+			"can_register":        false,
+			"delivery_method":     method.String(),
+			"registration_method": registrationMethodName(method, ""),
+			"reject_reason":       reason,
+		},
+	}
 }
 
 func cloneActionPayload(payload map[string]any) map[string]any {

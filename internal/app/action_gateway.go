@@ -158,6 +158,10 @@ func (g *actionGateway) commitFingerprint(ctx context.Context, payload map[strin
 }
 
 func (g *actionGateway) requestSMSOTP(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	method := registrationMethodFromPayload(payload)
+	if reason := directRegistrationMethodUnsupportedReason(method); reason != "" {
+		return registrationMethodUnsupportedMap(method, reason), nil
+	}
 	runner, route, managedRoute, err := g.registrationRequestRunner(ctx, payload)
 	if err != nil {
 		return nil, err
@@ -168,7 +172,7 @@ func (g *actionGateway) requestSMSOTP(ctx context.Context, payload map[string]an
 		WaAccountId:       textField(payload, "wa_account_id"),
 		ClientProfileId:   textField(payload, "client_profile_id"),
 		ProtocolProfileId: textField(payload, "protocol_profile_id"),
-		DeliveryMethod:    registrationMethodFromPayload(payload),
+		DeliveryMethod:    method,
 	}, runner)
 	runner.CloseIdleConnections()
 	if err != nil {

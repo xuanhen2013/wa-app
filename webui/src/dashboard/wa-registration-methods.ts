@@ -15,7 +15,6 @@ export type SelectableRegistrationMethodOption = Omit<RegistrationMethodOption, 
 export const selectableRegistrationMethods: SelectableRegistrationMethodOption[] = [
   methodOption(VerificationDeliveryMethod.VERIFICATION_DELIVERY_METHOD_SMS, 'sms', '服务端下发短信验证码'),
   methodOption(VerificationDeliveryMethod.VERIFICATION_DELIVERY_METHOD_VOICE, 'voice', '语音电话播报验证码'),
-  methodOption(VerificationDeliveryMethod.VERIFICATION_DELIVERY_METHOD_FLASH, 'flash', 'Flash call 验证'),
   methodOption(VerificationDeliveryMethod.VERIFICATION_DELIVERY_METHOD_WA_OLD, 'wa_old', '旧设备 / 已登录 WhatsApp 验证'),
   methodOption(VerificationDeliveryMethod.VERIFICATION_DELIVERY_METHOD_EMAIL_OTP, 'email_otp', '邮箱验证码'),
   methodOption(VerificationDeliveryMethod.VERIFICATION_DELIVERY_METHOD_SEND_SMS, 'send_sms', '从本机发送短信到 WhatsApp'),
@@ -24,7 +23,7 @@ export const selectableRegistrationMethods: SelectableRegistrationMethodOption[]
 export const apkSupportedLoginRegistrationMethods = [
   loginMethodOption(RegistrationLoginMethod.REGISTRATION_LOGIN_METHOD_SMS, 'sms', '服务端下发短信验证码'),
   loginMethodOption(RegistrationLoginMethod.REGISTRATION_LOGIN_METHOD_VOICE, 'voice', '语音电话播报验证码'),
-  loginMethodOption(RegistrationLoginMethod.REGISTRATION_LOGIN_METHOD_FLASH, 'flash', 'Flash call 验证'),
+  loginMethodOption(RegistrationLoginMethod.REGISTRATION_LOGIN_METHOD_FLASH, 'flash', 'Flash call / 未接来电验证，需要 Android 设备侧监听'),
   loginMethodOption(RegistrationLoginMethod.REGISTRATION_LOGIN_METHOD_WA_OLD, 'wa_old', '旧设备 / 已登录 WhatsApp 验证'),
   loginMethodOption(RegistrationLoginMethod.REGISTRATION_LOGIN_METHOD_EMAIL_OTP, 'email_otp', '邮箱验证码'),
   loginMethodOption(RegistrationLoginMethod.REGISTRATION_LOGIN_METHOD_SEND_SMS, 'send_sms', '从本机发送短信到 WhatsApp'),
