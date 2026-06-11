@@ -44,7 +44,7 @@ export function WaAccountSecurityPanel({ account, onDone, onError }: Props) {
     mutationFn: () => setWaAccountEmail(account, { email_address: email }),
     onSuccess: (resp) => {
       const status = resp.operation?.status;
-      setEmailOtpVisible(shouldShowEmailOtp(status));
+      setEmailOtpVisible(shouldCollectEmailOtpAfterSet(status));
       setEmailEditing(false);
       if (status === AccountSettingsOperationStatus.ACCOUNT_SETTINGS_OPERATION_STATUS_VERIFIED) setEmailOtp('');
       void twoFactorStatus.refetch();
@@ -126,6 +126,11 @@ function submit(event: FormEvent<HTMLFormElement>, run: () => void) { event.prev
 
 function statusReady(query: TwoFactorStatusView) {
   return !query.isPending && !query.isError;
+}
+
+function shouldCollectEmailOtpAfterSet(status?: AccountSettingsOperationStatus) {
+  return status !== AccountSettingsOperationStatus.ACCOUNT_SETTINGS_OPERATION_STATUS_VERIFIED
+    && status !== AccountSettingsOperationStatus.ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED;
 }
 
 function shouldShowEmailOtp(status?: AccountSettingsOperationStatus) {
