@@ -35,7 +35,7 @@ import {
 type RailProps = { accounts: WAAccount[]; selectedID: string; avatarVersion: string; connections: Map<string, LongConnectionState>; loading: boolean; connectionsLoading: boolean; hasNextPage: boolean; loadingMore: boolean; onLoadMore: () => void };
 type AccountItemProps = { account: WAAccount; selected: boolean; avatarVersion: string; connection?: LongConnectionState; loading: boolean };
 
-const collapsedIconButtonClass = 'group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:justify-center';
+const collapsedIconButtonClass = 'group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-12! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-0!';
 const collapsedTextClass = 'group-data-[collapsible=icon]:hidden';
 
 export function WaAccountRail({ accounts, selectedID, avatarVersion, connections, loading, connectionsLoading, hasNextPage, loadingMore, onLoadMore }: RailProps) {
@@ -79,7 +79,7 @@ export function WaAccountRail({ accounts, selectedID, avatarVersion, connections
 function RailBrand({ count }: { count: number }) {
   const { state, toggleSidebar } = useSidebar();
   if (state === 'collapsed') {
-    return <SidebarMenuButton size="lg" tooltip="展开账号栏" aria-label="展开账号栏" className={collapsedIconButtonClass} onClick={toggleSidebar}><WhatsAppIcon className="size-7" /></SidebarMenuButton>;
+    return <SidebarMenuButton size="lg" tooltip="展开账号栏" aria-label="展开账号栏" className={collapsedIconButtonClass} onClick={toggleSidebar}><WhatsAppIcon className="size-9!" /></SidebarMenuButton>;
   }
   return (
     <div className="flex h-12 items-center gap-2 rounded-md px-2">
@@ -107,7 +107,7 @@ function AccountItem({ account, selected, avatarVersion, connection, loading }: 
       <SidebarMenuButton asChild size="lg" isActive={selected} tooltip={title} className={`h-14 ${collapsedIconButtonClass}`}>
         <NavLink to={waChatsPath(id)} title={title} aria-label={title}>
           <span className="relative shrink-0">
-            <WaAccountAvatar account={account} version={avatarVersion} size="xs" />
+            <WaAccountAvatar account={account} version={avatarVersion} size="lg" />
             <WaConnectionDot className="absolute -bottom-0.5 -right-0.5 ring-2 ring-sidebar" connection={connection} loading={loading} />
           </span>
           <span className={`min-w-0 flex-1 ${collapsedTextClass}`}>
@@ -123,8 +123,8 @@ function AccountItem({ account, selected, avatarVersion, connection, loading }: 
 function RailFooter({ selectedID }: { selectedID: string }) {
   return (
     <SidebarMenu>
-      <SidebarMenuItem>{selectedID ? <FooterLink title="账号信息" to={waAccountPath(selectedID)}><Info /></FooterLink> : <SidebarMenuButton size="lg" disabled tooltip="账号信息" aria-label="账号信息" className={collapsedIconButtonClass}><Info /><span className={collapsedTextClass}>账号信息</span></SidebarMenuButton>}</SidebarMenuItem>
-      <SidebarMenuItem><FooterLink title="添加账号" to="/accounts/new"><Plus /></FooterLink></SidebarMenuItem>
+      <SidebarMenuItem>{selectedID ? <FooterLink title="账号信息" to={waAccountPath(selectedID)}><Info className="size-6!" /></FooterLink> : <SidebarMenuButton size="lg" disabled tooltip="账号信息" aria-label="账号信息" className={collapsedIconButtonClass}><Info className="size-6!" /><span className={collapsedTextClass}>账号信息</span></SidebarMenuButton>}</SidebarMenuItem>
+      <SidebarMenuItem><FooterLink title="添加账号" to="/accounts/new"><Plus className="size-6!" /></FooterLink></SidebarMenuItem>
     </SidebarMenu>
   );
 }

@@ -18,7 +18,7 @@ import { Button, LoadingText, SidebarInset, SidebarProvider, ToastMessage, useTo
 type WaRouteContext = { accounts: WAAccount[]; accountsLoading: boolean; connections: Map<string, LongConnectionState>; deleting: boolean; refreshAccounts: () => Promise<void>; refreshAccountAvatars: () => void; deleteAccount: (account: WAAccount) => void; done: (message: string) => void; error: (message: string) => void };
 
 const emptyAccounts: WAAccount[] = [];
-const accountSidebarStyle = { '--sidebar-width': '18rem' } as CSSProperties;
+const accountSidebarStyle = { '--sidebar-width': '18rem', '--sidebar-width-icon': '4rem' } as CSSProperties;
 
 export function WaLayout() {
   const toast = useToastMessage();

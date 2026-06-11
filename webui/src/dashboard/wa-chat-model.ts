@@ -62,14 +62,15 @@ export function buildWaContacts(events: WaChatEvent[], records: WAContactRecord[
 }
 
 export function toAssistantMessage(event: WaChatEvent): ThreadMessageLike {
-  return {
+  const role = event.outgoing ? 'user' : 'assistant';
+  const message: ThreadMessageLike = {
     id: event.id,
-    role: event.outgoing ? 'user' : 'assistant',
+    role,
     content: event.text,
     createdAt: event.at,
-    status: { type: 'complete', reason: 'stop' },
     metadata: { custom: { source: event.source, sender: event.sender, copyText: event.copyText, outgoing: event.outgoing, displayText: event.text, read: event.read, canMarkRead: event.canMarkRead, readAt: event.readAt } satisfies WaChatMeta },
   };
+  return role === 'assistant' ? { ...message, status: { type: 'complete', reason: 'stop' } } : message;
 }
 
 export function formatChatTime(value?: Date) {
