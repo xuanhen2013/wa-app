@@ -154,8 +154,7 @@ func codeDeviceMap(method string, state nativeState) map[string]string {
 		"manage_call_permission":     "false",
 		"call_log_permission":        "false",
 		"education_screen_displayed": "false",
-		"prefer_sms_over_flash":      nativePreferSMSOverFlash(method),
-		"_ge":                        `{"sb":false,"sv":false}`,
+		"prefer_sms_over_flash":      nativePreferSMSOverFlash(state),
 		"network_radio_type":         fields["network_radio_type"],
 		"sim_type":                   fields["sim_type"],
 		"airplane_mode_type":         fields["airplane_mode_type"],
@@ -179,11 +178,8 @@ func codeDeviceMap(method string, state nativeState) map[string]string {
 	return out
 }
 
-func nativePreferSMSOverFlash(method string) string {
-	if method == "sms" {
-		return "true"
-	}
-	return "false"
+func nativePreferSMSOverFlash(state nativeState) string {
+	return firstNonEmpty(state.Profile.AdditionalMapFields["prefer_sms_over_flash"], "false")
 }
 
 func addNonEmptyNativeCodeField(out map[string]string, fields map[string]string, key string) {
@@ -343,7 +339,6 @@ func existDeviceMap(state nativeState) map[string]string {
 		"hasinrc":                         fields["hasinrc"],
 		"pid":                             fields["pid"],
 		"rc":                              fields["rc"],
-		"_ge":                             `{"sb":false,"sv":false}`,
 		"mcc":                             fields["mcc"],
 		"mnc":                             fields["mnc"],
 		"sim_mcc":                         fields["sim_mcc"],
