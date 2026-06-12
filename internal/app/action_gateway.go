@@ -31,7 +31,9 @@ type registrationOTPWait struct {
 type registrationProxyRouteState struct {
 	AccountID     string `json:"account_id"`
 	RouteID       string `json:"route_id"`
+	LeaseID       string `json:"lease_id"`
 	Username      string `json:"username"`
+	ProfileID     string `json:"profile_id"`
 	ProxyURL      string `json:"proxy_url"`
 	ProxyMode     string `json:"proxy_mode"`
 	CountryCode   string `json:"country_code"`
@@ -623,19 +625,7 @@ func (g *actionGateway) registrationRequestRunner(ctx context.Context, payload m
 		}
 		return proxied, route, true, nil
 	}
-	if g == nil || g.server == nil || g.server.proxyRuntime == nil {
-		return engine, DynamicProxyRoute{}, false, nil
-	}
-	route, err := g.registrationGatewayProxy(ctx, payload, "WA_REGISTRATION_REQUEST_SMS")
-	if err != nil {
-		return engine, DynamicProxyRoute{}, false, nil
-	}
-	proxied, err := engine.WithProxyURL(route.ProxyURL)
-	if err != nil {
-		g.releaseProxyRoute(context.Background(), route)
-		return nil, DynamicProxyRoute{}, false, err
-	}
-	return proxied, route, true, nil
+	return engine, DynamicProxyRoute{}, false, nil
 }
 
 func (g *actionGateway) registrationSubmitRunner(ctx context.Context, payload map[string]any) (*NativeEngine, DynamicProxyRoute, bool, error) {
@@ -696,12 +686,51 @@ func (g *actionGateway) registrationGatewayProxy(ctx context.Context, payload ma
 	if username == "" {
 		return DynamicProxyRoute{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_ROUTE_UNAVAILABLE, "WA registration proxy username is not configured", false)
 	}
-	return g.server.proxyRuntime.GatewayProxyRoute(ctx, username, DynamicProxyRouteRequest{
+	return g.server.proxyRuntime.GatewayLeaseProxyRoute(ctx, username, DynamicProxyRouteRequest{
 		Purpose:       purpose,
-		CorrelationID: firstNonEmpty(textField(payload, "job_id"), textField(payload, "request_id"), textField(payload, "verification_request_id")),
+		CorrelationID: registrationProxyCorrelationID(payload),
+		SessionID:     g.registrationProxySessionID(payload, purpose),
+		CountryCode:   "US",
 		TTL:           registrationProxyRouteTTL,
 		Mode:          DynamicProxySessionModeSticky,
 	})
+}
+
+func registrationProxyCorrelationID(payload map[string]any) string {
+	ctx := actionContext(payload)
+	return firstNonEmpty(
+		textField(payload, "job_id"),
+		textField(payload, "request_id"),
+		textField(payload, "verification_request_id"),
+		ctx.GetCorrelationId(),
+		ctx.GetRequestId(),
+	)
+}
+
+func (g *actionGateway) registrationProxySessionID(payload map[string]any, purpose string) string {
+	phone := normalizePhone(phoneFromAction(payload))
+	phoneHash := ""
+	if phone.GetE164Number() != "" {
+		phoneHash = stableID(phone.GetE164Number())
+	}
+	nonce := firstNonEmpty(
+		textField(payload, "proxy_session_id"),
+		textField(payload, "registration_proxy_session_id"),
+		textField(payload, "verification_request_id"),
+	)
+	if nonce == "" && g != nil && g.server != nil && g.server.ids != nil {
+		nonce = g.server.ids.NewID("wapxs_")
+	}
+	seed := strings.Join([]string{
+		"wa-registration",
+		strings.TrimSpace(purpose),
+		phoneHash,
+		textField(payload, "wa_account_id"),
+		textField(payload, "client_profile_id"),
+		registrationProxyCorrelationID(payload),
+		nonce,
+	}, ":")
+	return "wa-reg-" + stableID(seed)
 }
 
 func (g *actionGateway) staticRegistrationProxyRoute() (DynamicProxyRoute, bool) {
@@ -732,7 +761,9 @@ func (g *actionGateway) saveRegistrationProxyRoute(ctx context.Context, verifica
 	data, err := json.Marshal(registrationProxyRouteState{
 		AccountID:     route.AccountID,
 		RouteID:       route.RouteID,
+		LeaseID:       route.LeaseID,
 		Username:      route.Username,
+		ProfileID:     route.ProfileID,
 		ProxyURL:      route.ProxyURL,
 		ProxyMode:     route.ProxyMode,
 		CountryCode:   route.CountryCode,
@@ -760,7 +791,7 @@ func (g *actionGateway) loadRegistrationProxyRoute(ctx context.Context, verifica
 	if strings.TrimSpace(state.ProxyURL) == "" {
 		return DynamicProxyRoute{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_ROUTE_UNAVAILABLE, "registration proxy route is missing proxy_url", false)
 	}
-	route := DynamicProxyRoute{AccountID: state.AccountID, RouteID: state.RouteID, Username: state.Username, ProxyURL: state.ProxyURL, ProxyMode: state.ProxyMode, CountryCode: state.CountryCode}
+	route := DynamicProxyRoute{AccountID: state.AccountID, RouteID: state.RouteID, LeaseID: state.LeaseID, Username: state.Username, ProfileID: state.ProfileID, ProxyURL: state.ProxyURL, ProxyMode: state.ProxyMode, CountryCode: state.CountryCode}
 	if state.ExpiresAtUnix > 0 {
 		route.ExpiresAt = time.Unix(state.ExpiresAtUnix, 0).UTC()
 	}
@@ -816,6 +847,9 @@ func registrationProxyRouteMap(route DynamicProxyRoute, managed bool) map[string
 	}
 	if strings.TrimSpace(route.RouteID) != "" {
 		result["route_id"] = route.RouteID
+	}
+	if strings.TrimSpace(route.LeaseID) != "" {
+		result["lease_id"] = route.LeaseID
 	}
 	if strings.TrimSpace(route.Username) != "" {
 		result["proxy_username"] = route.Username
