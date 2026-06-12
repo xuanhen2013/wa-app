@@ -94,7 +94,6 @@ func (c *nativeHTTPClient) postWASafe(ctx context.Context, endpoint string, plai
 	setNativeHTTPHeader(req, "User-Agent", firstNonEmpty(userAgent, nativeUserAgent(defaultWAAppVersion)))
 	setNativeHTTPHeader(req, "WaMsysRequest", "1")
 	setNativeHTTPHeader(req, "X-Forwarded-Host", defaultNativeHTTPHost)
-	setNativeHTTPHeader(req, "request_token", strings.ToUpper(newUUIDString()))
 	if envelope.Authorization != "" {
 		setNativeHTTPHeader(req, "Authorization", envelope.Authorization)
 	}
