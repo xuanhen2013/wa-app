@@ -25,7 +25,10 @@ import (
 	xproxy "golang.org/x/net/proxy"
 )
 
-const defaultWASafeServerPublicKeyHex = "8e8c0f74c3ebc5d7a6865c6c3c843856b06121cce8ea774d22fb6f122512302d"
+const (
+	defaultWASafeServerPublicKeyHex = "8e8c0f74c3ebc5d7a6865c6c3c843856b06121cce8ea774d22fb6f122512302d"
+	defaultNativeHTTPForwardedHost  = "v.whatsapp.net"
+)
 
 type nativeHTTPClient struct {
 	client *http.Client
@@ -216,6 +219,8 @@ func (c *nativeHTTPClient) postWASafe(ctx context.Context, endpoint string, plai
 	setNativeHTTPHeader(req, "Content-Type", "application/x-www-form-urlencoded")
 	setNativeHTTPHeader(req, "User-Agent", firstNonEmpty(userAgent, nativeUserAgent(defaultWAAppVersion)))
 	setNativeHTTPHeader(req, "WaMsysRequest", "1")
+	setNativeHTTPHeader(req, "X-Forwarded-Host", defaultNativeHTTPForwardedHost)
+	setNativeHTTPHeader(req, "request_token", strings.ToUpper(newUUIDString()))
 	if envelope.Authorization != "" {
 		setNativeHTTPHeader(req, "Authorization", envelope.Authorization)
 	}
