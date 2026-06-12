@@ -562,7 +562,7 @@ func parseWamsysJSON(text string) (*waappv1.WamsysCapture, error) {
 }
 
 func registrationHeaders(userAgent string) map[string]string {
-	return map[string]string{"Content-Type": "application/x-www-form-urlencoded", "User-Agent": userAgent, "WaMsysRequest": "1", "X-Forwarded-Host": defaultNativeHTTPHost}
+	return map[string]string{"Content-Type": "application/x-www-form-urlencoded", "User-Agent": userAgent, "WaMsysRequest": "1"}
 }
 
 func deriveRegistrationTokenFromAPK(apk []byte, phone string, packageName string) (string, error) {
