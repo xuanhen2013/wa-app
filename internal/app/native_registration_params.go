@@ -148,16 +148,14 @@ func applyNativeRawParamMap(params map[string]string, raw map[string]struct{}, v
 func codeDeviceMap(method string, state nativeState) map[string]string {
 	fields := nativeDeviceMapFields(state)
 	out := map[string]string{
+		"mistyped":                   "7",
 		"reason":                     "",
+		"hasav":                      "2",
 		"client_metrics":             nativeCodeClientMetrics(),
 		"education_screen_displayed": "false",
-		"prefer_sms_over_flash":      nativePreferSMSOverFlash(method),
+		"prefer_sms_over_flash":      "false",
 		"_ge":                        `{"sb":false,"sv":false}`,
 		"network_radio_type":         fields["network_radio_type"],
-		"sim_type":                   fields["sim_type"],
-		"airplane_mode_type":         fields["airplane_mode_type"],
-		"cellular_strength":          fields["cellular_strength"],
-		"roaming_type":               fields["roaming_type"],
 		"simnum":                     fields["simnum"],
 		"hasinrc":                    fields["hasinrc"],
 		"pid":                        fields["pid"],
@@ -171,22 +169,10 @@ func codeDeviceMap(method string, state nativeState) map[string]string {
 		"sim_mcc":                    fields["sim_mcc"],
 		"sim_mnc":                    fields["sim_mnc"],
 	}
-	addNonEmptyNativeCodeField(out, fields, "mistyped")
-	addNonEmptyNativeCodeField(out, fields, "hasav")
+	if method == "flash" {
+		out["prefer_sms_over_flash"] = "false"
+	}
 	return out
-}
-
-func nativePreferSMSOverFlash(method string) string {
-	if method == "sms" {
-		return "true"
-	}
-	return "false"
-}
-
-func addNonEmptyNativeCodeField(out map[string]string, fields map[string]string, key string) {
-	if value := strings.TrimSpace(fields[key]); value != "" {
-		out[key] = value
-	}
 }
 
 func registerDeviceMap(method string, state nativeState) map[string]string {
@@ -220,41 +206,34 @@ func nativeDeviceMapFields(state nativeState) map[string]string {
 	for key, value := range nativeDefaultDeviceMapFields() {
 		fields[key] = firstNonEmpty(fields[key], value)
 	}
-	if fields["feo2_query_status"] == legacyNativeFeo2QueryStatus {
-		fields["feo2_query_status"] = nativeDefaultFeo2QueryStatus
+	fields["network_radio_type"] = "1"
+	fields["db"] = "1"
+	fields["feo2_query_status"] = "error_security_exception"
+	for _, key := range []string{"mcc", "mnc", "sim_mcc", "sim_mnc"} {
+		if fields[key] == "000" {
+			fields[key] = ""
+		}
 	}
 	return fields
 }
 
-const (
-	nativeDefaultFeo2QueryStatus   = "did_not_query"
-	legacyNativeFeo2QueryStatus    = "error_security_exception"
-	nativeDefaultDebugBridgeStatus = "0"
-)
-
 func nativeDefaultDeviceMapFields() map[string]string {
 	return map[string]string{
 		"network_radio_type":    "1",
-		"sim_type":              "1",
-		"airplane_mode_type":    "0",
-		"cellular_strength":     "5",
-		"roaming_type":          "0",
-		"mistyped":              "7",
-		"hasav":                 "2",
 		"pid":                   "29418",
 		"simnum":                "0",
 		"hasinrc":               "1",
 		"rc":                    "0",
 		"device_ram":            "3.53",
-		"db":                    nativeDefaultDebugBridgeStatus,
+		"db":                    "1",
 		"recaptcha":             `{"stage":"ABPROP_DISABLED"}`,
-		"feo2_query_status":     nativeDefaultFeo2QueryStatus,
+		"feo2_query_status":     "error_security_exception",
 		"network_operator_name": "",
 		"sim_operator_name":     "",
-		"mcc":                   "000",
-		"mnc":                   "000",
-		"sim_mcc":               "000",
-		"sim_mnc":               "000",
+		"mcc":                   "",
+		"mnc":                   "",
+		"sim_mcc":               "",
+		"sim_mnc":               "",
 	}
 }
 
@@ -901,20 +880,4 @@ func jsonValuePresent(value any) bool {
 		return strings.TrimSpace(text) != ""
 	}
 	return true
-}
-
-func shouldSendNativeAdvertisingID(phone *waappv1.PhoneTarget) bool {
-	country := strings.ToUpper(strings.TrimSpace(phone.GetCountryIso2()))
-	if country == "" {
-		return true
-	}
-	_, blocked := nativeAdvertisingIDSuppressedCountries[country]
-	return !blocked
-}
-
-var nativeAdvertisingIDSuppressedCountries = map[string]struct{}{
-	"AT": {}, "BE": {}, "BG": {}, "CY": {}, "CZ": {}, "DE": {}, "DK": {}, "EE": {},
-	"ES": {}, "FI": {}, "FR": {}, "GR": {}, "HR": {}, "HU": {}, "IE": {}, "IT": {},
-	"LT": {}, "LU": {}, "LV": {}, "MT": {}, "NL": {}, "PL": {}, "PT": {}, "RO": {},
-	"SE": {}, "SI": {}, "SK": {},
 }
