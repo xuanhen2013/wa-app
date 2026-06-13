@@ -54,6 +54,7 @@ type nativePhoneProfile struct {
 	DeviceVendor        string            `json:"device_vendor"`
 	DeviceModel         string            `json:"device_model"`
 	AndroidVersion      string            `json:"android_version"`
+	BuildDisplayID      string            `json:"build_display_id,omitempty"`
 	FDID                string            `json:"fdid"`
 	ExpID               string            `json:"expid"`
 	ExpIDUUID           string            `json:"expid_uuid"`
@@ -312,19 +313,21 @@ func newNativeState(phone *waappv1.PhoneTarget) (nativeState, error) {
 }
 
 type nativeDeviceModel struct {
-	Vendor    string
-	Model     string
-	Android   string
-	MinRAMGiB float64
-	MaxRAMGiB float64
+	Vendor         string
+	Model          string
+	Android        string
+	BuildDisplayID string
+	MinRAMGiB      float64
+	MaxRAMGiB      float64
 }
 
 var nativeDeviceModels = []nativeDeviceModel{
-	{Vendor: "HUAWEI", Model: "TRT-AL00A", Android: "7.0", MinRAMGiB: 2.8, MaxRAMGiB: 3.9},
-	{Vendor: "Xiaomi", Model: "M2007J3SC", Android: "11", MinRAMGiB: 5.5, MaxRAMGiB: 7.8},
-	{Vendor: "samsung", Model: "SM-G991B", Android: "13", MinRAMGiB: 6.8, MaxRAMGiB: 7.6},
-	{Vendor: "OPPO", Model: "CPH2305", Android: "12", MinRAMGiB: 3.6, MaxRAMGiB: 7.4},
-	{Vendor: "vivo", Model: "V2145A", Android: "12", MinRAMGiB: 5.5, MaxRAMGiB: 7.7},
+	{Vendor: "OnePlus", Model: "LE2100", Android: "14", BuildDisplayID: "LE2100_14.0.0.605(CN01)", MinRAMGiB: 7.2, MaxRAMGiB: 7.8},
+	{Vendor: "HUAWEI", Model: "TRT-AL00A", Android: "7.0", BuildDisplayID: "TRT-AL00A_C00B220(CN01)", MinRAMGiB: 2.8, MaxRAMGiB: 3.9},
+	{Vendor: "Xiaomi", Model: "M2007J3SC", Android: "11", BuildDisplayID: "M2007J3SC_11.0.14(CN01)", MinRAMGiB: 5.5, MaxRAMGiB: 7.8},
+	{Vendor: "samsung", Model: "SM-G991B", Android: "13", BuildDisplayID: "SM-G991B_TP1A.014(EUX1)", MinRAMGiB: 6.8, MaxRAMGiB: 7.6},
+	{Vendor: "OPPO", Model: "CPH2305", Android: "12", BuildDisplayID: "CPH2305_12.1.0.210(EX1)", MinRAMGiB: 3.6, MaxRAMGiB: 7.4},
+	{Vendor: "vivo", Model: "V2145A", Android: "12", BuildDisplayID: "V2145A_12.0.8.7(CN01XX)", MinRAMGiB: 5.5, MaxRAMGiB: 7.7},
 }
 
 var nativeOperators = map[string][][2]string{
@@ -411,6 +414,7 @@ func buildNativePhoneProfile(phone *waappv1.PhoneTarget) nativePhoneProfile {
 		DeviceVendor:        model.Vendor,
 		DeviceModel:         model.Model,
 		AndroidVersion:      model.Android,
+		BuildDisplayID:      model.BuildDisplayID,
 		FDID:                newUUIDString(),
 		ExpID:               expID,
 		ExpIDUUID:           expIDUUID,
@@ -613,11 +617,17 @@ func normalizeNativePhoneProfile(profile nativePhoneProfile, userAgent string) n
 		profile.DeviceVendor = firstNonEmpty(profile.DeviceVendor, device.Vendor)
 		profile.DeviceModel = firstNonEmpty(profile.DeviceModel, device.Model)
 		profile.AndroidVersion = firstNonEmpty(profile.AndroidVersion, device.Android)
+		profile.BuildDisplayID = firstNonEmpty(profile.BuildDisplayID, nativeBuildDisplayIDForModel(device))
 	}
 	device := defaultNativeDeviceModel()
 	profile.DeviceVendor = firstNonEmpty(profile.DeviceVendor, device.Vendor)
 	profile.DeviceModel = firstNonEmpty(profile.DeviceModel, device.Model)
 	profile.AndroidVersion = firstNonEmpty(profile.AndroidVersion, device.Android)
+	profile.BuildDisplayID = firstNonEmpty(profile.BuildDisplayID, nativeBuildDisplayIDForModel(nativeDeviceModel{
+		Vendor:  profile.DeviceVendor,
+		Model:   profile.DeviceModel,
+		Android: profile.AndroidVersion,
+	}), device.BuildDisplayID)
 	return profile
 }
 
@@ -631,6 +641,15 @@ func nativeDeviceModelFromUserAgent(userAgent string) (nativeDeviceModel, bool) 
 
 func defaultNativeDeviceModel() nativeDeviceModel {
 	return nativeDeviceModels[0]
+}
+
+func nativeBuildDisplayIDForModel(model nativeDeviceModel) string {
+	for _, candidate := range nativeDeviceModels {
+		if strings.EqualFold(candidate.Vendor, model.Vendor) && strings.EqualFold(candidate.Model, model.Model) && candidate.Android == model.Android {
+			return candidate.BuildDisplayID
+		}
+	}
+	return ""
 }
 
 func parseJSONMap(text string) map[string]any {

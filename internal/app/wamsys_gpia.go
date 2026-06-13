@@ -21,7 +21,6 @@ const (
 	nativeGPIAClassesDigest   = "qoblldcHz4lA84Sgs1QLZWPpd6YKG25zf0GwJZdTHXk="
 	nativeGPIANativeLibDigest = "G9McgxRaSjtq92o7zx0fbf3Ak7+SPmxxNyvNXS01hlM="
 	nativeGPIADataSODigest    = "0j9kw9djlCtmCCavV7go2wwge+2os853ubiE7F7Dew4="
-	nativeGPIADisplayID       = "LE2100_14.0.0.605(CN01)"
 )
 
 type nativeGPIAMaterial struct {
@@ -62,7 +61,7 @@ func buildNativeGPIAErrorMaterial(input wamsysMaterialInput) (nativeGPIAMaterial
 		{Key: "_iln", Value: nativeGPIADataSODigest},
 		{Key: "_isb", Value: nativeGPIASourceSize},
 		{Key: "_ip", Value: nativeGPIAPackageName},
-		{Key: "did", Value: nativeGPIADisplayID},
+		{Key: "did", Value: nativeGPIADisplayID(input.State)},
 		{Key: "_p", Value: sourceDir},
 		{Key: "_ln", Value: nativeGPIANativeLibDigest},
 		{Key: "_ist", Value: nativeGPIASourceDigest},
@@ -73,6 +72,11 @@ func buildNativeGPIAErrorMaterial(input wamsysMaterialInput) (nativeGPIAMaterial
 		return nativeGPIAMaterial{}, err
 	}
 	return nativeGPIAMaterial{Primary: primary, TokenCompact: tokenCompact, DeviceCompact: deviceCompact}, nil
+}
+
+func nativeGPIADisplayID(state nativeState) string {
+	profile := normalizeNativePhoneProfile(state.Profile, "")
+	return firstNonEmpty(profile.BuildDisplayID, defaultNativeDeviceModel().BuildDisplayID)
 }
 
 func nativeGPIASourceDir(input wamsysMaterialInput) string {
