@@ -6,6 +6,7 @@ import { submitWaRegistrationOTP, waAccountID } from './wa-api';
 import { WaAccountProfileSettings } from './wa-account-profile-settings';
 import { WaAccountSecurityPanel } from './wa-account-security';
 import { WaDeviceFingerprintPanel } from './wa-device-fingerprint';
+import { WA_REGISTRATION_OTP_LENGTH } from './wa-registration-otp-card';
 import { accountReasonLabel, waAccountStatusView, type StatusView } from './wa-result-labels';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -64,8 +65,10 @@ function isRegistrationPending(account: WAAccount) {
 function ManualOtpSubmit({ account, busy, onDone, onError }: { account: WAAccount; busy: boolean; onDone: (message: string) => void; onError: (message: string) => void }) {
   const [otp, setOtp] = useState('');
   async function submit() {
+    const code = otp.trim();
+    if (code.length !== WA_REGISTRATION_OTP_LENGTH) return onError(`请输入 ${WA_REGISTRATION_OTP_LENGTH} 位 OTP`);
     try {
-      const resp = await submitWaRegistrationOTP(account, otp);
+      const resp = await submitWaRegistrationOTP(account, code);
       if (resp.error_message || resp.success === false) throw new Error(accountReasonLabel(resp.error_message, resp.status) || 'OTP 提交失败');
       setOtp('');
       onDone('OTP 已提交');
@@ -80,8 +83,8 @@ function ManualOtpSubmit({ account, busy, onDone, onError }: { account: WAAccoun
       </CardHeader>
       <CardContent>
         <div className="flex gap-2">
-          <Input value={otp} onChange={(event) => setOtp(event.target.value)} inputMode="numeric" autoComplete="one-time-code" type="password" placeholder="验证码" />
-          <Button disabled={busy || !otp.trim()} onClick={() => void submit()}>提交</Button>
+          <Input value={otp} onChange={(event) => setOtp(event.target.value.replace(/\D/g, '').slice(0, WA_REGISTRATION_OTP_LENGTH))} inputMode="numeric" autoComplete="one-time-code" type="password" maxLength={WA_REGISTRATION_OTP_LENGTH} placeholder={`${WA_REGISTRATION_OTP_LENGTH} 位验证码`} />
+          <Button disabled={busy || otp.trim().length !== WA_REGISTRATION_OTP_LENGTH} onClick={() => void submit()}>提交</Button>
         </div>
       </CardContent>
     </Card>

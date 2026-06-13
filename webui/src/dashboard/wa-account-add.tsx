@@ -10,7 +10,7 @@ import { WhatsAppIcon } from './wa-brand-icon';
 import { accountReasonLabel } from './wa-result-labels';
 import { waProbeStatus } from './wa-result-model';
 import { WaRegistrationChannelButtons } from './wa-registration-channel-buttons';
-import { WaRegistrationOtpCard } from './wa-registration-otp-card';
+import { WaRegistrationOtpCard, WA_REGISTRATION_OTP_LENGTH } from './wa-registration-otp-card';
 import { registrationAnyMethodAvailable, registrationChannelsHardBlocked, type SelectableRegistrationMethodOption } from './wa-registration-methods';
 import { WaResultPanel } from './wa-result-panel';
 import { resolveWaPhoneTarget, type WaResolvedPhone } from './wa-utils';
@@ -71,6 +71,7 @@ export function WaAccountAdd({ disabled, onChanged, onDone, onError }: Props) {
     if (!pending) return onError('没有等待中的 OTP');
     const code = otp.trim();
     if (!code) return onError('请输入 OTP');
+    if (code.length !== WA_REGISTRATION_OTP_LENGTH) return onError(`请输入 ${WA_REGISTRATION_OTP_LENGTH} 位 OTP`);
     setBusy(true);
     try {
       const result = await submitWaRegistrationOTP(pending.accountID, code);
