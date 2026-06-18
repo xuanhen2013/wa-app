@@ -18,20 +18,9 @@ const (
 	longConnectionWaitTimeout          = 25 * time.Second
 	longConnectionInitialBackoff       = time.Second
 	longConnectionMaxBackoff           = 30 * time.Second
-	longConnectionLeaseTTL             = 30 * time.Second
-	longConnectionLeaseRenewInterval   = 10 * time.Second
-	longConnectionLeaseWaitBackoff     = time.Second
-	longConnectionLeaseReleaseTimeout  = 3 * time.Second
-	longConnectionLeaseWaitLogInterval = 20
 	longConnectionDecryptLimit         = 100
 	staleMessageSessionTTL             = 10 * time.Minute
 	staleMessageSessionCleanupInterval = 5 * time.Minute
-)
-
-const (
-	longConnectionLeaseUnavailableMessage = "WA long connection lease is held by another worker"
-	longConnectionLeaseLostMessage        = "WA long connection lease was lost"
-	longConnectionLeaseOperationMessage   = "WA long connection lease operation failed"
 )
 
 type LongConnectionManager struct {
@@ -44,18 +33,14 @@ type LongConnectionManager struct {
 }
 
 type longConnectionEntry struct {
-	cancel      context.CancelFunc
-	runner      ProtocolEngine
-	leaseKey    string
-	leaseHolder string
-	snapshot    *waappv1.LongConnectionState
+	cancel   context.CancelFunc
+	runner   ProtocolEngine
+	snapshot *waappv1.LongConnectionState
 }
 
 type longConnectionStopItem struct {
-	cancel      context.CancelFunc
-	runner      ProtocolEngine
-	leaseKey    string
-	leaseHolder string
+	cancel context.CancelFunc
+	runner ProtocolEngine
 }
 
 func NewLongConnectionManager(server *Server) *LongConnectionManager {
@@ -100,8 +85,6 @@ func (m *LongConnectionManager) Ensure(ctx context.Context, loginState *waappv1.
 		return
 	}
 	entryCtx, cancel := context.WithCancel(rootCtx)
-	leaseKey := longConnectionLeaseKey(key)
-	leaseHolder := m.server.ids.NewID("walc_lease_")
 	snapshot := &waappv1.LongConnectionState{
 		LoginStateId:         loginState.GetLoginStateId(),
 		WaAccountId:          loginState.GetWaAccountId(),
@@ -111,9 +94,9 @@ func (m *LongConnectionManager) Ensure(ctx context.Context, loginState *waappv1.
 		HeartbeatSupported:   true,
 		StartedAt:            timestamppb.New(m.server.clock.Now()),
 	}
-	m.entries[key] = &longConnectionEntry{cancel: cancel, leaseKey: leaseKey, leaseHolder: leaseHolder, snapshot: snapshot}
+	m.entries[key] = &longConnectionEntry{cancel: cancel, snapshot: snapshot}
 	m.mu.Unlock()
-	go m.runEntry(entryCtx, proto.Clone(loginState).(*waappv1.LoginState), key, leaseKey, leaseHolder)
+	go m.runEntry(entryCtx, proto.Clone(loginState).(*waappv1.LoginState), key)
 	_ = ctx
 }
 
@@ -229,7 +212,7 @@ func (m *LongConnectionManager) closeStaleMessageSessions(ctx context.Context) {
 	}
 }
 
-func (m *LongConnectionManager) runEntry(ctx context.Context, loginState *waappv1.LoginState, key string, leaseKey string, leaseHolder string) {
+func (m *LongConnectionManager) runEntry(ctx context.Context, loginState *waappv1.LoginState, key string) {
 	backoff := longConnectionInitialBackoff
 	reconnects := int32(0)
 	defer m.markStopped(key)
@@ -242,31 +225,12 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, loginState *waappv
 			}
 			snapshot.ReconnectCount = reconnects
 		})
-		claimed, err := m.claimLongConnectionLease(ctx, leaseKey, leaseHolder)
-		if err != nil {
-			m.recordLoopError(key, reconnects, err)
-			if !sleepContext(ctx, backoff) {
-				return
-			}
-			backoff = nextBackoff(backoff)
-			reconnects++
-			continue
-		}
-		if !claimed {
-			m.recordLoopError(key, reconnects, longConnectionLeaseUnavailableError())
-			if !sleepContext(ctx, longConnectionLeaseWaitBackoff) {
-				return
-			}
-			reconnects++
-			continue
-		}
-		connectionCtx, stopLeaseRenewal, leaseLost := m.startLongConnectionLeaseRenewal(ctx, leaseKey, leaseHolder)
+		connectionCtx, stopConnection := context.WithCancel(ctx)
 		session, err := m.openSession(connectionCtx, loginState)
 		if err != nil {
-			stopLeaseRenewal()
-			m.releaseLongConnectionLease(ctx, leaseKey, leaseHolder)
-			if leaseErr := readLongConnectionLeaseLoss(leaseLost); leaseErr != nil {
-				err = leaseErr
+			stopConnection()
+			if ctx.Err() != nil {
+				return
 			}
 			m.recordLoopError(key, reconnects, err)
 			if !sleepContext(ctx, backoff) {
@@ -282,13 +246,12 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, loginState *waappv
 		})
 		runner, err := m.server.longConnectionRunner(connectionCtx, loginState, session)
 		if err != nil {
-			stopLeaseRenewal()
-			if leaseErr := readLongConnectionLeaseLoss(leaseLost); leaseErr != nil {
-				err = leaseErr
+			stopConnection()
+			if ctx.Err() != nil {
+				return
 			}
 			m.recordLoopError(key, reconnects, err)
 			_, _ = m.server.CloseMessageSession(context.WithoutCancel(ctx), &waappv1.CloseMessageSessionRequest{Context: &waappv1.RequestContext{}, MessageSessionId: session.GetMessageSessionId(), Reason: "long connection runner unavailable"})
-			m.releaseLongConnectionLease(ctx, leaseKey, leaseHolder)
 			if !sleepContext(ctx, backoff) {
 				return
 			}
@@ -300,24 +263,16 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, loginState *waappv
 		m.decryptPendingMessages(connectionCtx, session, runner)
 		receivedHeartbeat := false
 		for connectionCtx.Err() == nil {
-			if err := readLongConnectionLeaseLoss(leaseLost); err != nil {
-				m.recordLoopError(key, reconnects, err)
-				break
-			}
 			resp, err := m.server.receiveMessageBatch(connectionCtx, &waappv1.ReceiveMessageBatchRequest{Context: &waappv1.RequestContext{RequestId: m.server.ids.NewID("wa-rx_"), CorrelationId: loginState.GetLoginStateId()}, MessageSessionId: session.GetMessageSessionId(), MaxMessages: 10, WaitTimeout: durationpb.New(longConnectionWaitTimeout)}, runner)
 			if err != nil {
-				if leaseErr := readLongConnectionLeaseLoss(leaseLost); leaseErr != nil {
-					err = leaseErr
+				if ctx.Err() != nil {
+					break
 				}
 				m.recordLoopError(key, reconnects, err)
 				break
 			}
 			if resp.GetError() != nil {
-				var err error = errorFromProto(resp.GetError())
-				if leaseErr := readLongConnectionLeaseLoss(leaseLost); leaseErr != nil {
-					err = leaseErr
-				}
-				m.recordLoopError(key, reconnects, err)
+				m.recordLoopError(key, reconnects, errorFromProto(resp.GetError()))
 				break
 			}
 			now := m.server.clock.Now()
@@ -338,14 +293,10 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, loginState *waappv
 			backoff = longConnectionInitialBackoff
 			m.decryptReceivedMessages(connectionCtx, session, messages, runner)
 		}
-		if err := readLongConnectionLeaseLoss(leaseLost); err != nil {
-			m.recordLoopError(key, reconnects, err)
-		}
-		stopLeaseRenewal()
+		stopConnection()
 		if ctx.Err() != nil {
 			m.clearRunner(key)
 			closeLongConnectionRunner(runner)
-			m.releaseLongConnectionLease(ctx, leaseKey, leaseHolder)
 			return
 		}
 		m.clearRunner(key)
@@ -355,107 +306,10 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, loginState *waappv
 		}
 		reconnects++
 		_, _ = m.server.CloseMessageSession(context.WithoutCancel(ctx), &waappv1.CloseMessageSessionRequest{Context: &waappv1.RequestContext{}, MessageSessionId: session.GetMessageSessionId(), Reason: "long connection reconnect"})
-		m.releaseLongConnectionLease(ctx, leaseKey, leaseHolder)
 		if !sleepContext(ctx, backoff) {
 			return
 		}
 	}
-}
-
-func (m *LongConnectionManager) claimLongConnectionLease(ctx context.Context, leaseKey string, leaseHolder string) (bool, error) {
-	if m == nil || m.server == nil || m.server.runtime == nil || leaseKey == "" || leaseHolder == "" {
-		return true, nil
-	}
-	claimed, err := m.server.runtime.ClaimLease(ctx, leaseKey, leaseHolder, longConnectionLeaseTTL)
-	if err != nil {
-		return false, longConnectionLeaseOperationError()
-	}
-	return claimed, nil
-}
-
-func (m *LongConnectionManager) startLongConnectionLeaseRenewal(ctx context.Context, leaseKey string, leaseHolder string) (context.Context, context.CancelFunc, <-chan error) {
-	connectionCtx, cancel := context.WithCancel(ctx)
-	leaseLost := make(chan error, 1)
-	if m == nil || m.server == nil || m.server.runtime == nil || leaseKey == "" || leaseHolder == "" {
-		return connectionCtx, cancel, leaseLost
-	}
-	go func() {
-		ticker := time.NewTicker(longConnectionLeaseRenewInterval)
-		defer ticker.Stop()
-		for {
-			select {
-			case <-connectionCtx.Done():
-				return
-			case <-ticker.C:
-				renewed, err := m.server.runtime.RenewLease(connectionCtx, leaseKey, leaseHolder, longConnectionLeaseTTL)
-				if err != nil {
-					if connectionCtx.Err() != nil {
-						return
-					}
-					sendLongConnectionLeaseLoss(leaseLost, longConnectionLeaseOperationError())
-					cancel()
-					return
-				}
-				if !renewed {
-					if connectionCtx.Err() != nil {
-						return
-					}
-					sendLongConnectionLeaseLoss(leaseLost, longConnectionLeaseLostError())
-					cancel()
-					return
-				}
-			}
-		}
-	}()
-	return connectionCtx, cancel, leaseLost
-}
-
-func (m *LongConnectionManager) releaseLongConnectionLease(ctx context.Context, leaseKey string, leaseHolder string) {
-	if m == nil || m.server == nil || m.server.runtime == nil || leaseKey == "" || leaseHolder == "" {
-		return
-	}
-	releaseCtx, cancel := longConnectionReleaseContext(ctx)
-	defer cancel()
-	if err := m.server.runtime.ReleaseLease(releaseCtx, leaseKey, leaseHolder); err != nil {
-		log.Printf("WA long connection lease release failed: %v", sanitizeLogError(longConnectionLeaseOperationError()))
-	}
-}
-
-func longConnectionReleaseContext(ctx context.Context) (context.Context, context.CancelFunc) {
-	if ctx == nil {
-		ctx = context.Background()
-	} else {
-		ctx = context.WithoutCancel(ctx)
-	}
-	return context.WithTimeout(ctx, longConnectionLeaseReleaseTimeout)
-}
-
-func sendLongConnectionLeaseLoss(ch chan<- error, err error) {
-	select {
-	case ch <- err:
-	default:
-	}
-}
-
-func readLongConnectionLeaseLoss(ch <-chan error) error {
-	select {
-	case err := <-ch:
-		return err
-	default:
-		return nil
-	}
-}
-
-func longConnectionLeaseUnavailableError() error {
-	return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, longConnectionLeaseUnavailableMessage, true)
-}
-
-func longConnectionLeaseLostError() error {
-	return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, longConnectionLeaseLostMessage, true)
-}
-
-func longConnectionLeaseOperationError() error {
-	return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, longConnectionLeaseOperationMessage, true)
 }
 
 func closeLongConnectionRunner(runner ProtocolEngine) {
@@ -515,22 +369,9 @@ func (m *LongConnectionManager) recordLoopError(key string, reconnects int32, er
 		snapshot.ReconnectCount = reconnects
 		snapshot.LastError = protoErr
 	})
-	if isLongConnectionLeaseUnavailable(protoErr) {
-		if reconnects == 0 || reconnects%longConnectionLeaseWaitLogInterval == 0 {
-			log.Printf("WA long connection lease waiting count=%d", reconnects)
-		}
-		return
-	}
 	if reconnects < 5 || reconnects%20 == 0 {
 		log.Printf("WA long connection reconnecting count=%d code=%s retryable=%t message=%s", reconnects, protoErr.GetCode().String(), protoErr.GetRetryable(), longConnectionLogErrorMessage(protoErr.GetMessage()))
 	}
-}
-
-func isLongConnectionLeaseUnavailable(err *waappv1.WaError) bool {
-	if err == nil {
-		return false
-	}
-	return err.GetCode() == waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT && err.GetMessage() == longConnectionLeaseUnavailableMessage
 }
 
 func longConnectionLogErrorMessage(message string) string {
@@ -567,7 +408,7 @@ func (m *LongConnectionManager) stopAll() {
 	items := []longConnectionStopItem{}
 	for _, entry := range m.entries {
 		if entry != nil && entry.cancel != nil {
-			items = append(items, longConnectionStopItem{cancel: entry.cancel, runner: entry.runner, leaseKey: entry.leaseKey, leaseHolder: entry.leaseHolder})
+			items = append(items, longConnectionStopItem{cancel: entry.cancel, runner: entry.runner})
 			entry.cancel = nil
 			entry.runner = nil
 			if entry.snapshot != nil {
@@ -586,7 +427,6 @@ func (m *LongConnectionManager) stopAll() {
 		go func() {
 			defer wg.Done()
 			closeLongConnectionRunner(item.runner)
-			m.releaseLongConnectionLease(context.Background(), item.leaseKey, item.leaseHolder)
 		}()
 	}
 	wg.Wait()
@@ -619,14 +459,6 @@ func longConnectionEngineInput(session *waappv1.MessageSession) EngineMessageInp
 		ProtocolProfileID:    session.GetProtocolProfileId(),
 		MessageSessionID:     session.GetMessageSessionId(),
 	}
-}
-
-func longConnectionLeaseKey(key string) string {
-	key = strings.TrimSpace(key)
-	if key == "" {
-		return ""
-	}
-	return "long-connection:" + stableID(key)
 }
 
 func longConnectionKey(loginState *waappv1.LoginState) string {
