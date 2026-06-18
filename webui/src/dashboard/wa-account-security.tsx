@@ -5,6 +5,7 @@ import { AccountSettingsOperationStatus } from '../proto/byte/v/forge/waapp/v1/a
 import type { GetTwoFactorAuthStatusResponse } from '../proto/byte/v/forge/waapp/v1/account_settings';
 import type { WaAccountProjection } from './wa-api';
 import { getWaTwoFactorAuthStatus, requestWaAccountEmailOtp, setWaAccountEmail, setWaTwoFactorAuthSettings, verifyWaAccountEmailOtp, waAccountID, waKeys } from './wa-api';
+import { WaAccountChangeNumberCard } from './wa-account-change-number-card';
 import {
   emailBadgeVariant,
   emailStatusLabel,
@@ -142,6 +143,7 @@ export function WaAccountSecurityPanel({ account, onDone, onError }: Props) {
           {emailConfigured && !emailEditing ? <EmailProjection status={twoFactorStatus.data?.status} /> : null}
           {emailFormVisible ? <EmailForm email={email} busy={busy} configured={emailConfigured} onEmailChange={handleEmailChange} onCancel={() => { setEmail(''); setEmailEditing(false); }} onSubmit={(event) => submit(event, emailSet.mutate)} /> : null}
         </section>
+        <WaAccountChangeNumberCard account={account} busy={busy} onError={onError} />
         {emailOtpVisible && (
           <div className="grid gap-3 border-t border-border pt-5 lg:col-span-2">
             <div className="flex items-center gap-2 text-sm font-medium"><Send size={15} />邮箱 OTP</div>

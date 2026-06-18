@@ -9,9 +9,9 @@ import (
 	"encoding/json"
 	"fmt"
 	"math/big"
-	mrand "math/rand"
 	"regexp"
 	"sort"
+	"strconv"
 	"strings"
 	"time"
 
@@ -23,28 +23,31 @@ const nativeStateSchema = "byte-v-forge-wa-app-native-state/v1"
 var nativeUserAgentDevicePattern = regexp.MustCompile(`(?:^|\s)Android/([^ ]+)\s+Device/([^- \t/]+)-([^/\s]+)`)
 
 type nativeState struct {
-	Schema          string                          `json:"schema"`
-	CreatedAtUnix   int64                           `json:"created_at_unix"`
-	CC              string                          `json:"cc"`
-	Phone           string                          `json:"phone"`
-	AuthKey         string                          `json:"authkey"`
-	PushName        string                          `json:"push_name,omitempty"`
-	Profile         nativePhoneProfile              `json:"profile"`
-	KeyBundle       nativeKeyBundle                 `json:"key_bundle"`
-	LastCodeParams  map[string]string               `json:"last_code_params,omitempty"`
-	LastCodeResult  map[string]any                  `json:"last_code_result,omitempty"`
-	LastRegister    map[string]any                  `json:"last_register,omitempty"`
-	RegistrationJID string                          `json:"registration_jid,omitempty"`
-	ChatRoutingInfo string                          `json:"chat_routing_info,omitempty"`
-	ChatConnection  nativeChatConnectionState       `json:"chat_connection,omitempty"`
-	ChatStatic      nativeCurveKeyPair              `json:"chat_static"`
-	Attestation     nativeSoftwareAttestation       `json:"attestation,omitempty"`
-	Signal          nativeSignalState               `json:"signal"`
-	AppState        nativeAppState                  `json:"app_state,omitempty"`
-	ContactHints    []waContactHint                 `json:"contact_hints,omitempty"`
-	MessagePayloads map[string]nativeMessagePayload `json:"message_payloads,omitempty"`
-	MessagePlainRef map[string]string               `json:"message_plain_ref,omitempty"`
-	PrivacyTokens   map[string]nativePrivacyToken   `json:"privacy_tokens,omitempty"`
+	Schema               string                          `json:"schema"`
+	CreatedAtUnix        int64                           `json:"created_at_unix"`
+	CC                   string                          `json:"cc"`
+	Phone                string                          `json:"phone"`
+	AuthKey              string                          `json:"authkey"`
+	PushName             string                          `json:"push_name,omitempty"`
+	Profile              nativePhoneProfile              `json:"profile"`
+	KeyBundle            nativeKeyBundle                 `json:"key_bundle"`
+	GenerateCodeAttempts int                             `json:"reg_attempts_generate_code,omitempty"`
+	LastCodeParams       map[string]string               `json:"last_code_params,omitempty"`
+	LastCodeResult       map[string]any                  `json:"last_code_result,omitempty"`
+	LastRegister         map[string]any                  `json:"last_register,omitempty"`
+	AccountTransfer      nativeAccountTransferState      `json:"account_transfer,omitempty"`
+	PreChatdAB           nativePreChatdABState           `json:"pre_chatd_ab,omitempty"`
+	RegistrationJID      string                          `json:"registration_jid,omitempty"`
+	ChatRoutingInfo      string                          `json:"chat_routing_info,omitempty"`
+	ChatConnection       nativeChatConnectionState       `json:"chat_connection,omitempty"`
+	ChatStatic           nativeCurveKeyPair              `json:"chat_static"`
+	Attestation          nativeSoftwareAttestation       `json:"attestation,omitempty"`
+	Signal               nativeSignalState               `json:"signal"`
+	AppState             nativeAppState                  `json:"app_state,omitempty"`
+	ContactHints         []waContactHint                 `json:"contact_hints,omitempty"`
+	MessagePayloads      map[string]nativeMessagePayload `json:"message_payloads,omitempty"`
+	MessagePlainRef      map[string]string               `json:"message_plain_ref,omitempty"`
+	PrivacyTokens        map[string]nativePrivacyToken   `json:"privacy_tokens,omitempty"`
 }
 
 type nativePhoneProfile struct {
@@ -156,6 +159,24 @@ type nativePrivacyToken struct {
 	Timestamp int64  `json:"timestamp,omitempty"`
 }
 
+type nativeAccountTransferState struct {
+	Codes                  []string `json:"codes,omitempty"`
+	CurrentIndex           int      `json:"current_index,omitempty"`
+	RequestedAtUnix        int64    `json:"requested_at_unix,omitempty"`
+	ExpiresAtUnix          int64    `json:"expires_at_unix,omitempty"`
+	RotationIntervalSec    int64    `json:"rotation_interval_sec,omitempty"`
+	SessionID              string   `json:"session_id,omitempty"`
+	Certificate            string   `json:"certificate,omitempty"`
+	AuthToken              string   `json:"auth_token,omitempty"`
+	PeerID                 string   `json:"peer_id,omitempty"`
+	EncryptionKeyVersion   string   `json:"enc_key_version,omitempty"`
+	EncryptionAccountHash  string   `json:"enc_key_account_hash,omitempty"`
+	EncryptionKeySalt      string   `json:"enc_key_salt,omitempty"`
+	DeeplinkBase           string   `json:"deeplink_base,omitempty"`
+	AccountPhoneNumber     string   `json:"account_phone_number,omitempty"`
+	LastChallengeIssuedSec int64    `json:"last_challenge_issued_sec,omitempty"`
+}
+
 type nativeChatConnectionState struct {
 	LastHost           string `json:"last_host,omitempty"`
 	LastPort           int    `json:"last_port,omitempty"`
@@ -233,14 +254,6 @@ func newNativeState(phone *waappv1.PhoneTarget) (nativeState, error) {
 	if err != nil {
 		return nativeState{}, err
 	}
-	chatStaticPublic, err := chatStatic.publicBytes()
-	if err != nil {
-		return nativeState{}, err
-	}
-	attestation, err := newNativeSoftwareAttestation(chatStaticPublic, time.Now().UTC())
-	if err != nil {
-		return nativeState{}, err
-	}
 	identity, err := newNativeCurveKeyPair()
 	if err != nil {
 		return nativeState{}, err
@@ -287,7 +300,6 @@ func newNativeState(phone *waappv1.PhoneTarget) (nativeState, error) {
 		AuthKey:       chatStatic.Public,
 		Profile:       profile,
 		ChatStatic:    chatStatic,
-		Attestation:   attestation,
 		Signal: nativeSignalState{
 			RegistrationID:   regID,
 			Identity:         identity,
@@ -322,90 +334,34 @@ type nativeDeviceModel struct {
 }
 
 var nativeDeviceModels = []nativeDeviceModel{
-	{Vendor: "OnePlus", Model: "LE2100", Android: "14", BuildDisplayID: "LE2100_14.0.0.605(CN01)", MinRAMGiB: 7.2, MaxRAMGiB: 7.8},
-	{Vendor: "HUAWEI", Model: "TRT-AL00A", Android: "7.0", BuildDisplayID: "TRT-AL00A_C00B220(CN01)", MinRAMGiB: 2.8, MaxRAMGiB: 3.9},
 	{Vendor: "Xiaomi", Model: "M2007J3SC", Android: "11", BuildDisplayID: "M2007J3SC_11.0.14(CN01)", MinRAMGiB: 5.5, MaxRAMGiB: 7.8},
+	{Vendor: "HUAWEI", Model: "TRT-AL00A", Android: "7.0", BuildDisplayID: "TRT-AL00A_C00B220(CN01)", MinRAMGiB: 2.8, MaxRAMGiB: 3.9},
 	{Vendor: "samsung", Model: "SM-G991B", Android: "13", BuildDisplayID: "SM-G991B_TP1A.014(EUX1)", MinRAMGiB: 6.8, MaxRAMGiB: 7.6},
 	{Vendor: "OPPO", Model: "CPH2305", Android: "12", BuildDisplayID: "CPH2305_12.1.0.210(EX1)", MinRAMGiB: 3.6, MaxRAMGiB: 7.4},
 	{Vendor: "vivo", Model: "V2145A", Android: "12", BuildDisplayID: "V2145A_12.0.8.7(CN01XX)", MinRAMGiB: 5.5, MaxRAMGiB: 7.7},
+	{Vendor: "OnePlus", Model: "LE2100", Android: "14", BuildDisplayID: "LE2100_14.0.0.605(CN01)", MinRAMGiB: 11.24, MaxRAMGiB: 11.24},
 }
 
-var nativeOperators = map[string][][2]string{
-	"US":   {{"310", "260"}, {"310", "410"}, {"311", "480"}},
-	"CN":   {{"460", "00"}, {"460", "01"}, {"460", "11"}},
-	"PL":   {{"260", "01"}, {"260", "02"}, {"260", "06"}},
-	"VN":   {{"452", "04"}, {"452", "02"}, {"452", "01"}, {"452", "05"}, {"452", "07"}},
-	"NONE": {{"", ""}},
-}
-
-func nativeProfileCountry(phone *waappv1.PhoneTarget) string {
-	if country := strings.ToUpper(strings.TrimSpace(phone.GetCountryIso2())); country != "" {
-		return country
-	}
-	switch phoneCC(phone) {
-	case "1":
-		return "US"
-	case "48":
-		return "PL"
-	case "84":
-		return "VN"
-	case "86":
-		return "CN"
-	default:
-		return ""
-	}
-}
-
-var nativeRadioTypes = []string{"1", "2", "3", "9", "13", "20"}
-
-func nativeRandomRadioType(rng *mrand.Rand) string {
-	if rng == nil || len(nativeRadioTypes) == 0 {
-		return "1"
-	}
-	return nativeRadioTypes[rng.Intn(len(nativeRadioTypes))]
-}
+const nativeDefaultDeviceRAMGiB = "6.58"
 
 func buildNativePhoneProfile(phone *waappv1.PhoneTarget) nativePhoneProfile {
-	seed := int64(binary.BigEndian.Uint64(randomBytes(8)))
-	rng := mrand.New(mrand.NewSource(seed))
-	model := nativeDeviceModels[rng.Intn(len(nativeDeviceModels))]
-	country := nativeProfileCountry(phone)
-	ops := nativeOperators[country]
-	if len(ops) == 0 {
-		ops = nativeOperators["NONE"]
-	}
-	op := ops[rng.Intn(len(ops))]
-	simOp := ops[rng.Intn(len(ops))]
+	model := newNativeRegistrationDeviceModel()
 	expIDUUID, expID := uuidPair()
-	accessUUID, accessSessionID := uuidPair()
+	accessUUID, accessID := uuidPair()
 	id := randomBytes(20)
 	backup := randomBytes(20)
 	phoneHash := sha256.Sum256([]byte(fullPhoneKey(phoneCC(phone), phoneNational(phone))))
-	simnum := "0"
-	if op[0] != "" && rng.Intn(2) == 1 {
-		simnum = "1"
-	}
-	ram := model.MinRAMGiB + rng.Float64()*(model.MaxRAMGiB-model.MinRAMGiB)
 	additionalFields := map[string]string{
-		"network_radio_type":    nativeRandomRadioType(rng),
-		"pid":                   fmt.Sprintf("%d", 10000+rng.Intn(50000)),
-		"simnum":                simnum,
+		"network_radio_type":    "1",
+		"simnum":                "0",
 		"hasinrc":               "1",
 		"rc":                    "0",
-		"device_ram":            fmt.Sprintf("%.2f", ram),
+		"device_ram":            nativeDeviceRAMGiB(model),
 		"db":                    nativeDefaultDebugBridgeStatus,
 		"recaptcha":             `{"stage":"ABPROP_DISABLED"}`,
 		"feo2_query_status":     nativeDefaultFeo2QueryStatus,
 		"network_operator_name": "",
 		"sim_operator_name":     "",
-	}
-	if op[0] != "" {
-		additionalFields["mcc"] = op[0]
-		additionalFields["mnc"] = op[1]
-	}
-	if simOp[0] != "" {
-		additionalFields["sim_mcc"] = simOp[0]
-		additionalFields["sim_mnc"] = simOp[1]
 	}
 	return nativePhoneProfile{
 		Schema:              "ctf-whatsapp-phone-profile/v1",
@@ -418,7 +374,7 @@ func buildNativePhoneProfile(phone *waappv1.PhoneTarget) nativePhoneProfile {
 		FDID:                newUUIDString(),
 		ExpID:               expID,
 		ExpIDUUID:           expIDUUID,
-		AccessSessionID:     accessSessionID,
+		AccessSessionID:     accessID,
 		AccessSessionIDUUID: accessUUID,
 		ID:                  pctBytes(id),
 		IDHex:               hex.EncodeToString(id),
@@ -427,6 +383,20 @@ func buildNativePhoneProfile(phone *waappv1.PhoneTarget) nativePhoneProfile {
 		AdvertisingID:       newUUIDString(),
 		AdditionalMapFields: additionalFields,
 	}
+}
+
+func nativeRegistrationEphemeralID() string {
+	return pctBytes(randomBytes(20))
+}
+
+func nativeRegistrationRequestID(state nativeState) string {
+	if nativeShouldRandomizeRegistrationRequestID(state) {
+		return nativeRegistrationEphemeralID()
+	}
+	if id := strings.TrimSpace(state.Profile.ID); id != "" {
+		return id
+	}
+	return nativeRegistrationEphemeralID()
 }
 
 func nativeAdvertisingID(state nativeState) string {
@@ -475,6 +445,24 @@ func randomInt24() int32 {
 		return int32(time.Now().UnixNano() & 0xffffff)
 	}
 	return int32(value.Int64() + 1)
+}
+
+func randomIndex(length int) int {
+	if length <= 1 {
+		return 0
+	}
+	value, err := rand.Int(rand.Reader, big.NewInt(int64(length)))
+	if err != nil {
+		return int(time.Now().UnixNano() % int64(length))
+	}
+	return int(value.Int64())
+}
+
+func randomIntRange(minValue int, maxValue int) int {
+	if maxValue <= minValue {
+		return minValue
+	}
+	return minValue + randomIndex(maxValue-minValue+1)
 }
 
 func newUUIDString() string {
@@ -551,8 +539,9 @@ func stableParamOrder(params map[string]string) []string {
 		"sim_mcc", "sim_mnc", "education_screen_displayed", "prefer_sms_over_flash",
 		"network_radio_type", "simnum", "hasinrc", "pid", "rc",
 		"sim_type", "airplane_mode_type", "cellular_strength", "roaming_type",
-		"device_ram", "gpia",
-		"db", "recaptcha", "_ge", "_gi", "_gg", "_gp", "_ga", "aid",
+		"push_code", "new_acc_uuid", "old_phone_number", "device_ram", "gpia",
+		"db", "recaptcha", "fid", "preloads_app_manager_id", "preloads_attribution",
+		"tos_version", "entrypoint", "cred_token", "_ga", "_gi", "_gp", "_ge", "aid", "_gg",
 		"feo2_query_status", "is_foa_fdid_app_installed", "language_selector_time_spent",
 		"language_selector_clicked_count",
 	}
@@ -628,7 +617,87 @@ func normalizeNativePhoneProfile(profile nativePhoneProfile, userAgent string) n
 		Model:   profile.DeviceModel,
 		Android: profile.AndroidVersion,
 	}), device.BuildDisplayID)
+	if shouldNormalizeNativeAccessSessionID(profile) {
+		profile = normalizeNativeAccessSessionID(profile)
+	}
+	if len(profile.AdditionalMapFields) > 0 {
+		fields := make(map[string]string, len(profile.AdditionalMapFields))
+		for key, value := range profile.AdditionalMapFields {
+			if isRuntimeNativeDeviceMapKey(key) {
+				continue
+			}
+			fields[key] = value
+		}
+		profile.AdditionalMapFields = fields
+	}
 	return profile
+}
+
+func shouldNormalizeNativeAccessSessionID(profile nativePhoneProfile) bool {
+	return profile.AccessSessionID != "" ||
+		profile.AccessSessionIDUUID != "" ||
+		profile.FDID != "" ||
+		profile.PhoneSHA256 != ""
+}
+
+func normalizeNativeAccessSessionID(profile nativePhoneProfile) nativePhoneProfile {
+	if isUUIDText(profile.AccessSessionIDUUID) {
+		profile.AccessSessionID = nativeUUIDTextToB64u(profile.AccessSessionIDUUID)
+		return profile
+	}
+	if isUUIDText(profile.AccessSessionID) {
+		profile.AccessSessionIDUUID = profile.AccessSessionID
+		profile.AccessSessionID = nativeUUIDTextToB64u(profile.AccessSessionID)
+		return profile
+	}
+	if accessSessionIDUUID, ok := nativeUUIDB64uToText(profile.AccessSessionID); ok {
+		profile.AccessSessionIDUUID = accessSessionIDUUID
+		return profile
+	}
+	accessSessionIDUUID, accessSessionID := uuidPair()
+	profile.AccessSessionID = accessSessionID
+	profile.AccessSessionIDUUID = accessSessionIDUUID
+	return profile
+}
+
+func nativeUUIDTextToB64u(value string) string {
+	value = strings.TrimSpace(value)
+	if !isUUIDText(value) {
+		return ""
+	}
+	raw, err := hex.DecodeString(strings.ReplaceAll(value, "-", ""))
+	if err != nil || len(raw) != 16 {
+		return ""
+	}
+	return b64u(raw)
+}
+
+func nativeUUIDB64uToText(value string) (string, bool) {
+	raw, err := base64.RawURLEncoding.DecodeString(strings.TrimSpace(value))
+	if err != nil || len(raw) != 16 {
+		return "", false
+	}
+	return fmt.Sprintf("%x-%x-%x-%x-%x", raw[0:4], raw[4:6], raw[6:8], raw[8:10], raw[10:]), true
+}
+
+func isUUIDText(value string) bool {
+	value = strings.TrimSpace(value)
+	if len(value) != 36 {
+		return false
+	}
+	for idx, ch := range value {
+		switch idx {
+		case 8, 13, 18, 23:
+			if ch != '-' {
+				return false
+			}
+		default:
+			if (ch < '0' || ch > '9') && (ch < 'a' || ch > 'f') && (ch < 'A' || ch > 'F') {
+				return false
+			}
+		}
+	}
+	return true
 }
 
 func nativeDeviceModelFromUserAgent(userAgent string) (nativeDeviceModel, bool) {
@@ -641,6 +710,66 @@ func nativeDeviceModelFromUserAgent(userAgent string) (nativeDeviceModel, bool) 
 
 func defaultNativeDeviceModel() nativeDeviceModel {
 	return nativeDeviceModels[0]
+}
+
+func newNativeRegistrationDeviceModel() nativeDeviceModel {
+	return randomNativeGenericAndroid11DeviceModel()
+}
+
+func randomNativeGenericAndroid11DeviceModel() nativeDeviceModel {
+	model := randomChoice([]string{"X", "A", "M", "N", "Z"}) + randomDigits(4) + randomUpper(2)
+	branch := randomChoice([]string{"GX", "GL", "EEA", "IN", "LA"})
+	return nativeDeviceModel{
+		Vendor:         randomNativeGenericVendor(),
+		Model:          model,
+		Android:        "11",
+		BuildDisplayID: model + "_11.0." + strconv.Itoa(randomIntRange(1, 9)) + "." + strconv.Itoa(randomIntRange(10, 999)) + "(" + branch + "01)",
+		MinRAMGiB:      3.5,
+		MaxRAMGiB:      7.8,
+	}
+}
+
+func randomNativeGenericVendor() string {
+	return randomChoice([]string{"NOVA", "AERO", "ORBI", "LYRA", "VANTA", "ZENO", "NIMO", "KORA", "ALTO", "MEGA"}) +
+		randomChoice([]string{"Mobile", "Phone", "Tech", "One", "Digital", "Comms", "Labs", "Link"})
+}
+
+func randomChoice(values []string) string {
+	if len(values) == 0 {
+		return ""
+	}
+	return values[randomIndex(len(values))]
+}
+
+func randomDigits(length int) string {
+	const alphabet = "0123456789"
+	var builder strings.Builder
+	builder.Grow(length)
+	for range length {
+		builder.WriteByte(alphabet[randomIndex(len(alphabet))])
+	}
+	return builder.String()
+}
+
+func randomUpper(length int) string {
+	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
+	var builder strings.Builder
+	builder.Grow(length)
+	for range length {
+		builder.WriteByte(alphabet[randomIndex(len(alphabet))])
+	}
+	return builder.String()
+}
+
+func nativeDeviceRAMGiB(model nativeDeviceModel) string {
+	if model.MinRAMGiB <= 0 || model.MaxRAMGiB < model.MinRAMGiB {
+		return nativeDefaultDeviceRAMGiB
+	}
+	if model.MaxRAMGiB == model.MinRAMGiB {
+		return fmt.Sprintf("%.2f", model.MinRAMGiB)
+	}
+	scaled := int(model.MinRAMGiB*100) + randomIndex(int((model.MaxRAMGiB-model.MinRAMGiB)*100)+1)
+	return fmt.Sprintf("%.2f", float64(scaled)/100)
 }
 
 func nativeBuildDisplayIDForModel(model nativeDeviceModel) string {

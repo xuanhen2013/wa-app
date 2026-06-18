@@ -1,5 +1,5 @@
 import type { WaWorkflowResponse } from './wa-api';
-import { accountFlowLabel, accountReasonLabel, accountStatusLabel, methodLabel, methodLabels } from './wa-result-labels';
+import { accountFlowLabel, accountReasonLabel, accountStatusLabel, countdownLabel, methodLabel, methodLabels } from './wa-result-labels';
 import { compactJoin, extraValues, firstBool, firstNumber, firstText, record, statusIn } from './wa-result-normalize';
 export type BadgeVariant = 'default' | 'secondary' | 'destructive' | 'outline';
 export type ResultTone = 'ok' | 'warn' | 'bad' | 'idle';
@@ -35,7 +35,7 @@ export function waProbeStatus(result?: WaWorkflowResponse | null): WaProbeStatus
   const blocked = firstBool(phoneStatus.blocked, accountProbe.blocked) ?? blockedSignal(result?.reject_reason, result?.error_message, result?.status, phoneStatus.account_raw_status, accountProbe.raw_status, accountProbe.status, phoneStatus.account_raw_reason, accountProbe.raw_reason);
   const accountReachable = firstBool(phoneStatus.account_reachable, accountProbe.success) ?? statusIn(['reachable', 'account_probe_status_reachable', 'ok', 'sent', 'valid', 'exists', 'incorrect'], phoneStatus.account_status, accountProbe.account_status, accountProbe.status, accountProbe.raw_status, accountProbe.raw_reason);
   const smsAvailable = firstBool(phoneStatus.sms_available, phoneStatus.can_receive_sms, smsProbe.sms_available, smsProbe.can_send_sms, smsProbe.can_receive_sms, accountProbe.can_send_sms) ?? statusIn(['available', 'sms_available', 'sent', 'waiting', 'ok'], phoneStatus.sms_status, smsProbe.sms_status, smsProbe.status);
-  const smsWaitSeconds = firstNumber(phoneStatus.sms_wait_seconds, smsProbe.sms_wait_seconds, smsProbe.wait_seconds, smsProbe.retry_after_seconds, smsProbe.cooldown_seconds, smsProbe.remaining_seconds, accountProbe.sms_wait_seconds);
+  const smsWaitSeconds = firstNumber(phoneStatus.sms_wait_seconds, result?.retry_after_seconds, smsProbe.sms_wait_seconds, smsProbe.wait_seconds, smsProbe.retry_after_seconds, smsProbe.cooldown_seconds, smsProbe.remaining_seconds, accountProbe.sms_wait_seconds);
   const smsWaitUntil = firstText(phoneStatus.sms_wait_until, smsProbe.sms_wait_until, smsProbe.wait_until, smsProbe.retry_after_at, smsProbe.cooldown_until);
   const canRegister = firstBool(phoneStatus.can_register);
   const accountStatus = firstText(phoneStatus.account_status, accountProbe.account_status, accountProbe.status);
@@ -115,6 +115,7 @@ function requestFailure(...values: unknown[]) {
 }
 function smsExtra(status: WaProbeStatus) {
   if (status.smsWaitUntil) return `冷却到 ${status.smsWaitUntil}`;
+  if (status.smsWaitSeconds && status.smsWaitSeconds > 0) return `冷却 ${countdownLabel(status.smsWaitSeconds)}`;
   return extraValues(status.smsStatus).join(' / ');
 }
 function verificationMethodStatuses(...values: unknown[]) {

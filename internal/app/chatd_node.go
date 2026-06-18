@@ -777,6 +777,10 @@ func buildPingNode() chatdNode {
 }
 
 func buildAckForNode(node chatdNode) (chatdNode, bool) {
+	return buildAckForNodeWithAttrs(node, nil)
+}
+
+func buildAckForNodeWithAttrs(node chatdNode, extra map[string]string) (chatdNode, bool) {
 	nodeID := node.Attrs["id"]
 	sender := node.Attrs["from"]
 	if nodeID == "" || sender == "" {
@@ -788,6 +792,7 @@ func buildAckForNode(node chatdNode) (chatdNode, bool) {
 		if t := node.Attrs["type"]; t != "" {
 			attrs["type"] = t
 		}
+		addAckExtraAttrs(attrs, extra)
 		return chatdNode{Tag: "ack", Attrs: attrs}, true
 	case "message":
 		attrs := map[string]string{"id": nodeID, "to": sender, "class": "message"}
@@ -797,9 +802,18 @@ func buildAckForNode(node chatdNode) (chatdNode, bool) {
 		if p := node.Attrs["participant"]; p != "" {
 			attrs["participant"] = p
 		}
+		addAckExtraAttrs(attrs, extra)
 		return chatdNode{Tag: "ack", Attrs: attrs}, true
 	default:
 		return chatdNode{}, false
+	}
+}
+
+func addAckExtraAttrs(attrs map[string]string, extra map[string]string) {
+	for key, value := range extra {
+		if strings.TrimSpace(key) != "" && strings.TrimSpace(value) != "" {
+			attrs[key] = value
+		}
 	}
 }
 

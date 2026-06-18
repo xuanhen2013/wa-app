@@ -299,6 +299,15 @@ func nativeAndroidOkHTTPClientHelloSpec() *utls.ClientHelloSpec {
 }
 
 func (c *nativeHTTPClient) postWASafe(ctx context.Context, endpoint string, plain string, userAgent string, attestation nativeSoftwareAttestation) (map[string]any, string, error) {
+	return c.postWASafeEnvelope(ctx, endpoint, plain, userAgent, attestation)
+}
+
+func (c *nativeHTTPClient) postWASafeNoAuth(ctx context.Context, endpoint string, plain string, userAgent string) (map[string]any, error) {
+	data, _, err := c.postWASafeEnvelope(ctx, endpoint, plain, userAgent, nativeSoftwareAttestation{})
+	return data, err
+}
+
+func (c *nativeHTTPClient) postWASafeEnvelope(ctx context.Context, endpoint string, plain string, userAgent string, attestation nativeSoftwareAttestation) (map[string]any, string, error) {
 	if endpoint == "" {
 		return nil, "", fmt.Errorf("endpoint is not configured")
 	}
@@ -416,6 +425,8 @@ func nativeRegistrationEndpointKind(endpoint *url.URL) string {
 	}
 	raw := endpoint.Query().Get("_")
 	switch raw {
+	case "/v2/reg_onboard_abprop":
+		return "abprop"
 	case "/v2/exist":
 		return "exist"
 	case "/v2/code":

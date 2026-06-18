@@ -8,7 +8,7 @@ import type { VerificationDeliveryMethod } from '../proto/byte/v/forge/waapp/v1/
 export const ACCOUNT_PAGE_SIZE = 100;
 
 export type WaPhoneInput = { region: string; phone: string; e164_number: string; country_calling_code: string; country_iso2: string };
-export type WaWorkflowResponse = { success?: boolean; passed?: boolean; request_failed?: boolean; status?: string; error_message?: string; reject_reason?: string; wa_account_id?: string; client_profile_id?: string; protocol_profile_id?: string; verification_request_id?: string; delivery_method?: string; method?: string; registration_phase?: string; method_statuses?: unknown[]; phone_status?: Record<string, unknown>; account_probe?: Record<string, unknown>; sms_probe?: Record<string, unknown>; phone?: Record<string, unknown>; proxy?: Record<string, unknown>; verification_request?: Record<string, unknown>; registration?: Record<string, unknown>; login_state?: Record<string, unknown>; check?: Record<string, unknown> };
+export type WaWorkflowResponse = { success?: boolean; passed?: boolean; request_failed?: boolean; retry_after_seconds?: number; status?: string; error_message?: string; reject_reason?: string; wa_account_id?: string; client_profile_id?: string; protocol_profile_id?: string; verification_request_id?: string; delivery_method?: string; method?: string; registration_phase?: string; method_statuses?: unknown[]; phone_status?: Record<string, unknown>; account_probe?: Record<string, unknown>; sms_probe?: Record<string, unknown>; phone?: Record<string, unknown>; proxy?: Record<string, unknown>; verification_request?: Record<string, unknown>; account_transfer_challenge?: Record<string, unknown>; registration?: Record<string, unknown>; login_state?: Record<string, unknown>; check?: Record<string, unknown> };
 export type WaConnectionState = LongConnectionState;
 export type WaConnectionFilters = { login_state_id?: string; wa_account_id?: string; client_profile_id?: string; registered_identity_id?: string };
 export type WaAccountProjection = WAAccount;
@@ -50,9 +50,10 @@ export async function getWaAccounts(cursor = '') {
   return { ...response, accounts };
 }
 
-export function getWaAccountOtpMessages(waAccountId: string, cursor = '') {
-  const params = new URLSearchParams({ wa_account_id: waAccountId, limit: '20' });
-  if (cursor) params.set('cursor', cursor);
+export function getWaAccountOtpMessages(waAccountId: string, options: { cursor?: string; limit?: number; includeSensitiveValues?: boolean } = {}) {
+  const params = new URLSearchParams({ wa_account_id: waAccountId, limit: String(options.limit || 20) });
+  if (options.cursor) params.set('cursor', options.cursor);
+  if (options.includeSensitiveValues !== undefined) params.set('include_sensitive_values', String(options.includeSensitiveValues));
   return getWaResponse<ListAccountOtpMessagesResponse>(`/api/wa/account-otp-messages?${params}`);
 }
 
@@ -120,6 +121,12 @@ export async function getWaTwoFactorAuthStatus(account: WAAccount, input: { remo
 export function submitWaRegistrationOTP(account: WAAccount | string, otp: string) {
   const accountID = typeof account === 'string' ? account : waAccountID(account);
   return api<WaWorkflowResponse>('/api/wa/actions/registration/resume-otp', { method: 'POST', body: JSON.stringify({ wa_account_id: accountID, otp }) });
+}
+export function refreshWaAccountTransferChallenge(verificationRequestID: string) {
+  return api<WaWorkflowResponse>('/api/wa/actions/registration/account-transfer/refresh', { method: 'POST', body: JSON.stringify({ verification_request_id: verificationRequestID }) });
+}
+export function pollWaAccountTransferRegistration(verificationRequestID: string, waAccountID = '', maxAttempts = 1) {
+  return api<WaWorkflowResponse>('/api/wa/actions/registration/account-transfer/poll', { method: 'POST', body: JSON.stringify({ verification_request_id: verificationRequestID, wa_account_id: waAccountID, max_attempts: maxAttempts }) });
 }
 
 export async function setWaTwoFactorAuthSettings(account: WAAccount, pin: string) {

@@ -532,10 +532,10 @@ func (s *PostgresStore) SaveOTPMessage(ctx context.Context, msg *waappv1.OtpMess
 	otpID := firstNonEmpty(msg.GetOtpMessageId(), stableOTPMessageID(msg.GetWaAccountId(), msg.GetSourceParty(), otpValue))
 	redactedValue := firstNonEmpty(msg.GetOtp().GetRedactedValue(), redacted(otpValue))
 	secretRef := firstNonEmpty(msg.GetOtp().GetSecretRef(), "wa-otp:"+stableID(otpID))
-	_, err := s.pool.Exec(ctx, `INSERT INTO wa_otp_messages (otp_message_id, wa_account_id, client_profile_id, registered_identity_id, message_id, candidate_id, source, source_party, otp_value, otp_redacted, otp_secret_ref, received_at, created_at, updated_at)
-VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,now(),now())
-ON CONFLICT (otp_message_id) DO UPDATE SET client_profile_id=EXCLUDED.client_profile_id, registered_identity_id=EXCLUDED.registered_identity_id, message_id=EXCLUDED.message_id, candidate_id=EXCLUDED.candidate_id, source=EXCLUDED.source, source_party=EXCLUDED.source_party, otp_value=EXCLUDED.otp_value, otp_redacted=EXCLUDED.otp_redacted, otp_secret_ref=EXCLUDED.otp_secret_ref, received_at=EXCLUDED.received_at, updated_at=EXCLUDED.updated_at`,
-		otpID, msg.GetWaAccountId(), msg.GetClientProfileId(), msg.GetRegisteredIdentityId(), msg.GetMessageId(), msg.GetCandidateId(), source, msg.GetSourceParty(), otpValue, redactedValue, secretRef, timeFromProto(msg.GetReceivedAt()))
+	_, err := s.pool.Exec(ctx, `INSERT INTO wa_otp_messages (otp_message_id, wa_account_id, client_profile_id, registered_identity_id, message_id, candidate_id, source, source_party, otp_value, otp_redacted, otp_secret_ref, received_at, expires_at, created_at, updated_at)
+VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now(),now())
+ON CONFLICT (otp_message_id) DO UPDATE SET client_profile_id=EXCLUDED.client_profile_id, registered_identity_id=EXCLUDED.registered_identity_id, message_id=EXCLUDED.message_id, candidate_id=EXCLUDED.candidate_id, source=EXCLUDED.source, source_party=EXCLUDED.source_party, otp_value=EXCLUDED.otp_value, otp_redacted=EXCLUDED.otp_redacted, otp_secret_ref=EXCLUDED.otp_secret_ref, received_at=EXCLUDED.received_at, expires_at=EXCLUDED.expires_at, updated_at=EXCLUDED.updated_at`,
+		otpID, msg.GetWaAccountId(), msg.GetClientProfileId(), msg.GetRegisteredIdentityId(), msg.GetMessageId(), msg.GetCandidateId(), source, msg.GetSourceParty(), otpValue, redactedValue, secretRef, timeFromProto(msg.GetReceivedAt()), nullableProtoTime(msg.GetExpiresAt()))
 	return err
 }
 
@@ -553,7 +553,7 @@ func (s *PostgresStore) ListAccountOTPMessages(ctx context.Context, waAccountIDV
 	items := []*waappv1.OtpMessage{}
 	for rows.Next() {
 		var r otpMessageRow
-		if err := rows.Scan(&r.id, &r.waAccountIDValue, &r.clientProfileID, &r.registeredIdentityID, &r.messageID, &r.candidateID, &r.source, &r.sourceParty, &r.otpValue, &r.otpRedacted, &r.otpSecretRef, &r.receivedAt, &r.createdAt, &r.updatedAt); err != nil {
+		if err := rows.Scan(&r.id, &r.waAccountIDValue, &r.clientProfileID, &r.registeredIdentityID, &r.messageID, &r.candidateID, &r.source, &r.sourceParty, &r.otpValue, &r.otpRedacted, &r.otpSecretRef, &r.receivedAt, &r.expiresAt, &r.createdAt, &r.updatedAt); err != nil {
 			return nil, "", err
 		}
 		items = append(items, r.toProto(includeSensitiveValues))
@@ -568,7 +568,7 @@ func (s *PostgresStore) ListAccountOTPMessages(ctx context.Context, waAccountIDV
 }
 
 func (s *PostgresStore) queryOTPMessagePage(ctx context.Context, waAccountIDValue string, cursor keysetCursor, limit int) (pgx.Rows, error) {
-	const base = `SELECT o.otp_message_id,o.wa_account_id,o.client_profile_id,o.registered_identity_id,o.message_id,o.candidate_id,o.source,o.source_party,o.otp_value,o.otp_redacted,o.otp_secret_ref,o.received_at,o.created_at,o.updated_at
+	const base = `SELECT o.otp_message_id,o.wa_account_id,o.client_profile_id,o.registered_identity_id,o.message_id,o.candidate_id,o.source,o.source_party,o.otp_value,o.otp_redacted,o.otp_secret_ref,o.received_at,o.expires_at,o.created_at,o.updated_at
 FROM wa_otp_messages o
 WHERE o.wa_account_id=$1 AND NOT EXISTS (
   SELECT 1 FROM wa_inbound_messages m

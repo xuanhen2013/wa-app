@@ -7,6 +7,7 @@ import (
 	"encoding/base64"
 	"encoding/hex"
 	"encoding/json"
+	"os"
 	"strconv"
 	"strings"
 	"time"
@@ -23,7 +24,7 @@ func (e *NativeEngine) existParams(phone *waappv1.PhoneTarget, state nativeState
 		"fdid":              state.Profile.FDID,
 		"expid":             state.Profile.ExpID,
 		"access_session_id": state.Profile.AccessSessionID,
-		"id":                state.Profile.ID,
+		"id":                nativeRegistrationRequestID(state),
 		"backup_token":      state.Profile.BackupToken,
 		"authkey":           state.AuthKey,
 		"e_ident":           state.KeyBundle.IdentityPublic,
@@ -55,6 +56,7 @@ func (e *NativeEngine) codeRequestOrderedParams(ctx context.Context, phone *waap
 func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, state nativeState, authCodeContext string, wamsysCapture *waappv1.WamsysCapture, includeWamsys bool) (orderedParams, error) {
 	methodName := registrationMethodName(method, "sms")
 	fields := nativeDeviceMapFields(state)
+	attempts := nativeCodeRequestAttempts(state)
 	params := orderedParams{}
 	params.set("cc", phoneCC(phone), false)
 	params.set("in", phoneNational(phone), false)
@@ -65,34 +67,47 @@ func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, p
 	if state.Profile.AccessSessionID != "" {
 		params.set("access_session_id", state.Profile.AccessSessionID, false)
 	}
-	params.set("id", state.Profile.ID, true)
+	params.set("id", nativeRegistrationRequestID(state), true)
 	params.set("backup_token", state.Profile.BackupToken, true)
 	if token := e.registrationToken(phone, state); token != "" {
 		params.set("token", token, false)
 	}
 	params.set("method", methodName, false)
-	if contextValue := strings.TrimSpace(authCodeContext); contextValue != "" {
-		params.set("context", contextValue, false)
+	if nativeRegistrationMethodUsesAuthContext(methodName) {
+		if contextValue := strings.TrimSpace(authCodeContext); contextValue != "" {
+			params.set("context", contextValue, false)
+		}
 	}
-	if advertisingID := nativeAdvertisingID(state); advertisingID != "" && shouldSendNativeAdvertisingID(phone) {
+	if advertisingID := nativeAdvertisingID(state); advertisingID != "" {
 		params.set("advertising_id", advertisingID, false)
 	}
 	applyNativeE2EParams(&params, state)
-	applyNativeCodeRequestMapParams(&params, fields, methodName)
+	applyNativeCodeRequestMapParams(&params, fields, methodName, attempts, nativeCodeRequestReason(state))
 	var capture *waappv1.WamsysCapture
 	if includeWamsys {
 		var err error
-		capture, err = e.wamsysProvider().RegistrationMaterial(ctx, wamsysMaterialInput{Capture: wamsysCapture, Kind: waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_CODE, Phone: phone, State: state})
+		capture, err = e.wamsysProvider().RegistrationMaterial(ctx, wamsysMaterialInput{Capture: wamsysCapture, Kind: waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_CODE, Phone: phone, State: state, Now: e.clock.Now()})
 		if err != nil {
 			return nil, err
 		}
 	}
-	applyOrderedWamsysKey(&params, capture, "gpia")
+	if nativeShouldSendRegistrationGPIA(state) {
+		applyOrderedWamsysKey(&params, capture, "gpia")
+	}
 	addOptionalRawParam(&params, "db", fields["db"])
 	addOptionalRawParam(&params, "recaptcha", fields["recaptcha"])
+	applyNativeCodeRequestOptionalTailParams(&params, fields)
 	applyOrderedWamsysExcept(&params, capture, map[string]struct{}{"gpia": {}})
 	addOptionalRawParam(&params, "feo2_query_status", fields["feo2_query_status"])
 	return params, nil
+}
+
+func nativeRegistrationMethodUsesToken(methodName string) bool {
+	return true
+}
+
+func nativeRegistrationMethodUsesAuthContext(methodName string) bool {
+	return methodName != "acc_tr"
 }
 
 func applyNativeE2EParams(params *orderedParams, state nativeState) {
@@ -105,11 +120,28 @@ func applyNativeE2EParams(params *orderedParams, state nativeState) {
 	params.set("e_skey_sig", state.KeyBundle.SignedKeySig, false)
 }
 
-func applyNativeCodeRequestMapParams(params *orderedParams, fields map[string]string, method string) {
+func applyNativeCodeRequestMapParams(params *orderedParams, fields map[string]string, method string, attempts int, reason string) {
+	if method == "sms" {
+		addOptionalRawParam(params, "mistyped", fields["mistyped"])
+		addRawParam(params, "reason", reason)
+		addOptionalRawParam(params, "hasav", fields["hasav"])
+		addRawParam(params, "client_metrics", nativeCodeClientMetrics(attempts))
+		addOptionalRawParam(params, "mcc", fields["mcc"])
+		addOptionalRawParam(params, "mnc", fields["mnc"])
+		addOptionalRawParam(params, "sim_mcc", fields["sim_mcc"])
+		addOptionalRawParam(params, "sim_mnc", fields["sim_mnc"])
+		addRawParam(params, "education_screen_displayed", "false")
+		addRawParam(params, "prefer_sms_over_flash", nativePreferSMSOverFlash(method, fields))
+		applyNativeCodeRequestRuntimeParams(params, fields, method)
+		applyNativeCodeRequestStoredParams(params, fields)
+		addOptionalRawParam(params, "old_phone_number", fields["old_phone_number"])
+		addOptionalRawParam(params, "device_ram", fields["device_ram"])
+		return
+	}
 	addOptionalRawParam(params, "mistyped", fields["mistyped"])
-	addRawParam(params, "reason", "")
+	addRawParam(params, "reason", reason)
 	addOptionalRawParam(params, "hasav", fields["hasav"])
-	addRawParam(params, "client_metrics", nativeCodeClientMetrics())
+	addRawParam(params, "client_metrics", nativeCodeClientMetrics(attempts))
 	addOptionalRawParam(params, "mcc", fields["mcc"])
 	addOptionalRawParam(params, "mnc", fields["mnc"])
 	addOptionalRawParam(params, "sim_mcc", fields["sim_mcc"])
@@ -121,11 +153,43 @@ func applyNativeCodeRequestMapParams(params *orderedParams, fields map[string]st
 	addOptionalRawParam(params, "hasinrc", fields["hasinrc"])
 	addOptionalRawParam(params, "pid", fields["pid"])
 	addOptionalRawParam(params, "rc", fields["rc"])
+	applyNativeCodeRequestSIMSignalParams(params, fields)
+	applyNativeCodeRequestStoredParams(params, fields)
+	addOptionalRawParam(params, "old_phone_number", fields["old_phone_number"])
+	addOptionalRawParam(params, "device_ram", fields["device_ram"])
+}
+
+func applyNativeCodeRequestRuntimeParams(params *orderedParams, fields map[string]string, method string) {
+	if method != "sms" {
+		return
+	}
+	addOptionalRawParam(params, "network_radio_type", fields["network_radio_type"])
+	addOptionalRawParam(params, "simnum", fields["simnum"])
+	addOptionalRawParam(params, "hasinrc", fields["hasinrc"])
+	addOptionalRawParam(params, "pid", fields["pid"])
+	addOptionalRawParam(params, "rc", fields["rc"])
+	applyNativeCodeRequestSIMSignalParams(params, fields)
+}
+
+func applyNativeCodeRequestSIMSignalParams(params *orderedParams, fields map[string]string) {
 	addOptionalRawParam(params, "sim_type", fields["sim_type"])
 	addOptionalRawParam(params, "airplane_mode_type", fields["airplane_mode_type"])
 	addOptionalRawParam(params, "cellular_strength", fields["cellular_strength"])
 	addOptionalRawParam(params, "roaming_type", fields["roaming_type"])
-	addOptionalRawParam(params, "device_ram", fields["device_ram"])
+}
+
+func applyNativeCodeRequestStoredParams(params *orderedParams, fields map[string]string) {
+	addOptionalRawParam(params, "push_code", fields["push_code"])
+	addOptionalRawParam(params, "new_acc_uuid", fields["new_acc_uuid"])
+}
+
+func applyNativeCodeRequestOptionalTailParams(params *orderedParams, fields map[string]string) {
+	addOptionalRawParam(params, "fid", fields["fid"])
+	addOptionalRawParam(params, "preloads_app_manager_id", fields["preloads_app_manager_id"])
+	addOptionalRawParam(params, "preloads_attribution", fields["preloads_attribution"])
+	addOptionalRawParam(params, "tos_version", fields["tos_version"])
+	addOptionalRawParam(params, "entrypoint", fields["entrypoint"])
+	addOptionalRawParam(params, "cred_token", fields["cred_token"])
 }
 
 func addOptionalRawParam(params *orderedParams, key string, value string) {
@@ -240,8 +304,8 @@ func applyNativeRawParamMap(params map[string]string, raw map[string]struct{}, v
 func codeDeviceMap(method string, state nativeState) map[string]string {
 	fields := nativeDeviceMapFields(state)
 	out := map[string]string{
-		"reason":                     "",
-		"client_metrics":             nativeCodeClientMetrics(),
+		"reason":                     nativeCodeRequestReason(state),
+		"client_metrics":             nativeCodeClientMetrics(nativeCodeRequestAttempts(state)),
 		"education_screen_displayed": "false",
 		"prefer_sms_over_flash":      nativePreferSMSOverFlash(method, fields),
 		"network_radio_type":         fields["network_radio_type"],
@@ -252,7 +316,6 @@ func codeDeviceMap(method string, state nativeState) map[string]string {
 		"device_ram":                 fields["device_ram"],
 		"db":                         fields["db"],
 		"recaptcha":                  fields["recaptcha"],
-		"feo2_query_status":          fields["feo2_query_status"],
 		"mcc":                        fields["mcc"],
 		"mnc":                        fields["mnc"],
 		"sim_mcc":                    fields["sim_mcc"],
@@ -260,10 +323,13 @@ func codeDeviceMap(method string, state nativeState) map[string]string {
 	}
 	addNonEmptyNativeCodeField(out, fields, "mistyped")
 	addNonEmptyNativeCodeField(out, fields, "hasav")
-	addNonEmptyNativeCodeField(out, fields, "sim_type")
-	addNonEmptyNativeCodeField(out, fields, "airplane_mode_type")
-	addNonEmptyNativeCodeField(out, fields, "cellular_strength")
-	addNonEmptyNativeCodeField(out, fields, "roaming_type")
+	for _, key := range []string{
+		"sim_type", "airplane_mode_type", "cellular_strength", "roaming_type",
+		"push_code", "new_acc_uuid", "old_phone_number", "fid", "preloads_app_manager_id",
+		"preloads_attribution", "tos_version", "entrypoint", "cred_token",
+	} {
+		addNonEmptyNativeCodeField(out, fields, key)
+	}
 	return out
 }
 
@@ -304,21 +370,45 @@ func nativeDeviceMapFields(state nativeState) map[string]string {
 		if isOpaqueWamsysMapKey(key) {
 			continue
 		}
+		if isRuntimeNativeDeviceMapKey(key) {
+			continue
+		}
 		fields[key] = value
 	}
 	for key, value := range nativeDefaultDeviceMapFields() {
 		fields[key] = firstNonEmpty(fields[key], value)
 	}
-	if fields["feo2_query_status"] == legacyNativeFeo2QueryStatus {
-		fields["feo2_query_status"] = nativeDefaultFeo2QueryStatus
+	applyNativePreChatdABDeviceFields(fields, state)
+	for key, value := range nativeRuntimeDeviceMapFields(state) {
+		fields[key] = value
 	}
 	return fields
 }
 
+func nativeRuntimeDeviceMapFields(state nativeState) map[string]string {
+	return map[string]string{
+		"pid":               nativeRuntimeProcessID(state),
+		"feo2_query_status": nativeDefaultFeo2QueryStatus,
+	}
+}
+
+func isRuntimeNativeDeviceMapKey(key string) bool {
+	switch key {
+	case "pid", "feo2_query_status":
+		return true
+	default:
+		return false
+	}
+}
+
+func nativeRuntimeProcessID(state nativeState) string {
+	_ = state
+	return strconv.Itoa(os.Getpid())
+}
+
 const (
 	nativeDefaultFeo2QueryStatus   = "did_not_query"
-	legacyNativeFeo2QueryStatus    = "error_security_exception"
-	nativeDefaultDebugBridgeStatus = "0"
+	nativeDefaultDebugBridgeStatus = "1"
 )
 
 func nativeDefaultDeviceMapFields() map[string]string {
@@ -326,11 +416,10 @@ func nativeDefaultDeviceMapFields() map[string]string {
 		"network_radio_type":    "1",
 		"mistyped":              "7",
 		"hasav":                 "2",
-		"pid":                   "29418",
 		"simnum":                "0",
 		"hasinrc":               "1",
 		"rc":                    "0",
-		"device_ram":            "3.53",
+		"device_ram":            nativeDefaultDeviceRAMGiB,
 		"db":                    nativeDefaultDebugBridgeStatus,
 		"recaptcha":             `{"stage":"ABPROP_DISABLED"}`,
 		"feo2_query_status":     nativeDefaultFeo2QueryStatus,
@@ -343,8 +432,70 @@ func nativeDefaultDeviceMapFields() map[string]string {
 	}
 }
 
-func nativeCodeClientMetrics() string {
-	return `{"attempts":1,"app_campaign_download_source":"google-play|unknown"}`
+func nativeCodeRequestAttempts(state nativeState) int {
+	if state.GenerateCodeAttempts > 0 {
+		return state.GenerateCodeAttempts
+	}
+	return nativeCodeClientMetricAttempts(nativeCodeRequestAttemptsFromLastParams(state.LastCodeParams))
+}
+
+func (s *nativeState) nextGenerateCodeAttempt() int {
+	previous := s.GenerateCodeAttempts
+	if previous < 1 {
+		previous = nativeCodeRequestAttemptsFromLastParams(s.LastCodeParams)
+	}
+	if previous < 0 {
+		previous = 0
+	}
+	s.GenerateCodeAttempts = previous + 1
+	return s.GenerateCodeAttempts
+}
+
+func nativeCodeRequestAttemptsFromLastParams(params map[string]string) int {
+	metrics := strings.TrimSpace(params["client_metrics"])
+	if metrics == "" {
+		return 0
+	}
+	var payload struct {
+		Attempts int `json:"attempts"`
+	}
+	if err := json.Unmarshal([]byte(metrics), &payload); err != nil {
+		return 0
+	}
+	return payload.Attempts
+}
+
+func nativeCodeRequestReason(state nativeState) string {
+	if len(state.LastCodeResult) == 0 {
+		return ""
+	}
+	switch responseStatus(state.LastCodeResult) {
+	case "", "sent", "ok":
+		return ""
+	default:
+		return "server-send-request-error-unspecified"
+	}
+}
+
+func nativeCodeClientMetricAttempts(attempts int) int {
+	if attempts < 1 {
+		return 1
+	}
+	return attempts
+}
+
+func nativeCodeClientMetrics(attempts int) string {
+	body, err := json.Marshal(struct {
+		Attempts                  int    `json:"attempts"`
+		AppCampaignDownloadSource string `json:"app_campaign_download_source"`
+	}{
+		Attempts:                  nativeCodeClientMetricAttempts(attempts),
+		AppCampaignDownloadSource: nativeDefaultAppCampaignDownloadSource,
+	})
+	if err != nil {
+		return `{"attempts":1,"app_campaign_download_source":"unknown|unknown"}`
+	}
+	return string(body)
 }
 
 func nativeRegisterClientMetrics(method string) string {
@@ -368,24 +519,29 @@ func nativeCodeEntryMethod(method string) string {
 	}
 }
 
+const nativeDefaultAppCampaignDownloadSource = "unknown|unknown"
+
 const defaultRegistrationTokenHMACKeyHex = "44539b934347b6f12609296e69145b58309df94ed0a8a5a2d94078a8eaff87013e3d95a69644aa1b924646532c279f8bcd2855ab55f2c8bc1693adb7800c88ff"
 
 const defaultRegistrationTokenMessagePrefixHex = "" +
-	"30820332308202f0a00302010202044c2536a4300b06072a8648ce3804030500307c310b3009060355040613025553311330110603550408" +
-	"130a43616c69666f726e6961311430120603550407130b53616e746120436c61726131163014060355040a130d576861747341707020496e" +
-	"632e31143012060355040b130b456e67696e656572696e67311430120603550403130b427269616e204163746f6e301e170d313030363235" +
-	"3233303731365a170d3434303231353233303731365a307c310b3009060355040613025553311330110603550408130a43616c69666f726e" +
-	"6961311430120603550407130b53616e746120436c61726131163014060355040a130d576861747341707020496e632e3114301206035504" +
-	"0b130b456e67696e656572696e67311430120603550403130b427269616e204163746f6e308201b83082012c06072a8648ce380401308201" +
-	"1f02818100fd7f53811d75122952df4a9c2eece4e7f611b7523cef4400c31e3f80b6512669455d402251fb593d8d58fabfc5f5ba30f6cb9b" +
-	"556cd7813b801d346ff26660b76b9950a5a49f9fe8047b1022c24fbba9d7feb7c61bf83b57e7c6a8a6150f04fb83f6d3c51ec3023554135a" +
-	"169132f675f3ae2b61d72aeff22203199dd14801c70215009760508f15230bccb292b982a2eb840bf0581cf502818100f7e1a085d69b3dde" +
-	"cbbcab5c36b857b97994afbbfa3aea82f9574c0b3d0782675159578ebad4594fe67107108180b449167123e84c281613b7cf09328cc8a6e1" +
-	"3c167a8b547c8d28e0a3ae1e2bb3a675916ea37f0bfa213562f1fb627a01243bcca4f1bea8519089a883dfe15ae59f06928b665e807b5525" +
-	"64014c3bfecf492a0381850002818100d1198b4b81687bcf246d41a8a725f0a989a51bce326e84c828e1f556648bd71da487054d6de70fff" +
-	"4b49432b6862aa48fc2a93161b2c15a2ff5e671672dfb576e9d12aaff7369b9a99d04fb29d2bbbb2a503ee41b1ff37887064f41fe2805609" +
-	"063500a8e547349282d15981cdb58a08bede51dd7e9867295b3dfb45ffc6b259300b06072a8648ce3804030500032f00302c021400a602a7" +
-	"477acf841077237be090df436582ca2f0214350ce0268d07e71e55774ab4eacd4d071cd1efad228ddd386803c6f2480473cded35085d"
+	"30820332308202f0a00302010202044c2536a4300b06072a8648ce3804030500307c310b300906035504061302555331" +
+	"1330110603550408130a43616c69666f726e6961311430120603550407130b53616e746120436c617261311630140603" +
+	"55040a130d576861747341707020496e632e31143012060355040b130b456e67696e656572696e673114301206035504" +
+	"03130b427269616e204163746f6e301e170d3130303632353233303731365a170d3434303231353233303731365a307c" +
+	"310b3009060355040613025553311330110603550408130a43616c69666f726e6961311430120603550407130b53616e" +
+	"746120436c61726131163014060355040a130d576861747341707020496e632e31143012060355040b130b456e67696e" +
+	"656572696e67311430120603550403130b427269616e204163746f6e308201b83082012c06072a8648ce380401308201" +
+	"1f02818100fd7f53811d75122952df4a9c2eece4e7f611b7523cef4400c31e3f80b6512669455d402251fb593d8d58fa" +
+	"bfc5f5ba30f6cb9b556cd7813b801d346ff26660b76b9950a5a49f9fe8047b1022c24fbba9d7feb7c61bf83b57e7c6a8" +
+	"a6150f04fb83f6d3c51ec3023554135a169132f675f3ae2b61d72aeff22203199dd14801c70215009760508f15230bcc" +
+	"b292b982a2eb840bf0581cf502818100f7e1a085d69b3ddecbbcab5c36b857b97994afbbfa3aea82f9574c0b3d078267" +
+	"5159578ebad4594fe67107108180b449167123e84c281613b7cf09328cc8a6e13c167a8b547c8d28e0a3ae1e2bb3a675" +
+	"916ea37f0bfa213562f1fb627a01243bcca4f1bea8519089a883dfe15ae59f06928b665e807b552564014c3bfecf492a" +
+	"0381850002818100d1198b4b81687bcf246d41a8a725f0a989a51bce326e84c828e1f556648bd71da487054d6de70fff" +
+	"4b49432b6862aa48fc2a93161b2c15a2ff5e671672dfb576e9d12aaff7369b9a99d04fb29d2bbbb2a503ee41b1ff3788" +
+	"7064f41fe2805609063500a8e547349282d15981cdb58a08bede51dd7e9867295b3dfb45ffc6b259300b06072a8648ce" +
+	"3804030500032f00302c021400a602a7477acf841077237be090df436582ca2f0214350ce0268d07e71e55774ab4eacd" +
+	"4d071cd1efad228ddd386803c6f2480473cded35085d"
 
 func deriveDefaultRegistrationToken(phone string) string {
 	key, err := hex.DecodeString(defaultRegistrationTokenHMACKeyHex)
@@ -407,7 +563,7 @@ func existDeviceMap(state nativeState) map[string]string {
 	return map[string]string{
 		"mistyped":                        "7",
 		"offline_ab":                      `{"exposure":[],"exp_hash":[],"metrics":{}}`,
-		"client_metrics":                  `{"attempts":1,"app_campaign_download_source":"google-play|unknown","was_activated_from_stub":false}`,
+		"client_metrics":                  `{"attempts":1,"app_campaign_download_source":"unknown|unknown","was_activated_from_stub":false}`,
 		"read_phone_permission_granted":   "0",
 		"sim_state":                       "1",
 		"network_operator_name":           fields["network_operator_name"],
@@ -442,7 +598,10 @@ func parseExistProbeResult(data map[string]any) EngineProbeResult {
 	baseProtocolRejected := existProtocolRejected(status, reason)
 	invalidNumber := existInvalidNumberReason(reason)
 	rateLimited := existRateLimitedReason(reason)
-	registered := !baseProtocolRejected && !blocked && !invalidNumber && !rateLimited && (waOldFallbackEligible(data) || existRegisteredSignal(status, reason, data))
+	registered := !baseProtocolRejected && !blocked && !invalidNumber && !rateLimited && (waOldFallbackEligible(data) || accountTransferFallbackEligible(data) || existRegisteredSignal(status, reason, data))
+	if registered {
+		methodStatuses = upsertVerificationMethodStatus(methodStatuses, "acc_tr", verificationWaitStatus{Present: true})
+	}
 	protocolRejected := baseProtocolRejected
 	notRegistered := false
 	registeredKnown := registered || invalidNumber
@@ -597,6 +756,25 @@ func waProtocolError(data map[string]any, fallback string) error {
 	return NewError(code, message, retryable)
 }
 
+func accountTransferRegisterTerminalFailure(data map[string]any) bool {
+	reason := responseReason(data)
+	status := responseStatus(data)
+	switch reason {
+	case "mismatch", "bad_code", "bad_token", "fail_mismatch", "blocked", "fail_blocked", "missing", "fail_missing", "guessed_too_fast", "fail_guessed_too_fast", "security_code", "second_code", "device_confirm_or_second_code", "verified_standalone":
+		return true
+	case "too_recent", "too_many", "temporarily_unavailable":
+		return false
+	}
+	switch status {
+	case "rejected", "blocked", "fail", "failed":
+		return true
+	case "", "pending", "sent", "retry", "waiting", "temporarily_unavailable":
+		return false
+	default:
+		return false
+	}
+}
+
 func methodsFromStatuses(statuses []VerificationMethodStatus) []waappv1.VerificationDeliveryMethod {
 	seen := map[waappv1.VerificationDeliveryMethod]struct{}{}
 	out := make([]waappv1.VerificationDeliveryMethod, 0, len(statuses))
@@ -658,7 +836,7 @@ type verificationWaitStatus struct {
 	Present   bool
 }
 
-var apkDefaultRegistrationMethodOrder = []string{"flash", "sms", "voice"}
+var apkDefaultRegistrationMethodOrder = []string{"flash", "sms", "voice", "wa_old", "acc_tr", "send_sms", "email_otp"}
 
 func verificationMethodStatuses(data map[string]any, _ []waappv1.VerificationDeliveryMethod) []VerificationMethodStatus {
 	out := []VerificationMethodStatus{}
@@ -799,6 +977,15 @@ func waOldFallbackEligible(data map[string]any) bool {
 	return false
 }
 
+func accountTransferFallbackEligible(data map[string]any) bool {
+	for _, code := range fallbackVerificationMethodCodes(data) {
+		if code == "acc_tr" {
+			return verificationMethodEligibleForAPKUI(data, code)
+		}
+	}
+	return false
+}
+
 func verificationMethodEligibleForAPKUI(data map[string]any, code string) bool {
 	switch code {
 	case "sms", "voice", "flash":
@@ -809,6 +996,11 @@ func verificationMethodEligibleForAPKUI(data map[string]any, code string) bool {
 			return false
 		}
 		return eligibility != 0 && eligibility != 4
+	case "acc_tr":
+		if verificationExplicitlyEligible(data, "pref_acc_tr_eligibility", "acc_tr_eligible", "account_transfer_eligible") {
+			return true
+		}
+		return waOldFallbackEligible(data)
 	case "send_sms":
 		return verificationExplicitlyEligible(data, "pref_send_sms_eligibility", "send_sms_eligible", "can_send_sms_to_wa") && !verificationExplicitlyExhausted(data, "send_sms_attempts_exhausted", "pref_send_sms_attempts_exhausted")
 	case "email_otp":
@@ -865,6 +1057,8 @@ func verificationMethodWaitValues(data map[string]any, code string) []any {
 		return []any{data["flash_wait"], data["flash_wait_time"], data["flash_retry_time"], data["pref_flash_wait_time"], data["EXTRA_FLASH_RETRY_TIME"]}
 	case "wa_old":
 		return []any{data["wa_old_wait"], data["wa_old_retry_time"], data["pref_wa_old_wait_time"], data["EXTRA_WA_OLD_RETRY_TIME"]}
+	case "acc_tr":
+		return []any{data["acc_tr_wait"], data["account_transfer_wait"], data["pref_acc_tr_wait_time"], data["EXTRA_ACC_TR_RETRY_TIME"]}
 	case "email_otp":
 		return []any{data["email_otp_wait"], data["email_otp_retry_time"], data["pref_email_otp_wait_time"], data["EXTRA_EMAIL_OTP_RETRY_TIME"]}
 	case "silent_auth":
@@ -985,20 +1179,4 @@ func jsonValuePresent(value any) bool {
 		return strings.TrimSpace(text) != ""
 	}
 	return true
-}
-
-func shouldSendNativeAdvertisingID(phone *waappv1.PhoneTarget) bool {
-	country := strings.ToUpper(strings.TrimSpace(phone.GetCountryIso2()))
-	if country == "" {
-		return true
-	}
-	_, blocked := nativeAdvertisingIDSuppressedCountries[country]
-	return !blocked
-}
-
-var nativeAdvertisingIDSuppressedCountries = map[string]struct{}{
-	"AT": {}, "BE": {}, "BG": {}, "CY": {}, "CZ": {}, "DE": {}, "DK": {}, "EE": {},
-	"ES": {}, "FI": {}, "FR": {}, "GR": {}, "HR": {}, "HU": {}, "IE": {}, "IT": {},
-	"LT": {}, "LU": {}, "LV": {}, "MT": {}, "NL": {}, "PL": {}, "PT": {}, "RO": {},
-	"SE": {}, "SI": {}, "SK": {},
 }

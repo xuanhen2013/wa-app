@@ -57,6 +57,8 @@ func main() {
 	}
 	service := app.NewServer(store, runtime, engine, clock, ids)
 	service.SetCommonProxyURL(cfg.CommonProxy)
+	service.SetRegistrationProxyLeaseMode(cfg.RegistrationProxyLeaseMode)
+	service.SetProxyRuntimeLeaseClient(cfg.ProxyRuntimeAPI, cfg.ProxyRuntimeToken)
 	authConfig := newDashboardAuthConfig(cfg.DashboardAuthPass)
 	grpcListenAddr := configValue(cfg.GRPCListenAddr, defaultGRPCListenAddr)
 	dashboardHTTPAddr := configValue(cfg.DashboardHTTPAddr, defaultDashboardHTTPAddr)

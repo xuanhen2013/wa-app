@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"log"
 	"regexp"
 	"strings"
 	"time"
@@ -15,9 +16,12 @@ import (
 
 const (
 	defaultWAAppVersion  = "2.26.23.71"
+	defaultWAABPropURL   = "https://y9yrsygcg6.execute-api.us-east-1.amazonaws.com/s/s?_=/v2/reg_onboard_abprop&"
 	defaultWAExistURL    = "https://y9yrsygcg6.execute-api.us-east-1.amazonaws.com/s/s?_=/v2/exist&"
 	defaultWACodeURL     = "https://y9yrsygcg6.execute-api.us-east-1.amazonaws.com/s/s?_=/v2/code&"
 	defaultWARegisterURL = "https://y9yrsygcg6.execute-api.us-east-1.amazonaws.com/s/s?_=/v2/register&"
+
+	nativeDefaultSMSCodeLength int32 = 6
 )
 
 var nativeSensitiveDigitsPattern = regexp.MustCompile(`\b[0-9]{4,8}\b`)
@@ -89,34 +93,35 @@ func (e *NativeEngine) ProbeAccount(ctx context.Context, input EngineRegistratio
 	if err != nil {
 		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}
 	}
-	return e.probeAccountWithState(ctx, input, state)
+	result, _ := e.probeAccountWithState(ctx, input, state)
+	return result
 }
 
-func (e *NativeEngine) probeAccountWithState(ctx context.Context, input EngineRegistrationInput, state nativeState) EngineProbeResult {
-	if err := ensureNativeSoftwareAttestation(&state); err != nil {
-		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}
+func (e *NativeEngine) probeAccountWithState(ctx context.Context, input EngineRegistrationInput, state nativeState) (EngineProbeResult, nativeState) {
+	if err := ensureNativeSoftwareAttestation(&state, e.clock.Now()); err != nil {
+		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}, state
 	}
 	params, rawKeys := e.existParams(input.Phone, state)
 	if err := e.applyRuntimeWamsys(ctx, waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_EXIST, input.Phone, state, params, rawKeys); err != nil {
-		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}
+		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}, state
 	}
 	logNativeRegistrationMapShape("exist", input.Phone, input.DeliveryMethod, params, rawKeys)
 	plain := renderNativePlain(params, rawKeys)
 	client, err := e.httpForProxy()
 	if err != nil {
-		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}
+		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}, state
 	}
 	data, _, err := client.postWASafe(ctx, defaultWAExistURL, plain, nativeUserAgentForState(state, input.AppVersion), state.Attestation)
 	result := parseExistProbeResult(data)
 	if err != nil {
 		if result.Err != nil || parsedExistApplicationOutcome(result) {
-			return result
+			return result, state
 		}
 		result.Status = waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED
 		result.AccountFlow = accountProbeFlowProbeFailed
 		result.Err = classifyHTTPError(data, err)
 	}
-	return result
+	return result, state
 }
 
 func parsedExistApplicationOutcome(result EngineProbeResult) bool {
@@ -138,9 +143,10 @@ func (e *NativeEngine) RequestVerificationCode(ctx context.Context, input Engine
 }
 
 func (e *NativeEngine) requestVerificationCodeWithState(ctx context.Context, input EngineRegistrationInput, state nativeState) (EngineCodeResult, nativeState) {
-	if err := ensureNativeSoftwareAttestation(&state); err != nil {
+	if err := ensureNativeSoftwareAttestation(&state, e.clock.Now()); err != nil {
 		return EngineCodeResult{Status: waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED, Err: err}, state
 	}
+	state.nextGenerateCodeAttempt()
 	params, err := e.codeRequestOrderedParams(ctx, input.Phone, input.DeliveryMethod, state, input.AuthCodeContext)
 	if err != nil {
 		return EngineCodeResult{Status: waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED, Err: err}, state
@@ -156,6 +162,9 @@ func (e *NativeEngine) requestVerificationCodeWithState(ctx context.Context, inp
 	state.LastCodeResult = sanitizeResponse(data)
 	if enc != "" {
 		state.LastCodeResult["enc_sha256"] = encHash(enc)
+	}
+	if input.DeliveryMethod != waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_ACCOUNT_TRANSFER {
+		state.AccountTransfer = nativeAccountTransferState{}
 	}
 	retryAfter := verificationCodeRetryAfter(data, input.DeliveryMethod)
 	now := e.clock.Now()
@@ -188,28 +197,75 @@ func (e *NativeEngine) requestVerificationCodeWithState(ctx context.Context, inp
 			Err:            waProtocolError(data, "verification request was rejected"),
 		}, state
 	}
-	return verificationCodeResult(status, data, input.DeliveryMethod, now, retryAfter), state
+	result := verificationCodeResult(status, data, input.DeliveryMethod, now, retryAfter)
+	if input.DeliveryMethod == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_ACCOUNT_TRANSFER {
+		challenge, challengeErr := e.prepareAccountTransferChallenge(input.Phone, &state, data, now)
+		if challengeErr != nil {
+			result.Status = waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED
+			result.Err = challengeErr
+			result.RawStatus = responseStatus(data)
+			result.RawReason = responseReason(data)
+			return result, state
+		}
+		result.AccountTransferChallenge = challenge
+		result.ExpectedCodeLength = challenge.GetCurrentCodeLength()
+		result.ExpiresAt = challenge.GetExpiresAt().AsTime()
+		result.MethodStatuses = upsertVerificationMethodStatus(result.MethodStatuses, "acc_tr", verificationWaitStatus{Present: true})
+	}
+	return result, state
+}
+
+func (e *NativeEngine) prepareAccountTransferChallenge(phone *waappv1.PhoneTarget, state *nativeState, data map[string]any, now time.Time) (*waappv1.AccountTransferChallenge, error) {
+	codes := accountTransferCodesFromResponse(data)
+	if len(codes) == 0 {
+		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "account transfer code list is missing", false)
+	}
+	state.AccountTransfer = newNativeAccountTransferState(phone, codes, now)
+	return state.AccountTransfer.challenge("", now)
+}
+
+func (e *NativeEngine) RefreshAccountTransferChallenge(ctx context.Context, input EngineAccountTransferChallengeInput) EngineAccountTransferChallengeResult {
+	state, err := e.loadState(ctx, input.ClientProfileID)
+	if err != nil {
+		return EngineAccountTransferChallengeResult{Err: err}
+	}
+	if state.AccountTransfer.empty() {
+		return EngineAccountTransferChallengeResult{Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_EXPIRED, "account transfer challenge is not available", false)}
+	}
+	challenge, err := state.AccountTransfer.challenge(input.VerificationRequestID, e.clock.Now())
+	if err != nil {
+		return EngineAccountTransferChallengeResult{Err: err}
+	}
+	_ = e.saveState(ctx, input.ClientProfileID, state)
+	return EngineAccountTransferChallengeResult{Challenge: challenge}
 }
 
 func (e *NativeEngine) SubmitVerificationCode(ctx context.Context, input EngineSubmitInput) EngineRegisterResult {
-	if strings.TrimSpace(input.Code) == "" {
-		return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "verification code is required", false)}
-	}
 	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
 		return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: err}
 	}
-	if err := ensureNativeSoftwareAttestation(&state); err != nil {
+	if err := ensureNativeSoftwareAttestation(&state, e.clock.Now()); err != nil {
 		return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: err}
 	}
-	params, rawKeys := e.registerParams(input.Phone, input.DeliveryMethod, input.Code, state, input.AuthCodeContext)
+	code := strings.TrimSpace(input.Code)
+	if input.DeliveryMethod == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_ACCOUNT_TRANSFER {
+		code, _, err = state.AccountTransfer.currentCode(e.clock.Now())
+		if err != nil {
+			return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: err}
+		}
+	}
+	if code == "" {
+		return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "verification code is required", false)}
+	}
+	params, rawKeys := e.registerParams(input.Phone, input.DeliveryMethod, code, state, input.AuthCodeContext)
 	logNativeRegistrationMapShape("register", input.Phone, input.DeliveryMethod, params, rawKeys)
 	plain := renderNativePlain(params, rawKeys)
 	client, err := e.httpForProxy()
 	if err != nil {
 		return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: err}
 	}
-	data, enc, err := client.postWASafe(ctx, defaultWARegisterURL, plain, nativeUserAgentForState(state, input.AppVersion), state.Attestation)
+	data, enc, err := postRegisterWithRetry(ctx, client, plain, nativeUserAgentForState(state, input.AppVersion), state.Attestation)
 	state.LastRegister = sanitizeResponse(data)
 	if routingInfo := chatRoutingInfoFromValue(data["edge_routing_info"]); routingInfo != "" {
 		state.ChatRoutingInfo = routingInfo
@@ -222,6 +278,13 @@ func (e *NativeEngine) SubmitVerificationCode(ctx context.Context, input EngineS
 		return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: classifyHTTPError(data, err)}
 	}
 	if status := responseStatus(data); status != "ok" && status != "registered" {
+		if input.DeliveryMethod == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_ACCOUNT_TRANSFER && !accountTransferRegisterTerminalFailure(data) {
+			_ = e.saveState(ctx, input.ClientProfileID, state)
+			return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_SUBMITTED, Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, "account transfer confirmation is pending", true)}
+		}
+		if input.DeliveryMethod == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_ACCOUNT_TRANSFER {
+			state.AccountTransfer = nativeAccountTransferState{}
+		}
 		_ = e.saveState(ctx, input.ClientProfileID, state)
 		return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: waProtocolError(data, "registration was rejected")}
 	}
@@ -230,9 +293,69 @@ func (e *NativeEngine) SubmitVerificationCode(ctx context.Context, input EngineS
 	if login != "" {
 		state.RegistrationJID = normalizeJID(login)
 	}
+	if input.DeliveryMethod == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_ACCOUNT_TRANSFER {
+		state.AccountTransfer = nativeAccountTransferState{}
+	}
 	_ = e.saveState(ctx, input.ClientProfileID, state)
 	completedAt := e.clock.Now()
 	return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REGISTERED, RegisteredID: "waid_" + stableID(login), ServiceAccountID: lid, ServiceLoginID: login, CompletedAt: completedAt}
+}
+
+func postRegisterWithRetry(ctx context.Context, client *nativeHTTPClient, plain string, userAgent string, attestation nativeSoftwareAttestation) (map[string]any, string, error) {
+	const maxRegisterRetries = 2
+	data, enc, err := client.postWASafe(ctx, defaultWARegisterURL, plain, userAgent, attestation)
+	for attempt := 1; err != nil && retryableRegisterHTTPFailure(data, err) && attempt <= maxRegisterRetries; attempt++ {
+		log.Printf(
+			"wa_registration_register_retry status=scheduled attempt=%d http_status=%d wa_status=%s wa_reason=%s",
+			attempt,
+			int(jsonNumber(data["status_code"])),
+			probeLogValue(responseStatus(data)),
+			probeLogValue(responseReason(data)),
+		)
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return data, enc, ctxErr
+		}
+		data, enc, err = client.postWASafe(ctx, defaultWARegisterURL, plain, userAgent, attestation)
+		if err == nil {
+			log.Printf(
+				"wa_registration_register_retry status=accepted attempt=%d http_status=%d wa_status=%s wa_reason=%s",
+				attempt,
+				int(jsonNumber(data["status_code"])),
+				probeLogValue(responseStatus(data)),
+				probeLogValue(responseReason(data)),
+			)
+		} else {
+			log.Printf(
+				"wa_registration_register_retry status=failed attempt=%d http_status=%d wa_status=%s wa_reason=%s retryable=%t",
+				attempt,
+				int(jsonNumber(data["status_code"])),
+				probeLogValue(responseStatus(data)),
+				probeLogValue(responseReason(data)),
+				retryableRegisterHTTPFailure(data, err),
+			)
+		}
+	}
+	return data, enc, err
+}
+
+func retryableRegisterHTTPFailure(data map[string]any, err error) bool {
+	if err == nil {
+		return false
+	}
+	statusCode := int(jsonNumber(data["status_code"]))
+	if statusCode == 429 || statusCode >= 500 {
+		return true
+	}
+	if statusCode > 0 {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	for _, marker := range []string{"timeout", "deadline", "temporary", "connection reset", "connection refused", "eof", "proxy", "network"} {
+		if strings.Contains(message, marker) {
+			return true
+		}
+	}
+	return false
 }
 
 func (e *NativeEngine) CheckLoginState(ctx context.Context, input EngineLoginCheckInput) EngineLoginCheckResult {
@@ -293,14 +416,14 @@ func (e *NativeEngine) ReceiveMessageBatch(ctx context.Context, input EngineMess
 	}
 	client := newChatdClient(chatdConfigForState(proxyURL, state, 0))
 	now := e.clock.Now()
-	messages, payloads, update, err := client.receiveBatch(ctx, state, input, input.AppVersion, now)
+	messages, payloads, otps, update, err := client.receiveBatch(ctx, state, input, input.AppVersion, now)
 	if err != nil {
 		return EngineMessageBatchResult{Err: chatdReceiveError(err)}
 	}
 	if applyChatdReceiveState(&state, input, payloads, update) {
 		_ = e.saveState(ctx, input.ClientProfileID, state)
 	}
-	return EngineMessageBatchResult{Messages: messages, Contacts: contactsFromContactHints(input.WAAccountID, nil, update.ContactHints, now)}
+	return EngineMessageBatchResult{Messages: messages, Contacts: contactsFromContactHints(input.WAAccountID, nil, update.ContactHints, now), OTPMessages: otps}
 }
 
 func applyChatdReceiveState(state *nativeState, input EngineMessageInput, payloads []chatdEncPayload, update chatdSessionUpdate) bool {
@@ -628,7 +751,7 @@ func (e *NativeEngine) codeParams(phone *waappv1.PhoneTarget, method waappv1.Ver
 		"fdid":              state.Profile.FDID,
 		"expid":             state.Profile.ExpID,
 		"access_session_id": state.Profile.AccessSessionID,
-		"id":                state.Profile.ID,
+		"id":                nativeRegistrationRequestID(state),
 		"backup_token":      state.Profile.BackupToken,
 		"authkey":           state.AuthKey,
 		"e_ident":           state.KeyBundle.IdentityPublic,
@@ -638,14 +761,15 @@ func (e *NativeEngine) codeParams(phone *waappv1.PhoneTarget, method waappv1.Ver
 		"e_skey_val":        state.KeyBundle.SignedKeyValue,
 		"e_skey_sig":        state.KeyBundle.SignedKeySig,
 	}
-	if token := e.registrationToken(phone, state); token != "" {
-		params["token"] = token
+	if nativeRegistrationMethodUsesToken(methodName) {
+		if token := e.registrationToken(phone, state); token != "" {
+			params["token"] = token
+		}
 	}
-	if contextValue := strings.TrimSpace(authCodeContext); contextValue != "" {
-		params["context"] = contextValue
-	}
-	if advertisingID := nativeAdvertisingID(state); advertisingID != "" && shouldSendNativeAdvertisingID(phone) {
-		params["advertising_id"] = advertisingID
+	if nativeRegistrationMethodUsesAuthContext(methodName) {
+		if contextValue := strings.TrimSpace(authCodeContext); contextValue != "" {
+			params["context"] = contextValue
+		}
 	}
 	raw := map[string]struct{}{"id": {}, "backup_token": {}}
 	applyNativeRawParamMap(params, raw, codeDeviceMap(methodName, state), true)
@@ -675,7 +799,7 @@ func (e *NativeEngine) registerParams(phone *waappv1.PhoneTarget, method waappv1
 		"fdid":              firstNonEmpty(state.LastCodeParams["fdid"], state.Profile.FDID),
 		"expid":             firstNonEmpty(state.LastCodeParams["expid"], state.Profile.ExpID),
 		"access_session_id": firstNonEmpty(state.LastCodeParams["access_session_id"], state.Profile.AccessSessionID),
-		"id":                firstNonEmpty(state.LastCodeParams["id"], state.Profile.ID),
+		"id":                nativeRegistrationRequestID(state),
 		"backup_token":      firstNonEmpty(state.LastCodeParams["backup_token"], state.Profile.BackupToken),
 		"code":              code,
 		"authkey":           firstNonEmpty(state.LastCodeParams["authkey"], state.AuthKey),
@@ -686,13 +810,19 @@ func (e *NativeEngine) registerParams(phone *waappv1.PhoneTarget, method waappv1
 		"e_skey_val":        firstNonEmpty(state.LastCodeParams["e_skey_val"], state.KeyBundle.SignedKeyValue),
 		"e_skey_sig":        firstNonEmpty(state.LastCodeParams["e_skey_sig"], state.KeyBundle.SignedKeySig),
 	}
-	if token := e.registrationToken(phone, state); token != "" {
-		params["token"] = token
+	if nativeRegistrationMethodUsesToken(methodName) {
+		if token := e.registrationToken(phone, state); token != "" {
+			params["token"] = token
+		}
 	}
-	if contextValue := firstNonEmpty(authCodeContext, state.LastCodeParams["context"]); contextValue != "" {
-		params["context"] = contextValue
+	if nativeRegistrationMethodUsesAuthContext(methodName) {
+		if contextValue := firstNonEmpty(authCodeContext, state.LastCodeParams["context"]); contextValue != "" {
+			params["context"] = contextValue
+		}
 	}
-	applyRegisterCodeResultParams(params, state)
+	if methodName != "acc_tr" {
+		applyRegisterCodeResultParams(params, state)
+	}
 	raw := map[string]struct{}{"id": {}, "backup_token": {}}
 	applyNativeRawParamMap(params, raw, registerDeviceMap(methodName, state), true)
 	return params, raw

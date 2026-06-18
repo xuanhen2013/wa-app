@@ -267,7 +267,7 @@ func (s *dashboardHTTP) handleAccountOTPMessages(w http.ResponseWriter, r *http.
 		WaAccountId:            q.Get("wa_account_id"),
 		Limit:                  int32(positiveInt(q.Get("limit"), 20)),
 		Cursor:                 q.Get("cursor"),
-		IncludeSensitiveValues: true,
+		IncludeSensitiveValues: queryBool(q.Get("include_sensitive_values"), true),
 	})
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "load WA OTP history failed"})
@@ -845,6 +845,17 @@ func positiveInt(value string, fallback int) int {
 		return fallback
 	}
 	return parsed
+}
+
+func queryBool(value string, fallback bool) bool {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "true", "1", "yes", "on":
+		return true
+	case "false", "0", "no", "off":
+		return false
+	default:
+		return fallback
+	}
 }
 
 func methodNotAllowed(w http.ResponseWriter, allowed string) {

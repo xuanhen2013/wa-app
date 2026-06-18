@@ -81,6 +81,11 @@ func (s *Server) receiveMessageBatch(ctx context.Context, req *waappv1.ReceiveMe
 	if err := s.saveInboundMessagesForSession(ctx, session, result.Messages); err != nil {
 		return &waappv1.ReceiveMessageBatchResponse{Session: session, Error: ToProtoError(err)}, nil
 	}
+	for _, msg := range result.OTPMessages {
+		if err := s.store.SaveOTPMessage(ctx, msg); err != nil {
+			return &waappv1.ReceiveMessageBatchResponse{Session: session, Error: ToProtoError(err)}, nil
+		}
+	}
 	if len(result.Contacts) > 0 {
 		_ = s.store.SaveWAContacts(ctx, result.Contacts)
 	}

@@ -56,6 +56,7 @@ type chatdSession struct {
 	transport          chatdTransport
 	endpoint           chatdEndpoint
 	serverStaticPublic string
+	deviceID           string
 }
 
 type chatdSessionUpdate struct {
@@ -69,6 +70,7 @@ type chatdSessionUpdate struct {
 type chatdReceivedItem struct {
 	message *waappv1.InboundMessage
 	payload *chatdEncPayload
+	otp     *waappv1.OtpMessage
 }
 
 func chatdPhase(phase string, err error) error {
@@ -101,10 +103,10 @@ func (c *chatdClient) openTimeout() time.Duration {
 	return c.cfg.Timeout
 }
 
-func (c *chatdClient) receiveBatch(ctx context.Context, state nativeState, input EngineMessageInput, appVersion string, now time.Time) ([]*waappv1.InboundMessage, []chatdEncPayload, chatdSessionUpdate, error) {
+func (c *chatdClient) receiveBatch(ctx context.Context, state nativeState, input EngineMessageInput, appVersion string, now time.Time) ([]*waappv1.InboundMessage, []chatdEncPayload, []*waappv1.OtpMessage, chatdSessionUpdate, error) {
 	session, err := c.openSession(ctx, state, input.RegisteredIdentityID, defaultLoginPayload, appVersion)
 	if err != nil {
-		return nil, nil, chatdSessionUpdate{}, err
+		return nil, nil, nil, chatdSessionUpdate{}, err
 	}
 	defer session.Close()
 	return session.receiveBatch(input, now)
@@ -178,6 +180,7 @@ func (c *chatdClient) openEndpointSession(ctx context.Context, endpoint chatdEnd
 		transport:          chatdTransport{rw: rw, keys: keys, codec: c.codec, maxFrameBytes: c.cfg.MaxFrameBytes},
 		endpoint:           endpoint,
 		serverStaticPublic: b64u(keys.serverStaticPublic),
+		deviceID:           chatdDeviceIDFromState(state),
 	}, nil
 }
 
@@ -252,9 +255,9 @@ func (s *chatdSession) update() chatdSessionUpdate {
 	return chatdSessionUpdate{Endpoint: s.endpoint, ServerStaticPublic: s.serverStaticPublic}
 }
 
-func (s *chatdSession) receiveBatch(input EngineMessageInput, now time.Time) ([]*waappv1.InboundMessage, []chatdEncPayload, chatdSessionUpdate, error) {
+func (s *chatdSession) receiveBatch(input EngineMessageInput, now time.Time) ([]*waappv1.InboundMessage, []chatdEncPayload, []*waappv1.OtpMessage, chatdSessionUpdate, error) {
 	if s == nil {
-		return nil, nil, chatdSessionUpdate{}, fmt.Errorf("chatd session is not open")
+		return nil, nil, nil, chatdSessionUpdate{}, fmt.Errorf("chatd session is not open")
 	}
 	update := s.update()
 	maxMessages := input.MaxMessages
@@ -273,7 +276,7 @@ func (s *chatdSession) receiveBatch(input EngineMessageInput, now time.Time) ([]
 			if len(items) > 0 {
 				break
 			}
-			return nil, nil, update, chatdPhase("chatd frame read", err)
+			return nil, nil, nil, update, chatdPhase("chatd frame read", err)
 		}
 		nextUpdate, nextItems, err := s.consumeIncomingNode(input, node, update, now)
 		update = nextUpdate
@@ -281,7 +284,7 @@ func (s *chatdSession) receiveBatch(input EngineMessageInput, now time.Time) ([]
 			if len(items) > 0 {
 				break
 			}
-			return nil, nil, update, err
+			return nil, nil, nil, update, err
 		}
 		before := len(items)
 		items = appendReceivedItems(items, nextItems, maxMessages)
@@ -289,8 +292,8 @@ func (s *chatdSession) receiveBatch(input EngineMessageInput, now time.Time) ([]
 			deadline = minTime(deadline, time.Now().Add(defaultChatdPostMessageDrainWindow))
 		}
 	}
-	messages, payloads := splitReceivedItems(items)
-	return messages, payloads, update, nil
+	messages, payloads, otps := splitReceivedItems(items)
+	return messages, payloads, otps, update, nil
 }
 
 func (s *chatdSession) consumeIncomingNode(input EngineMessageInput, node chatdNode, update chatdSessionUpdate, now time.Time) (chatdSessionUpdate, []chatdReceivedItem, error) {
@@ -300,7 +303,12 @@ func (s *chatdSession) consumeIncomingNode(input EngineMessageInput, node chatdN
 	if isChatdTerminalNode(node) {
 		return update, nil, newChatdError("server sent %s", controlNodeSummary(node))
 	}
-	if ack, ok := buildAckForNode(node); ok {
+	oldRegistrationOTP, isOldRegistrationNode, oldRegistrationValid := oldRegistrationOTPFromChatdNode(node, s.deviceID, now)
+	ackAttrs := map[string]string(nil)
+	if isOldRegistrationNode && s.deviceID != "" {
+		ackAttrs = map[string]string{"device_id": s.deviceID}
+	}
+	if ack, ok := buildAckForNodeWithAttrs(node, ackAttrs); ok {
 		if err := s.transport.sendNode(ack); err != nil {
 			return update, nil, chatdPhase("chatd ack write", err)
 		}
@@ -310,21 +318,26 @@ func (s *chatdSession) consumeIncomingNode(input EngineMessageInput, node chatdN
 	}
 	update.ContactHints = dedupeWAContactHints(append(update.ContactHints, contactHintsFromChatdNode(node)...))
 	update.PrivacyTokens = dedupePrivacyTokenUpdates(append(update.PrivacyTokens, privacyTokenUpdatesFromChatdNode(node)...))
+	items := []chatdReceivedItem{}
+	if oldRegistrationValid {
+		if otp := oldRegistrationOTPMessage(input, node, oldRegistrationOTP, now); otp != nil {
+			items = append(items, chatdReceivedItem{otp: otp})
+		}
+	}
 	if input.MessageSessionID == "" {
-		return update, nil, nil
+		return update, items, nil
 	}
 	encs := iterEncPayloads(node)
 	if len(encs) == 0 {
 		if node.Tag != "message" {
-			return update, nil, nil
+			return update, items, nil
 		}
 		contact := firstNonEmpty(node.Attrs["from"], node.Attrs["participant"])
 		sender := firstNonEmpty(node.Attrs["participant"], node.Attrs["from"])
 		payloadSummary := nodePayloadSummary(node)
 		message := &waappv1.InboundMessage{MessageId: inboundMessageID(input.WAAccountID, node.Attrs["id"], node.Tag, sender, payloadSummary), MessageSessionId: input.MessageSessionID, Kind: inboundKind(node.Tag), EncryptionState: waappv1.MessageEncryptionState_MESSAGE_ENCRYPTION_STATE_PLAINTEXT, AckStatus: ackStatusForNode(node), ContactRef: contact, SenderRef: sender, PayloadRef: "node:" + redacted(payloadSummary), ProviderMessageId: node.Attrs["id"], ProviderTimestamp: chatdProviderTimestamp(node.Attrs["t"]), DeleteStatus: waappv1.MessageDeleteStatus_MESSAGE_DELETE_STATUS_NOT_DELETED, ReceivedAt: timestamppb.New(now)}
-		return update, []chatdReceivedItem{{message: message}}, nil
+		return update, append(items, chatdReceivedItem{message: message}), nil
 	}
-	items := make([]chatdReceivedItem, 0, len(encs))
 	for _, enc := range encs {
 		payload := enc
 		payloadRef := payloadRefForEnc(input.WAAccountID, payload.Payload)
@@ -347,19 +360,22 @@ func appendReceivedItems(dst []chatdReceivedItem, src []chatdReceivedItem, limit
 	return dst
 }
 
-func splitReceivedItems(items []chatdReceivedItem) ([]*waappv1.InboundMessage, []chatdEncPayload) {
+func splitReceivedItems(items []chatdReceivedItem) ([]*waappv1.InboundMessage, []chatdEncPayload, []*waappv1.OtpMessage) {
 	messages := make([]*waappv1.InboundMessage, 0, len(items))
 	payloads := []chatdEncPayload{}
+	otps := []*waappv1.OtpMessage{}
 	for _, item := range items {
-		if item.message == nil {
-			continue
+		if item.otp != nil {
+			otps = append(otps, item.otp)
 		}
-		messages = append(messages, item.message)
-		if item.payload != nil {
-			payloads = append(payloads, *item.payload)
+		if item.message != nil {
+			messages = append(messages, item.message)
+			if item.payload != nil {
+				payloads = append(payloads, *item.payload)
+			}
 		}
 	}
-	return messages, payloads
+	return messages, payloads, otps
 }
 
 func chatdProviderTimestamp(value string) *timestamppb.Timestamp {

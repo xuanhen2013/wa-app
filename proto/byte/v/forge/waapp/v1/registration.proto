@@ -16,6 +16,7 @@ option php_namespace = "ByteVForge\\WaApp\\V1";
 service WaRegistrationService {
   rpc ProbeAccount(ProbeAccountRequest) returns (ProbeAccountResponse);
   rpc RequestVerificationCode(RequestVerificationCodeRequest) returns (RequestVerificationCodeResponse);
+  rpc RefreshAccountTransferChallenge(RefreshAccountTransferChallengeRequest) returns (RefreshAccountTransferChallengeResponse);
   rpc SubmitVerificationCode(SubmitVerificationCodeRequest) returns (SubmitVerificationCodeResponse);
   rpc GetRegistration(GetRegistrationRequest) returns (GetRegistrationResponse);
   rpc GetLoginState(GetLoginStateRequest) returns (GetLoginStateResponse);
@@ -138,6 +139,18 @@ message VerificationCodeRequestRecord {
   repeated VerificationMethodStatus method_statuses = 11;
 }
 
+message AccountTransferChallenge {
+  string verification_request_id = 1;
+  int32 code_count = 2;
+  int32 current_code_index = 3;
+  int32 current_code_length = 4;
+  google.protobuf.Duration rotation_interval = 5;
+  google.protobuf.Timestamp requested_at = 6;
+  google.protobuf.Timestamp expires_at = 7;
+  // Sensitive QR/deeplink payload. It carries the current account-transfer token.
+  SensitiveText qr_deeplink = 8;
+}
+
 message RegisteredIdentity {
   string registered_identity_id = 1;
   string wa_account_id = 2;
@@ -208,6 +221,7 @@ message RequestVerificationCodeRequest {
 message RequestVerificationCodeResponse {
   VerificationCodeRequestRecord verification_request = 1;
   WaError error = 2;
+  AccountTransferChallenge account_transfer_challenge = 3;
 }
 
 message SubmitVerificationCodeRequest {
@@ -218,6 +232,16 @@ message SubmitVerificationCodeRequest {
     string code = 3;
     string code_secret_ref = 4;
   }
+}
+
+message RefreshAccountTransferChallengeRequest {
+  RequestContext context = 1;
+  string verification_request_id = 2;
+}
+
+message RefreshAccountTransferChallengeResponse {
+  AccountTransferChallenge account_transfer_challenge = 1;
+  WaError error = 2;
 }
 
 message SubmitVerificationCodeResponse {

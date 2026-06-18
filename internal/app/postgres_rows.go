@@ -472,6 +472,7 @@ type otpMessageRow struct {
 	otpRedacted          string
 	otpSecretRef         string
 	receivedAt           time.Time
+	expiresAt            sql.NullTime
 	createdAt            time.Time
 	updatedAt            time.Time
 }
@@ -495,6 +496,7 @@ func (r otpMessageRow) toProto(includeSensitiveValue bool) *waappv1.OtpMessage {
 		SourceParty:          r.sourceParty,
 		Otp:                  text,
 		ReceivedAt:           timestamppb.New(r.receivedAt.UTC()),
+		ExpiresAt:            sqlTime(r.expiresAt),
 		Audit:                audit(r.createdAt, r.updatedAt),
 	}
 }

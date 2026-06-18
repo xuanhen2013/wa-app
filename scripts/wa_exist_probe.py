@@ -266,7 +266,7 @@ def exist_device_map(state: ProbeState) -> dict[str, str]:
     return {
         "mistyped": "7",
         "offline_ab": '{"exposure":[],"exp_hash":[],"metrics":{}}',
-        "client_metrics": '{"attempts":1,"app_campaign_download_source":"google-play|unknown","was_activated_from_stub":false}',
+        "client_metrics": '{"attempts":1,"app_campaign_download_source":"unknown|unknown","was_activated_from_stub":false}',
         "read_phone_permission_granted": "0",
         "sim_state": "1",
         "network_operator_name": state.device_map["network_operator_name"],

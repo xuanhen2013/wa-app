@@ -242,7 +242,7 @@ func (e *NativeEngine) BuildRegistrationRequest(ctx context.Context, req *waappv
 	if kind != waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_EXIST {
 		params.set("method", firstNonEmpty(params.get("method"), methodName), false)
 	}
-	wamsysCapture, err := e.wamsysProvider().RegistrationMaterial(ctx, wamsysMaterialInput{Capture: req.GetWamsysCapture(), Kind: kind, Phone: phone, State: state})
+	wamsysCapture, err := e.wamsysProvider().RegistrationMaterial(ctx, wamsysMaterialInput{Capture: req.GetWamsysCapture(), Kind: kind, Phone: phone, State: state, Now: e.clock.Now()})
 	if err != nil {
 		return nil, err
 	}
@@ -263,7 +263,7 @@ func (e *NativeEngine) BuildRegistrationRequest(ctx context.Context, req *waappv
 	resp.Params = params.toProto(req.GetIncludeSensitiveValues())
 	resp.Plaintext = sensitiveOutput(plain, "registration-plaintext", req.GetIncludeSensitiveValues())
 	if req.GetEncryptRequest() {
-		if err := ensureNativeSoftwareAttestation(&state); err != nil {
+		if err := ensureNativeSoftwareAttestation(&state, e.clock.Now()); err != nil {
 			return nil, err
 		}
 		envelope, err := buildWASafeEnvelope([]byte(plain), defaultWASafeServerPublicKeyHex, state.Attestation)

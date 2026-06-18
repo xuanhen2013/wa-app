@@ -43,10 +43,43 @@ func (s *Server) requestVerificationCode(ctx context.Context, req *waappv1.Reque
 	}
 	result := runner.RequestVerificationCode(ctx, EngineRegistrationInput{WAAccountID: waAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: profile.GetProtocolProfileId(), AppVersion: s.clientProfileAppVersion(ctx, profile), Phone: account.GetPhone(), DeliveryMethod: method})
 	record := s.newVerificationCodeRequestRecord(account, profile, method, result)
+	challenge := result.AccountTransferChallenge
+	if challenge != nil {
+		challenge.VerificationRequestId = record.GetVerificationRequestId()
+	}
 	if err := s.store.SaveVerificationRequest(ctx, record); err != nil {
 		return &waappv1.RequestVerificationCodeResponse{Error: ToProtoError(err)}, nil
 	}
-	return &waappv1.RequestVerificationCodeResponse{VerificationRequest: record, Error: record.GetLastError()}, nil
+	return &waappv1.RequestVerificationCodeResponse{VerificationRequest: record, AccountTransferChallenge: challenge, Error: record.GetLastError()}, nil
+}
+
+func (s *Server) RefreshAccountTransferChallenge(ctx context.Context, req *waappv1.RefreshAccountTransferChallengeRequest) (*waappv1.RefreshAccountTransferChallengeResponse, error) {
+	if err := validateContext(req.GetContext()); err != nil {
+		return &waappv1.RefreshAccountTransferChallengeResponse{Error: ToProtoError(err)}, nil
+	}
+	verification, err := s.store.GetVerificationRequest(ctx, req.GetVerificationRequestId())
+	if err != nil {
+		return &waappv1.RefreshAccountTransferChallengeResponse{Error: ToProtoError(err)}, nil
+	}
+	if verification.GetDeliveryMethod() != waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_ACCOUNT_TRANSFER {
+		return &waappv1.RefreshAccountTransferChallengeResponse{Error: ToProtoError(NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "verification request is not account transfer", false))}, nil
+	}
+	account, profile, err := s.waAccountAndProfile(ctx, verification.GetWaAccountId(), verification.GetClientProfileId())
+	if err != nil {
+		return &waappv1.RefreshAccountTransferChallengeResponse{Error: ToProtoError(err)}, nil
+	}
+	result := s.runner.RefreshAccountTransferChallenge(ctx, EngineAccountTransferChallengeInput{
+		EngineRegistrationInput: EngineRegistrationInput{
+			WAAccountID:       waAccountID(account),
+			ClientProfileID:   profile.GetClientProfileId(),
+			ProtocolProfileID: profile.GetProtocolProfileId(),
+			AppVersion:        s.clientProfileAppVersion(ctx, profile),
+			Phone:             account.GetPhone(),
+			DeliveryMethod:    verification.GetDeliveryMethod(),
+		},
+		VerificationRequestID: verification.GetVerificationRequestId(),
+	})
+	return &waappv1.RefreshAccountTransferChallengeResponse{AccountTransferChallenge: result.Challenge, Error: ToProtoError(result.Err)}, nil
 }
 
 func (s *Server) SubmitVerificationCode(ctx context.Context, req *waappv1.SubmitVerificationCodeRequest) (*waappv1.SubmitVerificationCodeResponse, error) {

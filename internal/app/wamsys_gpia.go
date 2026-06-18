@@ -13,19 +13,22 @@ import (
 )
 
 const (
-	nativeGPIAErrorCode       = -2
-	nativeGPIAPackageName     = "com.whatsapp"
-	nativeGPIASourceSize      = "141711087"
-	nativeGPIASourceDigest    = "b3BumN//vPO0GypN5i+xXvNznZyGiXOT99Jip70omCg="
-	nativeGPIACertDigest      = "OKD31QX+GP7GT780Psqq8xDb15k="
-	nativeGPIAClassesDigest   = "qoblldcHz4lA84Sgs1QLZWPpd6YKG25zf0GwJZdTHXk="
-	nativeGPIANativeLibDigest = "G9McgxRaSjtq92o7zx0fbf3Ak7+SPmxxNyvNXS01hlM="
-	nativeGPIADataSODigest    = "0j9kw9djlCtmCCavV7go2wwge+2os853ubiE7F7Dew4="
+	nativeGPIAErrorCode    = -2
+	nativeGPIAPackageName  = "com.whatsapp"
+	nativeGPIASourceSize   = "141711087"
+	nativeGPIASourceDigest = "b3BumN//vPO0GypN5i+xXvNznZyGiXOT99Jip70omCg="
+	// Full app-release APK SHA-256/Base64; native bootstrap stores this in
+	// global 0xc45a48 for GPIA sha256/_is.
+	nativeGPIASourceFullDigest = "vJrNuYDSuWUZ87O1W5+xs/2g74mwPA2JO+dkqjlJZG4="
+	nativeGPIACertDigest       = "OKD31QX+GP7GT780Psqq8xDb15k="
+	nativeGPIAClassesDigest    = "qoblldcHz4lA84Sgs1QLZWPpd6YKG25zf0GwJZdTHXk="
+	nativeGPIANativeLibDigest  = "G9McgxRaSjtq92o7zx0fbf3Ak7+SPmxxNyvNXS01hlM="
+	nativeGPIADataSODigest     = "SrL/HHWX9VAinH9OV4eloGSQLWSsUug93h5YGGad17s="
 )
 
 type nativeGPIAMaterial struct {
 	Primary       string
-	TokenCompact  string
+	CodeCompact   string
 	DeviceCompact string
 }
 
@@ -36,27 +39,30 @@ type nativeGPIAJSONField struct {
 
 func buildNativeGPIAErrorMaterial(input wamsysMaterialInput) (nativeGPIAMaterial, error) {
 	sourceDir := nativeGPIASourceDir(input)
-	pathDigest := nativeGPIASHA256Base64([]byte(sourceDir))
 	keySource := nativeGPIAKeySource(input.State)
-	primary, err := encryptNativeGPIAJSON(keySource, []nativeGPIAJSONField{
+	primaryFields := []nativeGPIAJSONField{
 		{Key: "sizeInBytes", Value: nativeGPIASourceSize},
 		{Key: "packageName", Value: nativeGPIAPackageName},
 		{Key: "code", Value: nativeGPIAErrorCode},
 		{Key: "shatr", Value: nativeGPIASourceDigest},
 		{Key: "p", Value: sourceDir},
 		{Key: "cert", Value: nativeGPIACertDigest},
-		{Key: "sha256", Value: pathDigest},
-	})
+		{Key: "sha256", Value: nativeGPIASourceFullDigest},
+	}
+	logNativeGPIAPlaintextShape(input, "primary_long", keySource, primaryFields)
+	primary, err := encryptNativeGPIAJSON(keySource, primaryFields)
 	if err != nil {
 		return nativeGPIAMaterial{}, err
 	}
-	tokenCompact, err := encryptNativeGPIAJSON(keySource, []nativeGPIAJSONField{
+	codeCompactFields := []nativeGPIAJSONField{
 		{Key: "_ic", Value: nativeGPIAErrorCode},
-	})
+	}
+	logNativeGPIAPlaintextShape(input, "token_compact", keySource, codeCompactFields)
+	codeCompact, err := encryptNativeGPIAJSON(keySource, codeCompactFields)
 	if err != nil {
 		return nativeGPIAMaterial{}, err
 	}
-	deviceCompact, err := encryptNativeGPIAJSON(keySource, []nativeGPIAJSONField{
+	deviceCompactFields := []nativeGPIAJSONField{
 		{Key: "_dh", Value: nativeGPIAClassesDigest},
 		{Key: "_iln", Value: nativeGPIADataSODigest},
 		{Key: "_isb", Value: nativeGPIASourceSize},
@@ -66,12 +72,14 @@ func buildNativeGPIAErrorMaterial(input wamsysMaterialInput) (nativeGPIAMaterial
 		{Key: "_ln", Value: nativeGPIANativeLibDigest},
 		{Key: "_ist", Value: nativeGPIASourceDigest},
 		{Key: "_icr", Value: nativeGPIACertDigest},
-		{Key: "_is", Value: pathDigest},
-	})
+		{Key: "_is", Value: nativeGPIASourceFullDigest},
+	}
+	logNativeGPIAPlaintextShape(input, "device_compact", keySource, deviceCompactFields)
+	deviceCompact, err := encryptNativeGPIAJSON(keySource, deviceCompactFields)
 	if err != nil {
 		return nativeGPIAMaterial{}, err
 	}
-	return nativeGPIAMaterial{Primary: primary, TokenCompact: tokenCompact, DeviceCompact: deviceCompact}, nil
+	return nativeGPIAMaterial{Primary: primary, CodeCompact: codeCompact, DeviceCompact: deviceCompact}, nil
 }
 
 func nativeGPIADisplayID(state nativeState) string {
@@ -80,29 +88,18 @@ func nativeGPIADisplayID(state nativeState) string {
 }
 
 func nativeGPIASourceDir(input wamsysMaterialInput) string {
-	first := nativeGPIAInstallSegment(input, "source-dir-a")
-	second := nativeGPIAInstallSegment(input, "source-dir-b")
+	return nativeStableGPIASourceDir(input.State)
+}
+
+func nativeStableGPIASourceDir(state nativeState) string {
+	first := nativeStableInstallToken(state, "source-dir-prefix")
+	second := nativeStableInstallToken(state, "source-dir-package")
 	return "/data/app/~~" + first + "==/com.whatsapp-" + second + "==/base.apk"
 }
 
-func nativeGPIAInstallSegment(input wamsysMaterialInput, label string) string {
-	seed := strings.Join([]string{
-		"byte-v-forge-wa-gpia-source-dir/v1",
-		label,
-		phoneCC(input.Phone),
-		phoneNational(input.Phone),
-		input.State.Profile.PhoneSHA256,
-		input.State.Profile.FDID,
-		input.State.Profile.ExpIDUUID,
-		input.State.AuthKey,
-	}, "|")
-	sum := sha256.Sum256([]byte(seed))
+func nativeStableInstallToken(state nativeState, label string) string {
+	sum := sha256.Sum256([]byte(nativeStableRuntimeSeed(state, label)))
 	return base64.RawURLEncoding.EncodeToString(sum[:16])
-}
-
-func nativeGPIASHA256Base64(value []byte) string {
-	sum := sha256.Sum256(value)
-	return base64.StdEncoding.EncodeToString(sum[:])
 }
 
 func nativeGPIAKeySource(state nativeState) string {
@@ -125,6 +122,10 @@ func encryptNativeGPIAJSON(keySource string, fields []nativeGPIAJSONField) (stri
 	if err != nil {
 		return "", err
 	}
+	return encryptNativeGPIAData(keySource, plaintext)
+}
+
+func encryptNativeGPIAData(keySource string, plaintext []byte) (string, error) {
 	key := sha256.Sum256([]byte(keySource))
 	iv := randomBytes(aes.BlockSize)
 	ciphertext, err := aesCBCPKCS7Encrypt(plaintext, key[:], iv)
@@ -163,7 +164,7 @@ func renderNativeGPIAJSONObject(fields []nativeGPIAJSONField) ([]byte, error) {
 func renderNativeGPIAJSONValue(value any) ([]byte, error) {
 	switch v := value.(type) {
 	case string:
-		return json.Marshal(v)
+		return renderNativeGPIAJSONString(v)
 	case int:
 		return []byte(strconv.Itoa(v)), nil
 	case int64:
@@ -175,4 +176,12 @@ func renderNativeGPIAJSONValue(value any) ([]byte, error) {
 	default:
 		return nil, fmt.Errorf("unsupported native GPIA JSON value type %T", value)
 	}
+}
+
+func renderNativeGPIAJSONString(value string) ([]byte, error) {
+	encoded, err := json.Marshal(value)
+	if err != nil {
+		return nil, err
+	}
+	return []byte(strings.ReplaceAll(string(encoded), `/`, `\/`)), nil
 }

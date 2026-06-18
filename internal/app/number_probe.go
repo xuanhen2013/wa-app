@@ -89,7 +89,7 @@ func (s *Server) probeNumberSMSAttempt(ctx context.Context, payload map[string]a
 		"fingerprint_persistence": "RANDOM_NOT_COMMITTED",
 		"fingerprint":             fingerprintSummary(phoneProfileToProto(phone, state.Profile)),
 	}
-	probeResult := probeEngine.probeAccountWithState(ctx, EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone}, state)
+	probeResult, _ := probeEngine.probeAccountWithState(ctx, EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone}, state)
 	account := probeResultMap(probeResult)
 	sms := smsProbeMap(account)
 	result := buildNumberProbeResult(payload, proxy, fingerprint, account, sms)
@@ -113,7 +113,17 @@ func (s *Server) numberProbeProxy(ctx context.Context, payload map[string]any) (
 	if !useProxy {
 		return route, "", waProxySummary(route, false), func() {}, nil
 	}
-	return route, route.ProxyURL, waProxySummary(route, true), func() {}, nil
+	gateway := &actionGateway{server: s}
+	lease, leasedRoute, err := gateway.acquireRegistrationProxyLease(ctx, payload, route, numberProbeProxyRouteTTL)
+	if err != nil {
+		return WAProxyRoute{}, "", nil, func() {}, err
+	}
+	release := func() {}
+	if validRegistrationProxyLease(lease) {
+		route = leasedRoute
+		release = func() { gateway.releaseRegistrationProxyLease(context.Background(), lease) }
+	}
+	return route, route.ProxyURL, waProxySummary(route, true), release, nil
 }
 
 func buildNumberProbeResult(input map[string]any, proxy map[string]any, fingerprint map[string]any, account map[string]any, sms map[string]any) map[string]any {

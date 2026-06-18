@@ -113,7 +113,7 @@ func (e *NativeEngine) applyTextMessageSendUpdate(ctx context.Context, clientPro
 	if state == nil {
 		return nil
 	}
-	_, payloads := splitReceivedItems(items)
+	_, payloads, _ := splitReceivedItems(items)
 	if !applyChatdReceiveState(state, input, payloads, update) {
 		return nil
 	}

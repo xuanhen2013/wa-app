@@ -37,7 +37,6 @@ export const apkSupportedLoginRegistrationMethods = [
   loginMethodOption(RegistrationLoginMethod.REGISTRATION_LOGIN_METHOD_SILENT_AUTH_TS43, 'silent_auth_ts_43'),
   loginMethodOption(RegistrationLoginMethod.REGISTRATION_LOGIN_METHOD_AUTOCONF, 'autoconf'),
   loginMethodOption(RegistrationLoginMethod.REGISTRATION_LOGIN_METHOD_DEEPLINK_OTP, 'deeplink_otp'),
-  loginMethodOption(RegistrationLoginMethod.REGISTRATION_LOGIN_METHOD_ACCOUNT_TRANSFER, 'acc_tr'),
   loginMethodOption(RegistrationLoginMethod.REGISTRATION_LOGIN_METHOD_PASSKEY, 'passkey'),
   loginMethodOption(RegistrationLoginMethod.REGISTRATION_LOGIN_METHOD_DISCOVERABLE_CREDENTIAL, 'discoverable_credential'),
   loginMethodOption(RegistrationLoginMethod.REGISTRATION_LOGIN_METHOD_OAUTH_EMAIL, 'oauth_email'),
@@ -54,7 +53,8 @@ export function registrationMethodStatus(status: WaProbeStatus, method: Verifica
 
 export function registrationMethodCooldownSeconds(status: WaProbeStatus, method: VerificationDeliveryMethod, elapsedSeconds = 0) {
   const methodStatus = registrationMethodStatus(status, method);
-  const base = methodStatus?.cooldownSeconds || 0;
+  const smsFallback = method === VerificationDeliveryMethod.VERIFICATION_DELIVERY_METHOD_SMS ? status.smsWaitSeconds || 0 : 0;
+  const base = methodStatus?.cooldownSeconds || smsFallback;
   return base > 0 ? Math.max(0, Math.ceil(base - elapsedSeconds)) : 0;
 }
 
@@ -68,6 +68,14 @@ export function registrationMethodAvailable(status: WaProbeStatus, method: Verif
 
 export function registrationAnyMethodAvailable(status: WaProbeStatus | null, elapsedSeconds = 0) {
   return Boolean(status && selectableRegistrationMethods.some((option) => registrationMethodAvailable(status, option.value, elapsedSeconds)));
+}
+
+export function registrationMinimumCooldownSeconds(status: WaProbeStatus | null, elapsedSeconds = 0) {
+  if (!status) return 0;
+  const values = selectableRegistrationMethods
+    .map((option) => registrationMethodCooldownSeconds(status, option.value, elapsedSeconds))
+    .filter((value) => value > 0);
+  return values.length ? Math.min(...values) : 0;
 }
 
 export function registrationChannelsHardBlocked(status: WaProbeStatus | null) {

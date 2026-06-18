@@ -87,10 +87,10 @@ func (e *longConnectionNativeEngine) ReceiveMessageBatch(ctx context.Context, in
 		return EngineMessageBatchResult{Err: chatdReceiveError(err)}
 	}
 	now := e.clock.Now()
-	messages, payloads, update, drained := e.drainPendingLocked(input)
+	messages, payloads, otps, update, drained := e.drainPendingLocked(input)
 	if !drained {
 		var preempted bool
-		messages, payloads, update, err, preempted = e.receiveBatchWithActiveReadLocked(ctx, session, input, now)
+		messages, payloads, otps, update, err, preempted = e.receiveBatchWithActiveReadLocked(ctx, session, input, now)
 		if err != nil {
 			if preempted {
 				return EngineMessageBatchResult{}
@@ -101,7 +101,7 @@ func (e *longConnectionNativeEngine) ReceiveMessageBatch(ctx context.Context, in
 				return EngineMessageBatchResult{Err: chatdReceiveError(retryErr)}
 			}
 			now = e.clock.Now()
-			messages, payloads, update, err, preempted = e.receiveBatchWithActiveReadLocked(ctx, session, input, now)
+			messages, payloads, otps, update, err, preempted = e.receiveBatchWithActiveReadLocked(ctx, session, input, now)
 			if err != nil {
 				if preempted {
 					return EngineMessageBatchResult{}
@@ -124,7 +124,7 @@ func (e *longConnectionNativeEngine) ReceiveMessageBatch(ctx context.Context, in
 			}
 		}
 	}
-	return EngineMessageBatchResult{Messages: messages, Contacts: contactsFromContactHints(input.WAAccountID, nil, update.ContactHints, now)}
+	return EngineMessageBatchResult{Messages: messages, Contacts: contactsFromContactHints(input.WAAccountID, nil, update.ContactHints, now), OTPMessages: otps}
 }
 
 func (e *longConnectionNativeEngine) ResolveContactProfilePicture(ctx context.Context, input EngineContactProfilePictureInput) EngineContactProfilePictureResult {
@@ -204,9 +204,9 @@ func (e *longConnectionNativeEngine) ensureSessionForIQLocked(ctx context.Contex
 	return nil, err
 }
 
-func (e *longConnectionNativeEngine) drainPendingLocked(input EngineMessageInput) ([]*waappv1.InboundMessage, []chatdEncPayload, chatdSessionUpdate, bool) {
+func (e *longConnectionNativeEngine) drainPendingLocked(input EngineMessageInput) ([]*waappv1.InboundMessage, []chatdEncPayload, []*waappv1.OtpMessage, chatdSessionUpdate, bool) {
 	if len(e.pending) == 0 && !hasChatdSessionUpdate(e.pendingUp) {
-		return nil, nil, chatdSessionUpdate{}, false
+		return nil, nil, nil, chatdSessionUpdate{}, false
 	}
 	limit := input.MaxMessages
 	if limit <= 0 {
@@ -220,8 +220,8 @@ func (e *longConnectionNativeEngine) drainPendingLocked(input EngineMessageInput
 	e.pending = append([]chatdReceivedItem(nil), e.pending[count:]...)
 	update := e.pendingUp
 	e.pendingUp = chatdSessionUpdate{}
-	messages, payloads := splitReceivedItems(items)
-	return messages, payloads, update, true
+	messages, payloads, otps := splitReceivedItems(items)
+	return messages, payloads, otps, update, true
 }
 
 func (e *longConnectionNativeEngine) bufferPendingLocked(items []chatdReceivedItem, update chatdSessionUpdate) {
@@ -232,13 +232,13 @@ func (e *longConnectionNativeEngine) bufferPendingLocked(items []chatdReceivedIt
 	e.pendingUp = mergeChatdSessionUpdate(e.pendingUp, update)
 }
 
-func (e *longConnectionNativeEngine) receiveBatchWithActiveReadLocked(ctx context.Context, session *chatdSession, input EngineMessageInput, now time.Time) ([]*waappv1.InboundMessage, []chatdEncPayload, chatdSessionUpdate, error, bool) {
+func (e *longConnectionNativeEngine) receiveBatchWithActiveReadLocked(ctx context.Context, session *chatdSession, input EngineMessageInput, now time.Time) ([]*waappv1.InboundMessage, []chatdEncPayload, []*waappv1.OtpMessage, chatdSessionUpdate, error, bool) {
 	read, readCtx := e.startActiveReadLocked(ctx)
 	e.mu.Unlock()
-	messages, payloads, update, err := receiveChatdBatchWithContext(readCtx, session, input, now)
+	messages, payloads, otps, update, err := receiveChatdBatchWithContext(readCtx, session, input, now)
 	e.mu.Lock()
 	preempted := e.finishActiveReadLocked(read)
-	return messages, payloads, update, err, preempted
+	return messages, payloads, otps, update, err, preempted
 }
 
 func (e *longConnectionNativeEngine) startActiveReadLocked(ctx context.Context) (*longConnectionActiveRead, context.Context) {
@@ -516,7 +516,7 @@ func (e *longConnectionNativeEngine) closeLocked() error {
 	return err
 }
 
-func receiveChatdBatchWithContext(ctx context.Context, session *chatdSession, input EngineMessageInput, now time.Time) ([]*waappv1.InboundMessage, []chatdEncPayload, chatdSessionUpdate, error) {
+func receiveChatdBatchWithContext(ctx context.Context, session *chatdSession, input EngineMessageInput, now time.Time) ([]*waappv1.InboundMessage, []chatdEncPayload, []*waappv1.OtpMessage, chatdSessionUpdate, error) {
 	stopContextClose := closeChatdSessionOnContext(ctx, session)
 	defer stopContextClose()
 	return session.receiveBatch(input, now)

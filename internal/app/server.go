@@ -25,8 +25,10 @@ type Server struct {
 	clock   Clock
 	ids     IDGenerator
 
-	commonProxyURL  string
-	longConnections *LongConnectionManager
+	commonProxyURL             string
+	registrationProxyLeaseMode registrationProxyLeaseMode
+	proxyRuntimeLease          *proxyRuntimeLeaseClient
+	longConnections            *LongConnectionManager
 }
 
 func NewServer(store Store, runtime RuntimeState, runner ProtocolEngine, clock Clock, ids IDGenerator) *Server {
@@ -43,6 +45,14 @@ func NewServer(store Store, runtime RuntimeState, runner ProtocolEngine, clock C
 
 func (s *Server) SetCommonProxyURL(common string) {
 	s.commonProxyURL = strings.TrimSpace(common)
+}
+
+func (s *Server) SetRegistrationProxyLeaseMode(mode string) {
+	s.registrationProxyLeaseMode = normalizeRegistrationProxyLeaseMode(mode)
+}
+
+func (s *Server) SetProxyRuntimeLeaseClient(apiBase string, authToken string) {
+	s.proxyRuntimeLease = newProxyRuntimeLeaseClient(apiBase, authToken)
 }
 
 func (s *Server) RunLongConnections(ctx context.Context) error {

@@ -213,6 +213,7 @@ CREATE TABLE IF NOT EXISTS wa_otp_messages (
   otp_redacted TEXT NOT NULL DEFAULT '',
   otp_secret_ref TEXT NOT NULL DEFAULT '',
   received_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  expires_at TIMESTAMPTZ,
   created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
   updated_at TIMESTAMPTZ NOT NULL DEFAULT now()
 );
@@ -267,6 +268,7 @@ ALTER TABLE wa_inbound_messages ADD COLUMN IF NOT EXISTS provider_timestamp TIME
 ALTER TABLE wa_inbound_messages ADD COLUMN IF NOT EXISTS read_at TIMESTAMPTZ;
 ALTER TABLE wa_inbound_messages ADD COLUMN IF NOT EXISTS delete_status TEXT NOT NULL DEFAULT 'MESSAGE_DELETE_STATUS_NOT_DELETED';
 ALTER TABLE wa_inbound_messages ADD COLUMN IF NOT EXISTS deleted_at TIMESTAMPTZ;
+ALTER TABLE wa_otp_messages ADD COLUMN IF NOT EXISTS expires_at TIMESTAMPTZ;
 ALTER TABLE wa_contacts ADD COLUMN IF NOT EXISTS profile_picture_id TEXT NOT NULL DEFAULT '';
 
 CREATE UNIQUE INDEX IF NOT EXISTS wa_accounts_e164_number_key ON wa_accounts (e164_number);

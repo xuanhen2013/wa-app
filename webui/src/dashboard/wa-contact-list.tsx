@@ -3,9 +3,11 @@ import { useMemo, useRef, useState } from 'react';
 import { Loader2, Trash2 } from 'lucide-react';
 import { NavLink } from 'react-router';
 import { WAContactKind } from '../proto/byte/v/forge/waapp/v1/contacts';
+import type { OtpMessage } from '../proto/byte/v/forge/waapp/v1/extraction';
 import type { WaContact } from './wa-chat-model';
 import { formatChatTime } from './wa-chat-model';
 import { WaContactAvatar } from './wa-contact-avatar';
+import { WaContactOtpBanner } from './wa-contact-otp-banner';
 import { waContactPath } from './wa-route-paths';
 import { Alert, AlertDescription } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -13,18 +15,19 @@ import { Button } from '@/components/ui/button';
 import { Empty, EmptyDescription, EmptyHeader, EmptyTitle } from '@/components/ui/empty';
 import { Input } from '@/components/ui/input';
 
-export function WaContactList({ accountID, contacts, selectedID, loading, error, deletingID, onOpenContact, onDeleteContact }: { accountID: string; contacts: WaContact[]; selectedID: string; loading: boolean; error?: string; deletingID?: string; onOpenContact: (contactID: string) => void; onDeleteContact: (contactID: string) => void }) {
+export function WaContactList({ accountID, contacts, selectedID, loading, error, deletingID, otp, onOpenContact, onDeleteContact }: { accountID: string; contacts: WaContact[]; selectedID: string; loading: boolean; error?: string; deletingID?: string; otp?: OtpMessage; onOpenContact: (contactID: string) => void; onDeleteContact: (contactID: string) => void }) {
   const [query, setQuery] = useState('');
   const visibleContacts = useMemo(() => filterContacts(contacts, query), [contacts, query]);
   const unreadCount = contacts.reduce((sum, contact) => sum + contact.unreadCount, 0);
   return (
-    <aside className="grid min-h-0 grid-rows-[auto_auto_1fr] overflow-hidden border-r border-border bg-card">
-      <header className="flex h-16 items-center justify-between px-4">
-        <div><h2 className="text-base font-semibold">联系人</h2><p className="text-xs text-muted-foreground">{contacts.length} 个会话{unreadCount > 0 ? ` · ${unreadCount} 条未读` : ''}</p></div>
-        {loading && <Loader2 className="size-4 animate-spin text-muted-foreground" />}
-      </header>
-      <div className="px-3 pb-3">
-        <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索联系人" aria-label="搜索联系人" />
+    <aside className="grid min-h-0 grid-rows-[auto_1fr] overflow-hidden border-r border-border bg-card">
+      <div className="space-y-3 px-3 py-3">
+        <WaContactOtpBanner otp={otp} />
+        <div className="flex items-center gap-2">
+          <Input value={query} onChange={(event) => setQuery(event.target.value)} placeholder="搜索联系人" aria-label="搜索联系人" />
+          {loading && <Loader2 className="size-4 shrink-0 animate-spin text-muted-foreground" />}
+        </div>
+        <p className="px-1 text-xs text-muted-foreground">{contacts.length} 个会话{unreadCount > 0 ? ` · ${unreadCount} 条未读` : ''}</p>
       </div>
       <div className="min-h-0 overflow-y-auto p-2">
         {error && <Alert variant="destructive"><AlertDescription>{error}</AlertDescription></Alert>}

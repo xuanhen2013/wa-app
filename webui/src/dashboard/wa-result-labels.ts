@@ -94,7 +94,7 @@ export function methodLabel(value: string) {
   if (normalized === 'SILENT_AUTH_TS43' || normalized === 'SILENT_AUTH_TS_43') return '静默验证 TS43';
   if (normalized === 'EMAIL' || normalized === 'EMAIL_OTP') return '邮箱';
   if (normalized === 'OAUTH_EMAIL') return 'OAuth 邮箱';
-  if (normalized === 'ACCOUNT_TRANSFER' || normalized === 'ACC_TR') return '账号迁移';
+  if (normalized === 'ACCOUNT_TRANSFER' || normalized === 'ACC_TR') return '换绑号码';
   if (normalized === 'RECAPTCHA') return 'reCAPTCHA';
   if (normalized === 'TWO_FACTOR_PIN' || normalized === 'TWOFAC_PIN') return '两步验证 PIN';
   if (normalized === 'PASSWORD') return '密码';
@@ -148,7 +148,20 @@ export function accountReasonLabel(...values: Array<string | undefined>) {
   if (hasAny(normalized, ['invalid_skey', 'bad_token'])) return '注册会话已失效，请重新检测';
   if (hasAny(normalized, ['missing_param', 'bad_param'])) return '请求参数被 WA 拒绝，请重新检测号码';
   if (hasAny(normalized, ['old_version'])) return '当前客户端版本被 WA 拒绝';
-  if (hasAny(normalized, ['proxy', 'dynamic_ip', 'unreachable', 'network', 'eof'])) return '网络或代理出口异常';
+  if (hasAny(normalized, [
+    'proxy',
+    'dynamic_ip',
+    'unreachable',
+    'network',
+    'timeout',
+    'deadline',
+    'eof',
+    'wasafe',
+    'upstream http',
+    'http 502',
+    'http 503',
+    'http 504',
+  ])) return '网络或代理出口异常';
   if (hasAny(normalized, ['fail', 'failed', 'rejected'])) return '请求被 WA 拒绝';
   if (hasAny(normalized, ['ok', 'sent', 'waiting'])) return '请求已受理';
   return '远端返回未识别原因';

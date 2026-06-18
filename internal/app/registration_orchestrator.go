@@ -25,31 +25,31 @@ func (s *Server) StartRegistration(ctx context.Context, payload map[string]any) 
 	if reason := directRegistrationMethodUnsupportedReason(method); reason != "" {
 		return rejectedRegistrationResult(basePayload, registrationMethodUnsupportedMap(method, reason)), nil
 	}
-
-	fingerprint, err := gateway.generateTransientFingerprint(ctx, basePayload)
+	phone := normalizePhone(phoneFromAction(basePayload))
+	state, stateRef, reusedState, err := gateway.registrationAttemptState(ctx, phone)
 	if err != nil {
 		return nil, err
 	}
-	fingerprintRef := firstNonEmpty(textField(fingerprint, "fingerprint_ref"), textField(fingerprint, "transient_fingerprint_ref"))
-	state, err := gateway.loadTransientState(ctx, fingerprintRef)
-	if err != nil {
-		return nil, err
-	}
-	runner, route, managedRoute, err := gateway.registrationRequestRunner(ctx, basePayload)
+	logRegistrationAttemptState(basePayload, phone, reusedState)
+	runner, route, managedRoute, proxyLease, err := gateway.registrationRequestRunner(ctx, basePayload)
 	if err != nil {
 		return nil, err
 	}
 	defer runner.CloseIdleConnections()
+	keepProxyLease := false
 	defer func() {
-		_ = gateway.server.runtime.DeleteTransientState(context.Background(), fingerprintRef)
+		if !keepProxyLease {
+			gateway.releaseRegistrationProxyLease(context.Background(), proxyLease)
+		}
 	}()
-	phone := normalizePhone(phoneFromAction(basePayload))
-	probeResult := runner.probeAccountWithState(ctx, EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone, DeliveryMethod: method, AuthCodeContext: authCodeContext}, state)
+	probeResult, state := runner.probeAccountWithState(ctx, EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone, DeliveryMethod: method, AuthCodeContext: authCodeContext}, state)
+	_ = gateway.saveRegistrationAttemptState(context.Background(), stateRef, state)
 	logRegistrationProbeResult(basePayload, phone, route, method, probeResult)
 	if !registrationProbeAllowsMethod(probeResult, method) {
 		return rejectedRegistrationResult(basePayload, registrationProbeFailureMap(probeResult, route, managedRoute)), nil
 	}
 	codeResult, updatedState := runner.requestVerificationCodeWithState(ctx, EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone, DeliveryMethod: method, AuthCodeContext: authCodeContext}, state)
+	_ = gateway.saveRegistrationAttemptState(context.Background(), stateRef, updatedState)
 	logRegistrationCodeResult(basePayload, phone, route, method, codeResult)
 	if !verificationCodeRequestAccepted(codeResult) {
 		return rejectedRegistrationResult(basePayload, registrationRequestFailureMap(codeResult, method, route, managedRoute)), nil
@@ -67,6 +67,10 @@ func (s *Server) StartRegistration(ctx context.Context, payload map[string]any) 
 		}
 	}
 	record := gateway.server.newVerificationCodeRequestRecord(account, profile, method, codeResult)
+	challenge := codeResult.AccountTransferChallenge
+	if challenge != nil {
+		challenge.VerificationRequestId = record.GetVerificationRequestId()
+	}
 	if err := gateway.server.store.SaveVerificationRequest(ctx, record); err != nil {
 		_ = gateway.discardRejectedRegistration(context.Background(), basePayload, waAccountID(account), record.GetVerificationRequestId())
 		return nil, err
@@ -76,11 +80,14 @@ func (s *Server) StartRegistration(ctx context.Context, payload map[string]any) 
 		WAAccountID:           waAccountID(account),
 		VerificationRequestID: verificationRequestID,
 		CreatedAtUnix:         time.Now().UTC().Unix(),
+		ProxyLease:            proxyLease,
 	}
 	if err := gateway.saveRegistrationOTPWait(ctx, wait, registrationOTPWaitDefaultTTL); err != nil {
 		_ = gateway.discardRejectedRegistration(context.Background(), basePayload, waAccountID(account), verificationRequestID)
 		return nil, err
 	}
+	keepProxyLease = true
+	_ = gateway.server.runtime.DeleteTransientState(context.Background(), stateRef)
 	response := map[string]any{
 		"success":                 true,
 		"status":                  record.GetStatus().String(),
@@ -100,10 +107,63 @@ func (s *Server) StartRegistration(ctx context.Context, payload map[string]any) 
 		"phone_status":            registrationCodeResultPhoneStatus(codeResult, method, false),
 		"proxy":                   registrationOrchestratorProxySummary(registrationProxyRouteMap(route, managedRoute)),
 	}
+	if challenge != nil {
+		response["account_transfer_challenge"] = protoMap(challenge)
+		response["registration_phase"] = "ACCOUNT_TRANSFER_WAITING"
+	}
 	if seconds := durationSeconds(record.GetRetryAfter()); seconds > 0 {
 		response["retry_after_seconds"] = seconds
 	}
 	return response, nil
+}
+
+func (g *actionGateway) registrationAttemptState(ctx context.Context, phone *waappv1.PhoneTarget) (nativeState, string, bool, error) {
+	ref := registrationAttemptStateKey(phone)
+	if data, err := g.server.runtime.GetTransientState(ctx, ref); err == nil {
+		state, err := unmarshalNativeState(data)
+		if err == nil {
+			return state, ref, true, nil
+		}
+		_ = g.server.runtime.DeleteTransientState(ctx, ref)
+	}
+	engine, err := g.nativeEngine()
+	if err != nil {
+		return nativeState{}, "", false, err
+	}
+	state, err := engine.newState(phone)
+	if err != nil {
+		return nativeState{}, "", false, err
+	}
+	if err := g.saveRegistrationAttemptState(ctx, ref, state); err != nil {
+		return nativeState{}, "", false, err
+	}
+	return state, ref, false, nil
+}
+
+func (g *actionGateway) saveRegistrationAttemptState(ctx context.Context, ref string, state nativeState) error {
+	data, err := marshalNativeState(state)
+	if err != nil {
+		return err
+	}
+	return g.server.runtime.SaveTransientState(ctx, ref, data, registrationAttemptStateTTL)
+}
+
+func registrationAttemptStateKey(phone *waappv1.PhoneTarget) string {
+	return "wa-register-state:" + stableID(firstNonEmpty(phone.GetE164Number(), fullPhoneKey(phoneCC(phone), phoneNational(phone))))
+}
+
+func logRegistrationAttemptState(payload map[string]any, phone *waappv1.PhoneTarget, reused bool) {
+	phoneHash := ""
+	if phone != nil && phone.GetE164Number() != "" {
+		phoneHash = stableID(phone.GetE164Number())
+	}
+	log.Printf(
+		"wa_registration_attempt_state correlation=%s phone_hash=%s reused=%t ttl_seconds=%d",
+		probeLogValue(actionContext(payload).GetCorrelationId()),
+		phoneHash,
+		reused,
+		int64(registrationAttemptStateTTL/time.Second),
+	)
 }
 
 func logRegistrationCodeResult(payload map[string]any, phone *waappv1.PhoneTarget, route WAProxyRoute, method waappv1.VerificationDeliveryMethod, result EngineCodeResult) {
@@ -233,6 +293,10 @@ func registrationProbeAllowsMethod(result EngineProbeResult, method waappv1.Veri
 	if method == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_UNSPECIFIED ||
 		method == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS {
 		return registrationProbeMethodAvailable(result, waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS) || result.CanSendSMS
+	}
+	if method == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_ACCOUNT_TRANSFER {
+		return result.Status == waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REACHABLE &&
+			(result.Registered || registrationProbeMethodAvailable(result, method) || registrationProbeMethodAvailable(result, waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_WA_OLD))
 	}
 	return registrationProbeMethodAvailable(result, method)
 }
@@ -386,11 +450,13 @@ func registrationCodeResultPhoneStatus(result EngineCodeResult, method waappv1.V
 			registrationPhaseValue = "OTP_COOLDOWN"
 		}
 	}
+	rawStatus := result.RawStatus
+	rawReason := result.RawReason
 	return map[string]any{
 		"account_status":               registrationCodeAccountStatus(failed),
 		"account_flow":                 accountProbeFlowUnknown,
-		"account_raw_status":           result.RawStatus,
-		"account_raw_reason":           result.RawReason,
+		"account_raw_status":           rawStatus,
+		"account_raw_reason":           rawReason,
 		"account_reachable":            !failed,
 		"request_failed":               failed,
 		"sms_status":                   smsStatus,
@@ -403,8 +469,8 @@ func registrationCodeResultPhoneStatus(result EngineCodeResult, method waappv1.V
 		"can_register":                 !failed,
 		"registration_phase":           registrationPhaseValue,
 		"verification_status":          result.Status.String(),
-		"verification_reason":          result.RawReason,
-		"verification_outcome":         result.RawStatus,
+		"verification_reason":          rawReason,
+		"verification_outcome":         rawStatus,
 	}
 }
 
