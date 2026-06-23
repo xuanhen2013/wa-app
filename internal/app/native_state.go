@@ -183,14 +183,6 @@ type nativeChatConnectionState struct {
 	ServerStaticPublic string `json:"server_static_public,omitempty"`
 }
 
-func (s nativeState) codeParams() map[string]string {
-	params := map[string]string{}
-	for k, v := range s.LastCodeParams {
-		params[k] = v
-	}
-	return params
-}
-
 func (s *nativeState) ensureMaps() {
 	if s.MessagePayloads == nil {
 		s.MessagePayloads = map[string]nativeMessagePayload{}
@@ -458,25 +450,11 @@ func randomIndex(length int) int {
 	return int(value.Int64())
 }
 
-func randomIntRange(minValue int, maxValue int) int {
-	if maxValue <= minValue {
-		return minValue
-	}
-	return minValue + randomIndex(maxValue-minValue+1)
-}
-
 func newUUIDString() string {
 	raw := randomBytes(16)
 	raw[6] = (raw[6] & 0x0f) | 0x40
 	raw[8] = (raw[8] & 0x3f) | 0x80
 	return fmt.Sprintf("%x-%x-%x-%x-%x", raw[0:4], raw[4:6], raw[6:8], raw[8:10], raw[10:])
-}
-
-func uuidB64u() string {
-	raw := randomBytes(16)
-	raw[6] = (raw[6] & 0x0f) | 0x40
-	raw[8] = (raw[8] & 0x3f) | 0x80
-	return b64u(raw)
 }
 
 func b64u(raw []byte) string {
@@ -708,57 +686,23 @@ func nativeDeviceModelFromUserAgent(userAgent string) (nativeDeviceModel, bool) 
 	return nativeDeviceModel{Android: match[1], Vendor: match[2], Model: match[3]}, true
 }
 
+// 注册设备画像:对齐到实际采样的真机 Pixel 9 Pro XL / Android 16(komodo)。
+// gpia 的 _gp/_iln 等运行时 digest 须在这台机上 hook 采样,故把设备画像与之绑定为
+// 同一台,保证 UA/build/RAM 与 gpia 设备一致(而非"合成池 + 单一 gpia 值"不自洽)。
+// 后续可在 hook 采过 _gp/_iln 的每台真机基础上扩成多机池。
+// 注:取自真机 —— BuildDisplayID=CP1A.260505.005;device_ram 用实测 totalMem 派生:
+// ActivityManager.totalMem=16339992576 B(/proc/meminfo MemTotal 交叉验证一致)÷2^30=15.22 GiB
+// (Pixel 9 Pro XL 广告 16GB,实际 totalMem 15.22 GiB,与 device_ram 字段语义一致)。
+var nativeRegistrationDeviceModels = []nativeDeviceModel{
+	{Vendor: "Google", Model: "Pixel 9 Pro XL", Android: "16", BuildDisplayID: "CP1A.260505.005", MinRAMGiB: 15.22, MaxRAMGiB: 15.22},
+}
+
 func defaultNativeDeviceModel() nativeDeviceModel {
-	return nativeDeviceModels[0]
+	return nativeRegistrationDeviceModels[0]
 }
 
 func newNativeRegistrationDeviceModel() nativeDeviceModel {
-	return randomNativeGenericAndroid11DeviceModel()
-}
-
-func randomNativeGenericAndroid11DeviceModel() nativeDeviceModel {
-	model := randomChoice([]string{"X", "A", "M", "N", "Z"}) + randomDigits(4) + randomUpper(2)
-	branch := randomChoice([]string{"GX", "GL", "EEA", "IN", "LA"})
-	return nativeDeviceModel{
-		Vendor:         randomNativeGenericVendor(),
-		Model:          model,
-		Android:        "11",
-		BuildDisplayID: model + "_11.0." + strconv.Itoa(randomIntRange(1, 9)) + "." + strconv.Itoa(randomIntRange(10, 999)) + "(" + branch + "01)",
-		MinRAMGiB:      3.5,
-		MaxRAMGiB:      7.8,
-	}
-}
-
-func randomNativeGenericVendor() string {
-	return randomChoice([]string{"NOVA", "AERO", "ORBI", "LYRA", "VANTA", "ZENO", "NIMO", "KORA", "ALTO", "MEGA"}) +
-		randomChoice([]string{"Mobile", "Phone", "Tech", "One", "Digital", "Comms", "Labs", "Link"})
-}
-
-func randomChoice(values []string) string {
-	if len(values) == 0 {
-		return ""
-	}
-	return values[randomIndex(len(values))]
-}
-
-func randomDigits(length int) string {
-	const alphabet = "0123456789"
-	var builder strings.Builder
-	builder.Grow(length)
-	for range length {
-		builder.WriteByte(alphabet[randomIndex(len(alphabet))])
-	}
-	return builder.String()
-}
-
-func randomUpper(length int) string {
-	const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ"
-	var builder strings.Builder
-	builder.Grow(length)
-	for range length {
-		builder.WriteByte(alphabet[randomIndex(len(alphabet))])
-	}
-	return builder.String()
+	return nativeRegistrationDeviceModels[randomIndex(len(nativeRegistrationDeviceModels))]
 }
 
 func nativeDeviceRAMGiB(model nativeDeviceModel) string {
@@ -778,13 +722,35 @@ func nativeBuildDisplayIDForModel(model nativeDeviceModel) string {
 			return candidate.BuildDisplayID
 		}
 	}
-	return ""
+	return nativeSyntheticBuildDisplayID(model)
 }
 
-func parseJSONMap(text string) map[string]any {
-	out := map[string]any{}
-	_ = json.Unmarshal([]byte(text), &out)
-	return out
+func nativeSyntheticBuildDisplayID(model nativeDeviceModel) string {
+	modelName := strings.TrimSpace(model.Model)
+	android := strings.TrimSpace(model.Android)
+	if modelName == "" || android == "" {
+		return ""
+	}
+	sum := sha256.Sum256([]byte(strings.Join([]string{
+		"byte-v-forge-wa-native-build-display-id/v1",
+		strings.TrimSpace(model.Vendor),
+		modelName,
+		android,
+	}, "|")))
+	branches := []string{"GX", "GL", "EEA", "IN", "LA"}
+	major := int(sum[0]%9) + 1
+	minor := int(binary.BigEndian.Uint16(sum[1:3])%990) + 10
+	branch := branches[int(sum[3])%len(branches)]
+	return modelName + "_" + android + ".0." + strconv.Itoa(major) + "." + strconv.Itoa(minor) + "(" + branch + "01)"
+}
+
+func nativeDeviceDisplayName(state nativeState) string {
+	profile := normalizeNativePhoneProfile(state.Profile, "")
+	value := strings.TrimSpace(strings.Join([]string{
+		strings.TrimSpace(profile.DeviceVendor),
+		strings.TrimSpace(profile.DeviceModel),
+	}, " "))
+	return firstNonEmpty(value, defaultNativeDeviceModel().Vendor+" "+defaultNativeDeviceModel().Model)
 }
 
 func responseStatus(data map[string]any) string {

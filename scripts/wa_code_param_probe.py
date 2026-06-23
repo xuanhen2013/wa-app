@@ -342,8 +342,7 @@ def gpia_key_source(material: ProbeMaterial) -> str:
 
 def render_json_value(value: Any, escape_slash: bool) -> str:
     if isinstance(value, str):
-        encoded = json.dumps(value, separators=(",", ":"))
-        return encoded.replace("/", r"\/") if escape_slash else encoded
+        return android_json_quote(value, escape_slash)
     if isinstance(value, bool):
         return "true" if value else "false"
     if value is None:
@@ -353,10 +352,34 @@ def render_json_value(value: Any, escape_slash: bool) -> str:
     raise TypeError(f"unsupported JSON value type: {type(value)!r}")
 
 
+def android_json_quote(value: str, escape_slash: bool = True) -> str:
+    out = ['"']
+    for char in value:
+        code = ord(char)
+        if char in {'"', "\\"} or (escape_slash and char == "/"):
+            out.append("\\" + char)
+        elif char == "\t":
+            out.append(r"\t")
+        elif char == "\b":
+            out.append(r"\b")
+        elif char == "\n":
+            out.append(r"\n")
+        elif char == "\r":
+            out.append(r"\r")
+        elif char == "\f":
+            out.append(r"\f")
+        elif code <= 0x1F:
+            out.append(f"\\u{code:04x}")
+        else:
+            out.append(char)
+    out.append('"')
+    return "".join(out)
+
+
 def render_ordered_json(fields: list[tuple[str, Any]], escape_slash: bool) -> str:
     parts = []
     for key, value in fields:
-        parts.append(json.dumps(key, separators=(",", ":")) + ":" + render_json_value(value, escape_slash))
+        parts.append(android_json_quote(key) + ":" + render_json_value(value, escape_slash))
     return "{" + ",".join(parts) + "}"
 
 
@@ -444,6 +467,11 @@ def current_boot_id(material: ProbeMaterial) -> str:
     return str(uuid.UUID(bytes=bytes(raw)))
 
 
+def current_boot_id_material(material: ProbeMaterial) -> str:
+    proc_file_bytes = (current_boot_id(material) + "\n").encode()
+    return b64std(hashlib.sha256(proc_file_bytes).digest())
+
+
 def current_wamsys_runtime_offset(material: ProbeMaterial, label: str, base: int, spread: int, now: int) -> int:
     if spread <= 0:
         return base
@@ -497,8 +525,8 @@ def current_wamsys_path_ages(material: ProbeMaterial, now: int | None = None) ->
 
 def build_current_ga(material: ProbeMaterial, config: ShapeConfig) -> str:
     key_source = gpia_key_source(material)
-    boot_id = current_boot_id(material)
-    bi = aes_cbc_pkcs7_encrypt(key_source, boot_id.encode())
+    boot_id_material = current_boot_id_material(material)
+    bi = aes_cbc_pkcs7_encrypt(key_source, boot_id_material.encode())
     source_age, data_age, external_age = current_wamsys_path_ages(material)
     fields = [("bi", bi), ("ap", source_age), ("ai", data_age), ("mp", False), ("ae", external_age), ("mu", False)]
     return render_ordered_json(fields, config.gpia_escape_slash)

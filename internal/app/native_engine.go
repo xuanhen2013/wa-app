@@ -15,7 +15,7 @@ import (
 )
 
 const (
-	defaultWAAppVersion  = "2.26.23.71"
+	defaultWAAppVersion  = "2.26.24.77"
 	defaultWAABPropURL   = "https://y9yrsygcg6.execute-api.us-east-1.amazonaws.com/s/s?_=/v2/reg_onboard_abprop&"
 	defaultWAExistURL    = "https://y9yrsygcg6.execute-api.us-east-1.amazonaws.com/s/s?_=/v2/exist&"
 	defaultWACodeURL     = "https://y9yrsygcg6.execute-api.us-east-1.amazonaws.com/s/s?_=/v2/code&"
@@ -738,42 +738,6 @@ func printableSegments(raw []byte) []string {
 		return segments[:32]
 	}
 	return segments
-}
-
-func (e *NativeEngine) codeParams(phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, state nativeState, authCodeContext string) (map[string]string, map[string]struct{}) {
-	methodName := registrationMethodName(method, "sms")
-	params := map[string]string{
-		"cc":                phoneCC(phone),
-		"in":                phoneNational(phone),
-		"method":            methodName,
-		"lg":                "en",
-		"lc":                "US",
-		"fdid":              state.Profile.FDID,
-		"expid":             state.Profile.ExpID,
-		"access_session_id": state.Profile.AccessSessionID,
-		"id":                nativeRegistrationRequestID(state),
-		"backup_token":      state.Profile.BackupToken,
-		"authkey":           state.AuthKey,
-		"e_ident":           state.KeyBundle.IdentityPublic,
-		"e_keytype":         state.KeyBundle.KeyType,
-		"e_regid":           state.KeyBundle.RegID,
-		"e_skey_id":         state.KeyBundle.SignedKeyID,
-		"e_skey_val":        state.KeyBundle.SignedKeyValue,
-		"e_skey_sig":        state.KeyBundle.SignedKeySig,
-	}
-	if nativeRegistrationMethodUsesToken(methodName) {
-		if token := e.registrationToken(phone, state); token != "" {
-			params["token"] = token
-		}
-	}
-	if nativeRegistrationMethodUsesAuthContext(methodName) {
-		if contextValue := strings.TrimSpace(authCodeContext); contextValue != "" {
-			params["context"] = contextValue
-		}
-	}
-	raw := map[string]struct{}{"id": {}, "backup_token": {}}
-	applyNativeRawParamMap(params, raw, codeDeviceMap(methodName, state), true)
-	return params, raw
 }
 
 func omitEmptyNativeOperatorField(key string, value string) bool {
