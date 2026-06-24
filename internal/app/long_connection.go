@@ -21,6 +21,7 @@ const (
 	longConnectionDecryptLimit         = 100
 	staleMessageSessionTTL             = 10 * time.Minute
 	staleMessageSessionCleanupInterval = 5 * time.Minute
+	longConnectionReconcileInterval    = 5 * time.Minute
 )
 
 type LongConnectionManager struct {
@@ -66,6 +67,7 @@ func (m *LongConnectionManager) Run(ctx context.Context) error {
 	}
 	m.closeStaleMessageSessions(rootCtx)
 	go m.cleanupStaleMessageSessions(rootCtx)
+	go m.reconcileLoop(rootCtx)
 	<-rootCtx.Done()
 	return nil
 }
@@ -219,8 +221,40 @@ func (m *LongConnectionManager) seedRevoked(ctx context.Context) {
 		if ctx.Err() != nil {
 			return
 		}
+		if loginRevokedByReplaced(record.LoginState) {
+			m.reactivateFalselyRevoked(ctx, record.LoginState)
+			continue
+		}
 		m.seedRevokedEntry(record.LoginState)
 	}
+}
+
+// loginRevokedByReplaced 判断登录态是否为 <conflict type="replaced"> 误报窗口造成的错误撤销。
+// replaced 已不再触发撤销(见 chatdAccountTakeoverConflictTypes),故该签名只命中那段时间被误判
+// 转出的在线账号;愈合后这些账号转为 ACTIVE、不再出现在已撤销列表,此分支即空操作。
+func loginRevokedByReplaced(loginState *waappv1.LoginState) bool {
+	return loginState != nil && strings.Contains(loginState.GetLastError().GetMessage(), "type=replaced")
+}
+
+// reactivateFalselyRevoked 自愈被 replaced 误判转出的账号:登录态与账号状态重置为 ACTIVE 并重新上线。
+func (m *LongConnectionManager) reactivateFalselyRevoked(ctx context.Context, loginState *waappv1.LoginState) {
+	now := m.server.clock.Now()
+	loginState.Status = waappv1.LoginStateStatus_LOGIN_STATE_STATUS_ACTIVE
+	loginState.LastError = nil
+	if loginState.Audit == nil {
+		loginState.Audit = &waappv1.AuditStamp{CreatedAt: timestamppb.New(now)}
+	}
+	loginState.Audit.UpdatedAt = timestamppb.New(now)
+	if err := m.server.store.SaveLoginState(ctx, loginState, "native-db:"+loginState.GetClientProfileId()); err != nil {
+		log.Printf("WA long connection reactivate (replaced) persist failed: registered_identity=%s error=%v", loginState.GetRegisteredIdentityId(), sanitizeLogError(err))
+		return
+	}
+	if account, err := m.server.getWAAccount(ctx, loginState.GetWaAccountId()); err == nil && account != nil &&
+		waAccountStatus(account) == waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_TRANSFERRED_OUT {
+		_, _ = m.server.saveWAAccount(ctx, withWAAccountStatus(account, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_ACTIVE, now))
+	}
+	log.Printf("WA long connection reactivated falsely-revoked account (replaced): registered_identity=%s", loginState.GetRegisteredIdentityId())
+	m.Ensure(ctx, loginState)
 }
 
 func (m *LongConnectionManager) seedRevokedEntry(loginState *waappv1.LoginState) {
@@ -278,6 +312,59 @@ func (m *LongConnectionManager) closeStaleMessageSessions(ctx context.Context) {
 	if closed > 0 {
 		log.Printf("WA stale message session cleanup closed=%d", closed)
 	}
+}
+
+func (m *LongConnectionManager) reconcileLoop(ctx context.Context) {
+	ticker := time.NewTicker(longConnectionReconcileInterval)
+	defer ticker.Stop()
+	for {
+		select {
+		case <-ctx.Done():
+			return
+		case <-ticker.C:
+			m.reconcileStoppedAccounts(ctx)
+		}
+	}
+}
+
+// reconcileStoppedAccounts 对“账号仍 ACTIVE、但长连接已彻底停止(非重连中)”的号做一次真实登录探测,
+// 让登录态与对外展示和服务端实况一致:能恢复的(探测 ACTIVE)重新拉起长连接;已被服务端拒登的标记登录态
+// INVALID(前端据此显示离线)。只探测无活跃连接的号,绝不在长连接存活/重连时另开连接,避免自我 replaced。
+func (m *LongConnectionManager) reconcileStoppedAccounts(ctx context.Context) {
+	if m == nil || m.server == nil {
+		return
+	}
+	records, err := m.server.store.ListActiveLoginStates(ctx)
+	if err != nil {
+		log.Printf("WA long connection reconcile list failed: %v", sanitizeLogError(err))
+		return
+	}
+	for _, record := range records {
+		if ctx.Err() != nil {
+			return
+		}
+		loginState := record.LoginState
+		if !m.longConnectionStopped(loginState) {
+			continue
+		}
+		req := &waappv1.CheckLoginStateRequest{
+			Context:      &waappv1.RequestContext{RequestId: m.server.ids.NewID("wa-reconcile_"), CorrelationId: loginState.GetLoginStateId()},
+			LoginStateId: loginState.GetLoginStateId(),
+		}
+		if _, err := m.server.checkLoginState(ctx, req, m.server.runner); err != nil {
+			log.Printf("WA long connection reconcile check failed: registered_identity=%s error=%v", loginState.GetRegisteredIdentityId(), sanitizeLogError(err))
+		}
+	}
+}
+
+// longConnectionStopped 判断该账号当前是否没有在运行的长连接(无 entry,或 entry 已 markStopped 把 cancel
+// 置空)。只有真正停止的号才允许 reconcile 探测——长连接存活/重连中(cancel != nil)时不探测,避免另开
+// 一条并发连接触发服务端 replaced。
+func (m *LongConnectionManager) longConnectionStopped(loginState *waappv1.LoginState) bool {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	entry := m.entries[longConnectionKey(loginState)]
+	return entry == nil || entry.cancel == nil
 }
 
 func (m *LongConnectionManager) runEntry(ctx context.Context, loginState *waappv1.LoginState, key string) {

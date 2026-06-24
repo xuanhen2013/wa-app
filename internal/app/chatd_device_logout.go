@@ -60,16 +60,21 @@ func accountLoggedOutError(reason string) error {
 // 与 long-connection 的 isAccountTakeoverError 识别。
 const chatdAccountTakeoverMarker = "account_takeover"
 
-// chatdAccountTakeoverConflictTypes 是 chatd <conflict type=…> 中表示"本设备已被接管/登出"的取值:
-//   - device_removed: 设备被服务端移除(对齐 APK X.1FJ ErrorStanzaHandler 的登出判定);
-//   - replaced: 会话被另一台设备的新登录顶替,对主设备号即号码已在其他设备注册(被接管)。
+// chatdAccountTakeoverConflictTypes 是 chatd <conflict type=…> 中表示"本设备已被接管/登出"的取值。
+// 只收 device_removed:设备被服务端移除(号码已在其他设备注册),对齐 APK X.1FJ ErrorStanzaHandler
+// 唯一触发 deregister 的判定。
+//
+// 刻意【不含】replaced:官方对 <conflict type="replaced"> 只重连、从不登出。replaced(会话被顶替)
+// 本质不是可靠的转出信号——即便把 usync 收敛到同一条长连接(每账号一条 chatd)消除了稳态自我并发,
+// 部署滚动(新旧 pod 长连接重叠)与重连竞态仍会让服务端对同一身份回 replaced。实测:重新启用 replaced
+// 判转出后,一个健康在线号在新 pod 首次连接(count=0)即被 replaced 误判转出。故 replaced 一律按重连处理,
+// 真正的转出/登出只认 device_removed 与 device_logout。
 var chatdAccountTakeoverConflictTypes = map[string]struct{}{
 	"device_removed": {},
-	"replaced":       {},
 }
 
 // chatdTerminalNodeAccountTakeover 判断 chatd 终端控制节点(stream:error/failure/error)是否携带
-// 表示账号被接管的 <conflict type="device_removed"|"replaced">(号码已在其他设备注册)。
+// 表示账号被接管的 <conflict type="device_removed">(号码已在其他设备注册)。
 func chatdTerminalNodeAccountTakeover(node chatdNode) bool {
 	if chatdConflictIsAccountTakeover(node) {
 		return true
