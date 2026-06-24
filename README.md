@@ -1,17 +1,19 @@
 # wa-app
 
-`wa-app` 是 WA 应用链路服务，提供账号管理、号码探测、注册、登录态检查、长连接会话和消息处理能力，并内置管理 dashboard。
+`wa-app` 是 WA 应用链路服务，提供账号与资料管理、号码探测、注册、登录态检查、长连接会话、消息与联系人处理、账号在线态与转出检测，并内置管理 dashboard。
 
 > [!CAUTION]
 > 使用本项目即表示你同意 [NOTICE](./NOTICE) 的全部条款。本项目仅限协议建模、教学演示、授权安全研究和内部非商业验证；禁止用于商业用途、未授权目标或违反第三方服务条款的场景。
 
 ## 功能
 
-- 账号管理：维护 WAAccount、客户端 profile、注册记录和登录态投影。
+- 账号与资料：维护 WAAccount、客户端 profile、注册记录和登录态投影；支持资料编辑、头像、换绑号码，注册时从多机型画像池分配设备指纹。
 - 号码与注册：支持号码探测、SMS 探测、注册请求、OTP 提交和登录态检查。
-- 连接与消息：支持长连接会话、消息接收、消息 ack、1:1 文本消息发送和会话查看。
+- 账号安全：两步验证（2FA PIN）状态管理与登录适配。
+- 连接与消息：支持长连接会话、消息接收与 ack、1:1 文本消息发送、会话查看、联系人解析（usync）和头像拉取。
+- 在线态与转出检测：账号在线态由长连接实况派生；转出/远程登出按 device_removed / device_logout 判定并周期复核，避免状态漂移。
 - 数据提取：从消息中提取 OTP/Flag 候选值，并按敏感数据规则保存引用或脱敏投影。
-- 管理界面：提供 dashboard，用于账号、联系人、消息、连接状态和账号资料操作。
+- 管理界面：提供 dashboard，用于账号、联系人、消息、连接状态、安全和账号资料操作。
 
 ## 部署方式
 
@@ -41,10 +43,8 @@ docker compose up -d
 - `WA_APP_DATA_DIR`：容器内持久化目录；默认 `/var/lib/wa-app`。
 - `WA_APP_PG_DSN`：可选 PostgreSQL DSN；为空时使用内置 SQLite 持久化。
 - `WA_APP_REDIS_URL`：可选 Redis URL；为空时使用内置 SQLite 运行态存储。
-- `WA_COMMON_PROXY`：系统默认 WA 出站代理；账号未配置代理策略且阶段代理为空时使用，仍为空则直连。
-- `WA_REGISTRATION_PROXY_LEASE_MODE`：注册链路代理租约模式；`optional` 会失败回退，`disabled` 关闭租约，`required` 强制租约成功。
-- `WA_REGISTRATION_PROXY_LEASE_API_BASE_URL`：可选通用代理租约 HTTP API 地址；留空时不请求动态租约。
-- `WA_REGISTRATION_PROXY_LEASE_AUTH_TOKEN`：可选代理租约 API 认证令牌；示例文件只保留空占位。
+- `WA_COMMON_PROXY`：可选 WA 出站代理；配置后所有出站走该共享代理，为空则直连。
+- `WA_APP_DEVICE_PROFILES_FILE`：可选设备画像池文件路径；为空时使用内置多机型画像。
 
 PostgreSQL 和 Redis 都是可选组件。需要启用时，在 `docker-compose.yml` 中取消对应服务注释，并在 `.env` 中填写 `WA_APP_PG_DSN` / `WA_APP_REDIS_URL`。
 
