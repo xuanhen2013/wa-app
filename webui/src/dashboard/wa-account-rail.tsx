@@ -21,29 +21,32 @@ import {
   useSidebar,
 } from '@/components/ui/sidebar';
 import type { LongConnectionState } from '../proto/byte/v/forge/waapp/v1/messaging';
+import { WAAccountStatus } from '../proto/byte/v/forge/waapp/v1/profile';
 import type { WAAccount } from '../proto/byte/v/forge/waapp/v1/profile';
 import { waAccountID } from './wa-api';
 import { WaAccountAvatar } from './wa-account-avatar';
 import { WaConnectionDot } from './wa-connection-dot';
+import { WaPendingCleanupButton } from './wa-pending-cleanup-button';
 import { WaThemeToggle } from './wa-theme-toggle';
 import { waAccountPath, waChatsPath } from './wa-route-paths';
 
-type RailProps = { accounts: WAAccount[]; selectedID: string; avatarVersion: string; connections: Map<string, LongConnectionState>; loading: boolean; connectionsLoading: boolean; hasNextPage: boolean; loadingMore: boolean; onLoadMore: () => void };
+type RailProps = { accounts: WAAccount[]; selectedID: string; avatarVersion: string; connections: Map<string, LongConnectionState>; loading: boolean; connectionsLoading: boolean; hasNextPage: boolean; loadingMore: boolean; cleaningPending: boolean; onLoadMore: () => void; onCleanupPending: () => Promise<void> };
 type AccountItemProps = { account: WAAccount; selected: boolean; avatarVersion: string; connection?: LongConnectionState; loading: boolean };
 
 const railButtonClass = 'h-12 gap-2 p-1! group-data-[collapsible=icon]:mx-auto group-data-[collapsible=icon]:size-12! group-data-[collapsible=icon]:justify-center group-data-[collapsible=icon]:p-1!';
 const accountActionClass = 'top-1/2! right-2! size-7! -translate-y-1/2 rounded-lg';
 const collapsedTextClass = 'group-data-[collapsible=icon]:hidden';
 
-export function WaAccountRail({ accounts, selectedID, avatarVersion, connections, loading, connectionsLoading, hasNextPage, loadingMore, onLoadMore }: RailProps) {
+export function WaAccountRail({ accounts, selectedID, avatarVersion, connections, loading, connectionsLoading, hasNextPage, loadingMore, cleaningPending, onLoadMore, onCleanupPending }: RailProps) {
   const [query, setQuery] = useState('');
   const { state } = useSidebar();
   const expanded = state === 'expanded';
   const visibleAccounts = useFilteredAccounts(accounts, expanded ? query : '');
+  const pendingCount = usePendingRegistrationCount(accounts);
   return (
     <Sidebar collapsible="icon" aria-label="WA 账号" className="border-r border-border">
       <SidebarHeader className="h-16 justify-center border-b border-sidebar-border">
-        <RailHeader value={query} onChange={setQuery} />
+        <RailHeader value={query} pendingCount={pendingCount} cleaningPending={cleaningPending} onChange={setQuery} onCleanupPending={onCleanupPending} />
       </SidebarHeader>
       <SidebarContent>
         <SidebarGroup className="p-1">
@@ -68,10 +71,11 @@ export function WaAccountRail({ accounts, selectedID, avatarVersion, connections
   );
 }
 
-function RailHeader({ value, onChange }: { value: string; onChange: (value: string) => void }) {
+function RailHeader({ value, pendingCount, cleaningPending, onChange, onCleanupPending }: { value: string; pendingCount: number; cleaningPending: boolean; onChange: (value: string) => void; onCleanupPending: () => Promise<void> }) {
   return (
     <div className="flex h-10 items-center gap-2 group-data-[collapsible=icon]:justify-center">
       <SidebarInput className="h-8 group-data-[collapsible=icon]:hidden" value={value} onChange={(event) => onChange(event.target.value)} placeholder="搜索手机号" aria-label="搜索账号" />
+      <WaPendingCleanupButton pendingCount={pendingCount} busy={cleaningPending} onCleanup={onCleanupPending} />
       <Button asChild size="icon" variant="ghost" className="size-8 group-data-[collapsible=icon]:hidden" title="添加账号" aria-label="添加账号"><Link to="/accounts/new"><Plus size={16} /></Link></Button>
       <SidebarTrigger className="shrink-0" aria-label="切换账号栏" title="切换账号栏" />
     </div>
@@ -112,6 +116,10 @@ function LoadingItems() {
 
 function EmptyAccounts({ searching }: { searching: boolean }) {
   return <Empty className="mt-4 border-0 p-4"><EmptyHeader><EmptyTitle>{searching ? '没有匹配账号' : '还没有账号'}</EmptyTitle><EmptyDescription>{searching ? '没有匹配的已加载账号' : '添加账号后会显示在这里'}</EmptyDescription></EmptyHeader></Empty>;
+}
+
+function usePendingRegistrationCount(accounts: WAAccount[]) {
+  return useMemo(() => accounts.filter((account) => account.status === WAAccountStatus.WA_ACCOUNT_STATUS_PENDING_REGISTRATION).length, [accounts]);
 }
 
 function useFilteredAccounts(accounts: WAAccount[], query: string) {

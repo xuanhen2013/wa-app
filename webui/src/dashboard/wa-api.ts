@@ -2,7 +2,7 @@ import type { GetTwoFactorAuthStatusResponse, RemoveAccountProfilePictureRespons
 import type { DeleteWAContactResponse, ListWAContactsResponse, ResolveWAContactsResponse } from '../proto/byte/v/forge/waapp/v1/contacts';
 import type { ListAccountOtpMessagesResponse } from '../proto/byte/v/forge/waapp/v1/extraction';
 import type { DeleteAccountMessagesResponse, GetLongConnectionStatusResponse, ListAccountMessagesResponse, LongConnectionState, MarkAccountMessagesReadResponse, SendTextMessageResponse } from '../proto/byte/v/forge/waapp/v1/messaging';
-import type { DeleteWAAccountResponse, ListClientProfilesResponse, ListWAAccountsResponse, WAAccount } from '../proto/byte/v/forge/waapp/v1/profile';
+import type { DeletePendingRegistrationWAAccountsResponse, DeleteWAAccountResponse, ListClientProfilesResponse, ListWAAccountsResponse, WAAccount } from '../proto/byte/v/forge/waapp/v1/profile';
 import type { VerificationDeliveryMethod } from '../proto/byte/v/forge/waapp/v1/registration';
 import type { WaIntegrityMode } from './wa-integrity';
 
@@ -105,6 +105,10 @@ export async function deleteWaAccount(account: WAAccount | string) {
   const resp = await api<DeleteWAAccountResponse>(`/api/wa/accounts/${encodeURIComponent(accountID)}`, { method: 'DELETE' });
   if (!resp.success || resp.error?.message) throw new Error(resp.error?.message || 'delete WAAccount failed');
   return resp;
+}
+
+export async function cleanupPendingRegistrationWaAccounts() {
+  return mutateWaResponse<DeletePendingRegistrationWAAccountsResponse>('/api/wa/accounts/cleanup-pending-registration', { method: 'POST' });
 }
 
 export const probeWaPhoneSMS = (input: WaPhoneInput) => api<WaWorkflowResponse>('/api/wa/phone/sms-probe', { method: 'POST', body: JSON.stringify(input) });

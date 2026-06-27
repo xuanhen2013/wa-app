@@ -9,6 +9,8 @@ import (
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 )
 
+const pendingRegistrationCleanupPageLimit = 100
+
 // markWAAccountTransferredOut 在账号被接管/转出(chatd device_removed/replaced 或 device_logout)时,
 // 把账号级状态置为 TRANSFERRED_OUT,使仪表盘账号资料不再显示"正常"。账号不存在或已是该态则跳过;
 // 再次注册到本端会经注册流回到 ACTIVE。
@@ -72,6 +74,51 @@ func (s *Server) deleteWAAccount(ctx context.Context, accountID string) (bool, e
 		return false, nil
 	}
 	return err == nil, err
+}
+
+func (s *Server) deletePendingRegistrationWAAccounts(ctx context.Context) (int, error) {
+	cursor := ""
+	deleted := 0
+	for {
+		accounts, nextCursor, err := s.listWAAccounts(ctx, cursor, pendingRegistrationCleanupPageLimit)
+		if err != nil {
+			return deleted, err
+		}
+		for _, account := range accounts {
+			if waAccountStatus(account) != waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_PENDING_REGISTRATION {
+				continue
+			}
+			accountID := waAccountID(account)
+			if accountID == "" {
+				continue
+			}
+			s.deleteRegistrationOTPWaitForAccount(ctx, accountID)
+			found, err := s.deleteWAAccount(ctx, accountID)
+			if err != nil {
+				return deleted, err
+			}
+			if found {
+				deleted++
+			}
+		}
+		if nextCursor == "" {
+			return deleted, nil
+		}
+		cursor = nextCursor
+	}
+}
+
+func (s *Server) deleteRegistrationOTPWaitForAccount(ctx context.Context, accountID string) {
+	if s == nil || s.runtime == nil || strings.TrimSpace(accountID) == "" {
+		return
+	}
+	gateway := &actionGateway{server: s}
+	wait, err := gateway.loadRegistrationOTPWait(ctx, accountID, "")
+	if err != nil {
+		_ = s.runtime.DeleteTransientState(ctx, registrationOTPWaitAccountKey(accountID))
+		return
+	}
+	_ = gateway.deleteRegistrationOTPWait(ctx, wait)
 }
 
 func isWAAccountNotFound(err error) bool {

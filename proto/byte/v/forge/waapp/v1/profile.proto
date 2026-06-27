@@ -18,6 +18,7 @@ service WaProfileService {
   rpc GetWAAccount(GetWAAccountRequest) returns (GetWAAccountResponse);
   rpc ListWAAccounts(ListWAAccountsRequest) returns (ListWAAccountsResponse);
   rpc DeleteWAAccount(DeleteWAAccountRequest) returns (DeleteWAAccountResponse);
+  rpc DeletePendingRegistrationWAAccounts(DeletePendingRegistrationWAAccountsRequest) returns (DeletePendingRegistrationWAAccountsResponse);
   rpc PrepareClientProfile(PrepareClientProfileRequest) returns (PrepareClientProfileResponse);
   rpc GetClientProfile(GetClientProfileRequest) returns (GetClientProfileResponse);
   rpc ListClientProfiles(ListClientProfilesRequest) returns (ListClientProfilesResponse);
@@ -133,6 +134,15 @@ message DeleteWAAccountRequest {
 
 message DeleteWAAccountResponse {
   bool success = 1;
+  WaError error = 2;
+}
+
+message DeletePendingRegistrationWAAccountsRequest {
+  RequestContext context = 1;
+}
+
+message DeletePendingRegistrationWAAccountsResponse {
+  int32 deleted_count = 1;
   WaError error = 2;
 }
 

@@ -10,7 +10,7 @@ import { SidebarInset, SidebarProvider } from '@/components/ui/sidebar';
 import { Toaster } from '@/components/ui/sonner';
 import type { LongConnectionState } from '../proto/byte/v/forge/waapp/v1/messaging';
 import type { WAAccount } from '../proto/byte/v/forge/waapp/v1/profile';
-import { deleteWaAccount, getWaAccounts, getWaClientProfiles, waAccountID, waKeys } from './wa-api';
+import { cleanupPendingRegistrationWaAccounts, deleteWaAccount, getWaAccounts, getWaClientProfiles, waAccountID, waKeys } from './wa-api';
 import { WaAccountAdd } from './wa-account-add';
 import { WaAccountInfoPage } from './wa-account-info-page';
 import { WaAccountRail } from './wa-account-rail';
@@ -34,14 +34,15 @@ export function WaLayout() {
   const accounts = useMemo(() => accountsQuery.data?.pages.flatMap((page) => page.accounts || []) || emptyAccounts, [accountsQuery.data]);
   const selectedID = useSelectedAccountID(accounts);
   const deletion = useMutation({ mutationFn: deleteWaAccount, onSuccess: async () => { toast.success('账号已删除'); await refreshAccounts(); navigate('/', { replace: true }); }, onError: showErrorToast });
+  const pendingCleanup = useMutation({ mutationFn: cleanupPendingRegistrationWaAccounts, onSuccess: async (resp) => { toast.success(`已清理 ${resp.deleted_count || 0} 个等待验证码账号`); await refreshAccounts(); }, onError: showErrorToast });
   async function refreshAccounts() {
     await queryClient.invalidateQueries({ queryKey: waKeys.accounts() });
   }
   const refreshAccountAvatars = () => setAccountAvatarVersion(String(Date.now()));
-  const context: WaRouteContext = { accounts, accountsLoading: accountsQuery.isLoading, connections: connections.byAccount, deleting: deletion.isPending, refreshAccounts, refreshAccountAvatars, deleteAccount: deletion.mutate, done: toast.success, error: showErrorToast };
+  const context: WaRouteContext = { accounts, accountsLoading: accountsQuery.isLoading, connections: connections.byAccount, deleting: deletion.isPending || pendingCleanup.isPending, refreshAccounts, refreshAccountAvatars, deleteAccount: deletion.mutate, done: toast.success, error: showErrorToast };
   return (
     <SidebarProvider open={accountRailExpanded} onOpenChange={setAccountRailExpanded} style={accountSidebarStyle} className="h-dvh min-h-0 overflow-hidden bg-background text-foreground">
-      <WaAccountRail accounts={accounts} selectedID={selectedID} avatarVersion={accountAvatarVersion} connections={connections.byAccount} loading={accountsQuery.isLoading} connectionsLoading={connections.loading} hasNextPage={Boolean(accountsQuery.hasNextPage)} loadingMore={accountsQuery.isFetchingNextPage} onLoadMore={() => { void accountsQuery.fetchNextPage(); }} />
+      <WaAccountRail accounts={accounts} selectedID={selectedID} avatarVersion={accountAvatarVersion} connections={connections.byAccount} loading={accountsQuery.isLoading} connectionsLoading={connections.loading} hasNextPage={Boolean(accountsQuery.hasNextPage)} loadingMore={accountsQuery.isFetchingNextPage} cleaningPending={pendingCleanup.isPending} onLoadMore={() => { void accountsQuery.fetchNextPage(); }} onCleanupPending={async () => { await pendingCleanup.mutateAsync(); }} />
       <SidebarInset className="h-dvh min-w-0 overflow-hidden"><Outlet context={context} /></SidebarInset>
       <Toaster richColors closeButton />
     </SidebarProvider>

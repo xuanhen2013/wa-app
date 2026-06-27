@@ -55,6 +55,7 @@ func runDashboardHTTP(ctx context.Context, listenAddr, staticDir string, service
 	mux.HandleFunc("/api/wa/account-settings/profile/name", server.handleSetAccountProfileName)
 	mux.HandleFunc("/api/wa/account-settings/profile/picture", server.handleSetAccountProfilePicture)
 	mux.HandleFunc("/api/wa/account-settings/profile/picture/remove", server.handleRemoveAccountProfilePicture)
+	mux.HandleFunc("/api/wa/accounts/cleanup-pending-registration", server.handleCleanupPendingRegistrationAccounts)
 	mux.HandleFunc("/api/wa/accounts", server.handleAccounts)
 	mux.HandleFunc("/api/wa/accounts/", server.handleAccount)
 	mux.HandleFunc("/api/wa/client-profiles", server.handleClientProfiles)
@@ -167,6 +168,25 @@ func (s *dashboardHTTP) handleAccount(w http.ResponseWriter, r *http.Request) {
 	default:
 		methodNotAllowed(w, http.MethodGet+", "+http.MethodDelete)
 	}
+}
+
+func (s *dashboardHTTP) handleCleanupPendingRegistrationAccounts(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodPost {
+		methodNotAllowed(w, http.MethodPost)
+		return
+	}
+	if s.service == nil {
+		writeJSON(w, http.StatusServiceUnavailable, map[string]string{"error": "wa-app service is not configured"})
+		return
+	}
+	resp, err := s.service.DeletePendingRegistrationWAAccounts(r.Context(), &waappv1.DeletePendingRegistrationWAAccountsRequest{
+		Context: &waappv1.RequestContext{RequestId: newRequestID("wa-account-cleanup-pending")},
+	})
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "cleanup pending WA accounts failed"})
+		return
+	}
+	writeProtoJSON(w, http.StatusOK, resp)
 }
 
 func (s *dashboardHTTP) handleAccountProfilePicture(w http.ResponseWriter, r *http.Request) {

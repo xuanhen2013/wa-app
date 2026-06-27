@@ -187,6 +187,17 @@ func (s *Server) DeleteWAAccount(ctx context.Context, req *waappv1.DeleteWAAccou
 	return &waappv1.DeleteWAAccountResponse{Success: true}, nil
 }
 
+func (s *Server) DeletePendingRegistrationWAAccounts(ctx context.Context, req *waappv1.DeletePendingRegistrationWAAccountsRequest) (*waappv1.DeletePendingRegistrationWAAccountsResponse, error) {
+	if err := validateContext(req.GetContext()); err != nil {
+		return &waappv1.DeletePendingRegistrationWAAccountsResponse{Error: ToProtoError(err)}, nil
+	}
+	deleted, err := s.deletePendingRegistrationWAAccounts(ctx)
+	if err != nil {
+		return &waappv1.DeletePendingRegistrationWAAccountsResponse{DeletedCount: int32(deleted), Error: ToProtoError(err)}, nil
+	}
+	return &waappv1.DeletePendingRegistrationWAAccountsResponse{DeletedCount: int32(deleted)}, nil
+}
+
 func (s *Server) PrepareClientProfile(ctx context.Context, req *waappv1.PrepareClientProfileRequest) (*waappv1.PrepareClientProfileResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.PrepareClientProfileResponse{Error: ToProtoError(err)}, nil
