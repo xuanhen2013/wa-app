@@ -231,7 +231,14 @@ func (g *actionGateway) requestSMSOTP(ctx context.Context, payload map[string]an
 	return response, nil
 }
 
-func (g *actionGateway) awaitOTP(ctx context.Context, payload map[string]any) (map[string]any, error) {
+type awaitOTPDTO struct {
+	Success               bool   `json:"success"`
+	WAAccountID           string `json:"wa_account_id"`
+	VerificationRequestID string `json:"verification_request_id"`
+	TimeoutSeconds        int    `json:"timeout_seconds"`
+}
+
+func (g *actionGateway) awaitOTP(ctx context.Context, payload map[string]any) (any, error) {
 	wait, ttl, err := registrationOTPWaitFromPayload(payload)
 	if err != nil {
 		return nil, err
@@ -239,11 +246,11 @@ func (g *actionGateway) awaitOTP(ctx context.Context, payload map[string]any) (m
 	if err := g.saveRegistrationOTPWait(ctx, wait, ttl); err != nil {
 		return nil, err
 	}
-	return map[string]any{
-		"success":                 true,
-		"wa_account_id":           wait.WAAccountID,
-		"verification_request_id": wait.VerificationRequestID,
-		"timeout_seconds":         int(ttl.Seconds()),
+	return awaitOTPDTO{
+		Success:               true,
+		WAAccountID:           wait.WAAccountID,
+		VerificationRequestID: wait.VerificationRequestID,
+		TimeoutSeconds:        int(ttl.Seconds()),
 	}, nil
 }
 
