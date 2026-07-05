@@ -2,6 +2,7 @@ package app
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
 	"log"
 	"strings"
@@ -114,13 +115,14 @@ func (s *serverCore) deleteRegistrationOTPWaitForAccount(ctx context.Context, ac
 	if s == nil || s.runtime == nil || strings.TrimSpace(accountID) == "" {
 		return
 	}
-	gateway := &actionGateway{server: s.facade}
-	wait, err := gateway.loadRegistrationOTPWait(ctx, accountID, "")
-	if err != nil {
-		_ = s.runtime.DeleteTransientState(ctx, registrationOTPWaitAccountKey(accountID))
-		return
+	accountKey := registrationOTPWaitAccountKey(accountID)
+	if data, err := s.runtime.GetTransientState(ctx, accountKey); err == nil {
+		var wait registrationOTPWait
+		if json.Unmarshal(data, &wait) == nil && wait.VerificationRequestID != "" {
+			_ = s.runtime.DeleteTransientState(ctx, registrationOTPWaitKey(wait.VerificationRequestID))
+		}
 	}
-	_ = gateway.deleteRegistrationOTPWait(ctx, wait)
+	_ = s.runtime.DeleteTransientState(ctx, accountKey)
 }
 
 func isWAAccountNotFound(err error) bool {

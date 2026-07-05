@@ -26,10 +26,6 @@ type serverCore struct {
 
 	commonProxyURL  string
 	longConnections *LongConnectionManager
-
-	// facade points back at the embedding Server so the few helpers that drive the
-	// full service surface (e.g. the BFF action gateway) can reach every handler.
-	facade *Server
 }
 
 // Each handler implements exactly one gRPC service and embeds the shared core.
@@ -93,7 +89,6 @@ func newServerFacade(core *serverCore) *Server {
 		toolingHandler:         &toolingHandler{serverCore: core},
 		accountSettingsHandler: &accountSettingsHandler{serverCore: core},
 	}
-	core.facade = server
 	return server
 }
 
