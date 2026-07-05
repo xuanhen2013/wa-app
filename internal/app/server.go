@@ -7,6 +7,7 @@ import (
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -191,7 +192,7 @@ func (s *profileHandler) CreateWAAccount(ctx context.Context, req *waappv1.Creat
 	if err := shared.ValidateContext(req.GetContext()); err != nil {
 		return &waappv1.CreateWAAccountResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	phone := normalizePhone(req.GetPhone())
+	phone := wamodel.NormalizePhone(req.GetPhone())
 	if phone.GetE164Number() == "" {
 		return &waappv1.CreateWAAccountResponse{Error: shared.ToProtoError(shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "phone is required", false))}, nil
 	}
@@ -199,7 +200,7 @@ func (s *profileHandler) CreateWAAccount(ctx context.Context, req *waappv1.Creat
 		return &waappv1.CreateWAAccountResponse{Account: existing}, nil
 	}
 	now := s.clock.Now()
-	account := newWAAccount(s.ids.NewID("waacc_"), "", phone, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_PENDING_REGISTRATION, &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)})
+	account := wamodel.NewWAAccount(s.ids.NewID("waacc_"), "", phone, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_PENDING_REGISTRATION, &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)})
 	account, err := s.saveWAAccount(ctx, account)
 	if err != nil {
 		return &waappv1.CreateWAAccountResponse{Error: shared.ToProtoError(err)}, nil
@@ -279,11 +280,11 @@ func (s *profileHandler) PrepareClientProfile(ctx context.Context, req *waappv1.
 		return &waappv1.PrepareClientProfileResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	now := s.clock.Now()
-	profile := &waappv1.ClientProfile{ClientProfileId: s.ids.NewID("wacp_"), WaAccountId: waAccountID(account), ProtocolProfileId: req.GetProtocolProfileId(), Status: waappv1.ClientProfileStatus_CLIENT_PROFILE_STATUS_PREPARING, RegistrationKeyState: waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_PENDING, MessagingKeyState: waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_PENDING, Audit: &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)}}
+	profile := &waappv1.ClientProfile{ClientProfileId: s.ids.NewID("wacp_"), WaAccountId: wamodel.WAAccountID(account), ProtocolProfileId: req.GetProtocolProfileId(), Status: waappv1.ClientProfileStatus_CLIENT_PROFILE_STATUS_PREPARING, RegistrationKeyState: waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_PENDING, MessagingKeyState: waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_PENDING, Audit: &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)}}
 	if err := s.store.SaveClientProfile(ctx, profile); err != nil {
 		return &waappv1.PrepareClientProfileResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	runErr := s.runner.PrepareClientProfile(ctx, wacore.EngineProfileInput{WAAccountID: waAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: req.GetProtocolProfileId(), AppVersion: protocolAppVersion(protocol), Phone: account.GetPhone()})
+	runErr := s.runner.PrepareClientProfile(ctx, wacore.EngineProfileInput{WAAccountID: wamodel.WAAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: req.GetProtocolProfileId(), AppVersion: protocolAppVersion(protocol), Phone: account.GetPhone()})
 	profile.Audit.UpdatedAt = timestamppb.New(s.clock.Now())
 	if runErr != nil {
 		profile.Status = waappv1.ClientProfileStatus_CLIENT_PROFILE_STATUS_REJECTED
@@ -344,22 +345,6 @@ func (s *profileHandler) RetireClientProfile(ctx context.Context, req *waappv1.R
 		return &waappv1.RetireClientProfileResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	return &waappv1.RetireClientProfileResponse{ClientProfile: profile}, nil
-}
-
-func normalizePhone(phone *waappv1.PhoneTarget) *waappv1.PhoneTarget {
-	if phone == nil {
-		return &waappv1.PhoneTarget{}
-	}
-	cc := strings.TrimPrefix(strings.TrimSpace(phone.GetCountryCallingCode()), "+")
-	national := strings.TrimSpace(phone.GetNationalNumber())
-	e164 := strings.TrimSpace(phone.GetE164Number())
-	if e164 == "" && cc != "" && national != "" {
-		e164 = "+" + cc + national
-	}
-	if e164 != "" && !strings.HasPrefix(e164, "+") {
-		e164 = "+" + e164
-	}
-	return &waappv1.PhoneTarget{E164Number: e164, CountryCallingCode: cc, NationalNumber: national, CountryIso2: strings.ToUpper(strings.TrimSpace(phone.GetCountryIso2()))}
 }
 
 func protocolAppVersion(profile *waappv1.ProtocolProfile) string {

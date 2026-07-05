@@ -7,6 +7,7 @@ import (
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -18,9 +19,9 @@ func (s *registrationHandler) ProbeAccount(ctx context.Context, req *waappv1.Pro
 	if err != nil {
 		return &waappv1.ProbeAccountResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	result := s.runner.ProbeAccount(ctx, wacore.EngineRegistrationInput{WAAccountID: waAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: profile.GetProtocolProfileId(), AppVersion: s.clientProfileAppVersion(ctx, profile), Phone: account.GetPhone(), DeliveryMethod: waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS})
+	result := s.runner.ProbeAccount(ctx, wacore.EngineRegistrationInput{WAAccountID: wamodel.WAAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: profile.GetProtocolProfileId(), AppVersion: s.clientProfileAppVersion(ctx, profile), Phone: account.GetPhone(), DeliveryMethod: waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS})
 	now := s.clock.Now()
-	probe := &waappv1.AccountProbe{AccountProbeId: s.ids.NewID("waprobe_"), WaAccountId: waAccountID(account), ClientProfileId: profile.GetClientProfileId(), Status: result.Status, SupportedMethods: result.SupportedMethods, ProbedAt: timestamppb.New(now), LastError: shared.ToProtoError(result.Err), MethodStatuses: protoVerificationMethodStatuses(result.MethodStatuses)}
+	probe := &waappv1.AccountProbe{AccountProbeId: s.ids.NewID("waprobe_"), WaAccountId: wamodel.WAAccountID(account), ClientProfileId: profile.GetClientProfileId(), Status: result.Status, SupportedMethods: result.SupportedMethods, ProbedAt: timestamppb.New(now), LastError: shared.ToProtoError(result.Err), MethodStatuses: protoVerificationMethodStatuses(result.MethodStatuses)}
 	if err := s.store.SaveAccountProbe(ctx, probe); err != nil {
 		return &waappv1.ProbeAccountResponse{Error: shared.ToProtoError(err)}, nil
 	}
@@ -43,7 +44,7 @@ func (s *serverCore) requestVerificationCode(ctx context.Context, req *waappv1.R
 	if method == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_UNSPECIFIED {
 		method = waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS
 	}
-	result := runner.RequestVerificationCode(ctx, wacore.EngineRegistrationInput{WAAccountID: waAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: profile.GetProtocolProfileId(), AppVersion: s.clientProfileAppVersion(ctx, profile), Phone: account.GetPhone(), DeliveryMethod: method})
+	result := runner.RequestVerificationCode(ctx, wacore.EngineRegistrationInput{WAAccountID: wamodel.WAAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: profile.GetProtocolProfileId(), AppVersion: s.clientProfileAppVersion(ctx, profile), Phone: account.GetPhone(), DeliveryMethod: method})
 	record := s.newVerificationCodeRequestRecord(account, profile, method, result)
 	challenge := result.AccountTransferChallenge
 	if challenge != nil {
@@ -72,7 +73,7 @@ func (s *registrationHandler) RefreshAccountTransferChallenge(ctx context.Contex
 	}
 	result := s.runner.RefreshAccountTransferChallenge(ctx, wacore.EngineAccountTransferChallengeInput{
 		EngineRegistrationInput: wacore.EngineRegistrationInput{
-			WAAccountID:       waAccountID(account),
+			WAAccountID:       wamodel.WAAccountID(account),
 			ClientProfileID:   profile.GetClientProfileId(),
 			ProtocolProfileID: profile.GetProtocolProfileId(),
 			AppVersion:        s.clientProfileAppVersion(ctx, profile),
@@ -101,8 +102,8 @@ func (s *serverCore) submitVerificationCode(ctx context.Context, req *waappv1.Su
 		return &waappv1.SubmitVerificationCodeResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	now := s.clock.Now()
-	registration := &waappv1.RegistrationRecord{RegistrationId: s.ids.NewID("wareg_"), VerificationRequestId: verification.GetVerificationRequestId(), WaAccountId: waAccountID(account), ClientProfileId: profile.GetClientProfileId(), Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_SUBMITTED, SubmittedAt: timestamppb.New(now)}
-	result := runner.SubmitVerificationCode(ctx, wacore.EngineSubmitInput{EngineRegistrationInput: wacore.EngineRegistrationInput{WAAccountID: waAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: profile.GetProtocolProfileId(), AppVersion: s.clientProfileAppVersion(ctx, profile), Phone: account.GetPhone(), DeliveryMethod: verification.GetDeliveryMethod()}, VerificationRequestID: verification.GetVerificationRequestId(), Code: req.GetCode(), CodeSecretRef: req.GetCodeSecretRef()})
+	registration := &waappv1.RegistrationRecord{RegistrationId: s.ids.NewID("wareg_"), VerificationRequestId: verification.GetVerificationRequestId(), WaAccountId: wamodel.WAAccountID(account), ClientProfileId: profile.GetClientProfileId(), Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_SUBMITTED, SubmittedAt: timestamppb.New(now)}
+	result := runner.SubmitVerificationCode(ctx, wacore.EngineSubmitInput{EngineRegistrationInput: wacore.EngineRegistrationInput{WAAccountID: wamodel.WAAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: profile.GetProtocolProfileId(), AppVersion: s.clientProfileAppVersion(ctx, profile), Phone: account.GetPhone(), DeliveryMethod: verification.GetDeliveryMethod()}, VerificationRequestID: verification.GetVerificationRequestId(), Code: req.GetCode(), CodeSecretRef: req.GetCodeSecretRef()})
 	registration.Status = result.Status
 	registration.LastError = shared.ToProtoError(result.Err)
 	if result.Status == waappv1.RegistrationStatus_REGISTRATION_STATUS_REGISTERED {
@@ -111,7 +112,7 @@ func (s *serverCore) submitVerificationCode(ctx context.Context, req *waappv1.Su
 			completedAt = s.clock.Now()
 		}
 		registration.CompletedAt = timestamppb.New(completedAt)
-		registration.Identity = &waappv1.RegisteredIdentity{RegisteredIdentityId: shared.FirstNonEmpty(result.RegisteredID, s.ids.NewID("waid_")), WaAccountId: waAccountID(account), ClientProfileId: profile.GetClientProfileId(), ServiceAccountId: result.ServiceAccountID, ServiceLoginId: result.ServiceLoginID, RegisteredAt: timestamppb.New(completedAt)}
+		registration.Identity = &waappv1.RegisteredIdentity{RegisteredIdentityId: shared.FirstNonEmpty(result.RegisteredID, s.ids.NewID("waid_")), WaAccountId: wamodel.WAAccountID(account), ClientProfileId: profile.GetClientProfileId(), ServiceAccountId: result.ServiceAccountID, ServiceLoginId: result.ServiceLoginID, RegisteredAt: timestamppb.New(completedAt)}
 	}
 	if err := s.store.SaveRegistration(ctx, registration); err != nil {
 		return &waappv1.SubmitVerificationCodeResponse{Error: shared.ToProtoError(err)}, nil
@@ -294,7 +295,7 @@ func (s *serverCore) waAccountAndProfile(ctx context.Context, waAccountIDValue s
 	if err != nil {
 		return nil, nil, err
 	}
-	if profile.GetWaAccountId() != waAccountID(account) {
+	if profile.GetWaAccountId() != wamodel.WAAccountID(account) {
 		return nil, nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "client profile does not belong to WA account", false)
 	}
 	return account, profile, nil
@@ -311,7 +312,7 @@ func (s *serverCore) newVerificationCodeRequestRecord(account *waappv1.WAAccount
 	now := s.clock.Now()
 	return &waappv1.VerificationCodeRequestRecord{
 		VerificationRequestId: s.ids.NewID("wavrf_"),
-		WaAccountId:           waAccountID(account),
+		WaAccountId:           wamodel.WAAccountID(account),
 		ClientProfileId:       profile.GetClientProfileId(),
 		DeliveryMethod:        method,
 		Status:                result.Status,

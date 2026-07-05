@@ -22,6 +22,7 @@ import (
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 	"go.mozilla.org/pkcs7"
 	"golang.org/x/crypto/pbkdf2"
 )
@@ -132,7 +133,7 @@ func (s *serverCore) tooling() (wacore.ProtocolTooling, error) {
 
 func (e *toolingService) GeneratePhoneFingerprintProfile(ctx context.Context, req *waappv1.GeneratePhoneFingerprintProfileRequest) (*waappv1.PhoneFingerprintProfile, error) {
 	_ = ctx
-	phone := normalizePhone(req.GetPhone())
+	phone := wamodel.NormalizePhone(req.GetPhone())
 	if phone.GetE164Number() == "" && shared.PhoneCC(phone) == "" {
 		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "phone is required", false)
 	}
@@ -152,7 +153,7 @@ func (e *toolingService) ImportWamsysCapture(ctx context.Context, req *waappv1.I
 func (e *toolingService) BuildRegistrationRequest(ctx context.Context, req *waappv1.BuildRegistrationRequestRequest) (*waappv1.BuildRegistrationRequestResponse, error) {
 	params := orderedParams{}
 	rawKeys := map[string]struct{}{}
-	phone := normalizePhone(req.GetPhone())
+	phone := wamodel.NormalizePhone(req.GetPhone())
 	var state nativeState
 	var hasState bool
 	if req.GetClientProfileId() != "" {
@@ -288,7 +289,7 @@ func (e *toolingService) EncryptWASafeEnvelope(ctx context.Context, req *waappv1
 
 func (e *toolingService) DeriveRegistrationToken(ctx context.Context, req *waappv1.DeriveRegistrationTokenRequest) (*waappv1.DeriveRegistrationTokenResponse, error) {
 	_ = ctx
-	token, err := deriveRegistrationTokenFromAPK(req.GetApk(), shared.PhoneNational(normalizePhone(req.GetPhone())), shared.FirstNonEmpty(req.GetPackageName(), "com.whatsapp"))
+	token, err := deriveRegistrationTokenFromAPK(req.GetApk(), shared.PhoneNational(wamodel.NormalizePhone(req.GetPhone())), shared.FirstNonEmpty(req.GetPackageName(), "com.whatsapp"))
 	if err != nil {
 		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "registration token derivation failed", false)
 	}

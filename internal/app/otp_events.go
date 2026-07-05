@@ -8,6 +8,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -29,7 +30,7 @@ func (s *serverCore) publishOTPCandidates(ctx context.Context, msg *waappv1.Inbo
 		}
 		receivedAtTS := firstTimestamp(candidate.GetExtractedAt(), msg.GetReceivedAt())
 		otpMessage := &waappv1.OtpMessage{
-			OtpMessageId:         stableOTPMessageID(session.GetWaAccountId(), sourceParty, otp),
+			OtpMessageId:         wamodel.StableOTPMessageID(session.GetWaAccountId(), sourceParty, otp),
 			WaAccountId:          session.GetWaAccountId(),
 			ClientProfileId:      session.GetClientProfileId(),
 			RegisteredIdentityId: session.GetRegisteredIdentityId(),
@@ -44,10 +45,6 @@ func (s *serverCore) publishOTPCandidates(ctx context.Context, msg *waappv1.Inbo
 			log.Printf("save WA OTP history failed: %v", sanitizeLogError(err))
 		}
 	}
-}
-
-func stableOTPMessageID(accountID string, sourceParty string, otp string) string {
-	return "waotp_" + shared.StableID(strings.Join([]string{accountID, sourceParty, otp}, ":"))
 }
 
 func firstTimestamp(values ...*timestamppb.Timestamp) *timestamppb.Timestamp {

@@ -54,7 +54,7 @@ func (s *SQLiteStore) GetWAContact(ctx context.Context, contactID string) (*waap
 	if err := s.loadPayload(ctx, "wa_sqlite_contacts", contactID, contact, waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA contact not found"); err != nil {
 		return nil, err
 	}
-	enrichWAContactFallback(contact)
+	wamodel.EnrichWAContactFallback(contact)
 	if err := s.enrichWAContactMessageStats(ctx, contact.GetWaAccountId(), contact); err != nil {
 		return nil, err
 	}
@@ -62,7 +62,7 @@ func (s *SQLiteStore) GetWAContact(ctx context.Context, contactID string) (*waap
 }
 
 func (s *SQLiteStore) GetWAContactByRef(ctx context.Context, waAccountIDValue string, contactRef string) (*waappv1.WAContact, error) {
-	refs := contactRefVariants(contactRef)
+	refs := wamodel.ContactRefVariants(contactRef)
 	idClause, idArgs := sqliteInClause("id", refs)
 	jidClause, jidArgs := sqliteInClause("json_extract(payload, '$.jid')", refs)
 	numberClause, numberArgs := sqliteInClause("json_extract(payload, '$.number')", refs)
@@ -78,7 +78,7 @@ func (s *SQLiteStore) GetWAContactByRef(ctx context.Context, waAccountIDValue st
 	if err := sqliteUnmarshal([]byte(payload), contact); err != nil {
 		return nil, err
 	}
-	enrichWAContactFallback(contact)
+	wamodel.EnrichWAContactFallback(contact)
 	if err := s.enrichWAContactMessageStats(ctx, waAccountIDValue, contact); err != nil {
 		return nil, err
 	}
@@ -106,7 +106,7 @@ func (s *SQLiteStore) ListWAContacts(ctx context.Context, waAccountIDValue strin
 		return nil, "", err
 	}
 	for _, item := range items {
-		enrichWAContactFallback(item)
+		wamodel.EnrichWAContactFallback(item)
 		if err := s.enrichWAContactMessageStats(ctx, waAccountIDValue, item); err != nil {
 			return nil, "", err
 		}
@@ -185,7 +185,7 @@ WHERE wa_account_id=?
 }
 
 func (s *SQLiteStore) enrichWAContactMessageStats(ctx context.Context, waAccountIDValue string, contact *waappv1.WAContact) error {
-	refs := contactMessageRefs(contact)
+	refs := wamodel.ContactMessageRefs(contact)
 	primaryRef := sqliteContactRef(refs, 0)
 	secondaryRef := sqliteContactRef(refs, 1)
 	jidRef := sqliteContactRef(refs, 2)

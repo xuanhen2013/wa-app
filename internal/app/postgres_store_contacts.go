@@ -41,7 +41,7 @@ ON CONFLICT (contact_id) DO UPDATE SET
   kind=CASE WHEN EXCLUDED.kind IN ('WA_CONTACT_KIND_UNSPECIFIED','WA_CONTACT_KIND_USER') AND wa_contacts.kind <> '' THEN wa_contacts.kind ELSE EXCLUDED.kind END,
   is_whatsapp_user=wa_contacts.is_whatsapp_user OR EXCLUDED.is_whatsapp_user,
   is_reachable=wa_contacts.is_reachable OR EXCLUDED.is_reachable,
-  updated_at=GREATEST(wa_contacts.updated_at, EXCLUDED.updated_at)`, contact.GetContactId(), contact.GetWaAccountId(), contact.GetJid(), contact.GetNumber(), contact.GetDisplayName(), contact.GetWaName(), contact.GetVerifiedName(), contact.GetProfilePictureId(), contactKindStorageValue(contact), contact.GetIsWhatsappUser(), contact.GetIsReachable(), createdAt, updatedAt)
+  updated_at=GREATEST(wa_contacts.updated_at, EXCLUDED.updated_at)`, contact.GetContactId(), contact.GetWaAccountId(), contact.GetJid(), contact.GetNumber(), contact.GetDisplayName(), contact.GetWaName(), contact.GetVerifiedName(), contact.GetProfilePictureId(), wamodel.ContactKindStorageValue(contact), contact.GetIsWhatsappUser(), contact.GetIsReachable(), createdAt, updatedAt)
 		queued++
 	}
 	if queued == 0 {
@@ -61,7 +61,7 @@ func (s *PostgresStore) GetWAContact(ctx context.Context, contactID string) (*wa
 }
 
 func (s *PostgresStore) GetWAContactByRef(ctx context.Context, waAccountIDValue string, contactRef string) (*waappv1.WAContact, error) {
-	refs := contactRefVariants(contactRef)
+	refs := wamodel.ContactRefVariants(contactRef)
 	var r contactRow
 	row := s.pool.QueryRow(ctx, contactSelectSQL+` WHERE c.wa_account_id=$1 AND (c.contact_id=ANY($2) OR c.jid=ANY($2) OR c.number=ANY($2)) ORDER BY c.updated_at DESC LIMIT 1`, waAccountIDValue, refs)
 	if err := scanContactRow(row, &r); err != nil {

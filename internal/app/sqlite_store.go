@@ -12,6 +12,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -103,7 +104,7 @@ func (s *SQLiteStore) SaveWAAccount(ctx context.Context, account *waappv1.WAAcco
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, `INSERT INTO wa_sqlite_accounts (id,e164,updated_at,payload) VALUES (?,?,?,?)
-ON CONFLICT(id) DO UPDATE SET e164=excluded.e164, updated_at=excluded.updated_at, payload=excluded.payload`, waAccountID(account), account.GetPhone().GetE164Number(), sqliteTimeValue(waAccountUpdatedAt(account)), payload)
+ON CONFLICT(id) DO UPDATE SET e164=excluded.e164, updated_at=excluded.updated_at, payload=excluded.payload`, wamodel.WAAccountID(account), account.GetPhone().GetE164Number(), sqliteTimeValue(wamodel.WAAccountUpdatedAt(account)), payload)
 	return err
 }
 
@@ -136,7 +137,7 @@ func (s *SQLiteStore) ListWAAccounts(ctx context.Context, cursorValue string, li
 		return nil, "", err
 	}
 	items, nextCursor := shared.NewKeysetPage(items, limit, func(account *waappv1.WAAccount) shared.KeysetCursor {
-		return shared.KeysetCursorValue(waAccountUpdatedAt(account), waAccountID(account))
+		return shared.KeysetCursorValue(wamodel.WAAccountUpdatedAt(account), wamodel.WAAccountID(account))
 	})
 	return items, nextCursor, nil
 }
@@ -485,7 +486,7 @@ func (s *SQLiteStore) SaveOTPMessage(ctx context.Context, msg *waappv1.OtpMessag
 		return nil
 	}
 	stored := proto.Clone(msg).(*waappv1.OtpMessage)
-	stored.OtpMessageId = shared.FirstNonEmpty(stored.GetOtpMessageId(), stableOTPMessageID(stored.GetWaAccountId(), stored.GetSourceParty(), otpValue))
+	stored.OtpMessageId = shared.FirstNonEmpty(stored.GetOtpMessageId(), wamodel.StableOTPMessageID(stored.GetWaAccountId(), stored.GetSourceParty(), otpValue))
 	if stored.Otp == nil {
 		stored.Otp = &waappv1.SensitiveText{}
 	}

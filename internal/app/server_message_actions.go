@@ -8,9 +8,8 @@ import (
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 )
-
-const maxMessageActionBatchSize = 100
 
 type waMessageReadReceiptSender interface {
 	SendReadReceipts(context.Context, wacore.EngineMessageReadReceiptInput) wacore.EngineMessageReadReceiptResult
@@ -97,7 +96,7 @@ func (s *serverCore) loadMessageReadRecords(ctx context.Context, accountID strin
 	if contactRef == "" {
 		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "account_message_ids or contact_ref is required", false)
 	}
-	messages, err := s.store.ListUnreadInboundMessagesByContactRefs(ctx, accountID, s.resolveContactActionRefs(ctx, accountID, contactRef), maxMessageActionBatchSize)
+	messages, err := s.store.ListUnreadInboundMessagesByContactRefs(ctx, accountID, s.resolveContactActionRefs(ctx, accountID, contactRef), wamodel.MaxMessageActionBatchSize)
 	if err != nil {
 		return nil, err
 	}
@@ -144,7 +143,7 @@ func normalizeActionMessageIDs(values []string) []string {
 		}
 		seen[id] = struct{}{}
 		out = append(out, id)
-		if len(out) >= maxMessageActionBatchSize {
+		if len(out) >= wamodel.MaxMessageActionBatchSize {
 			break
 		}
 	}

@@ -9,6 +9,7 @@ import (
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 )
 
 func (s *serverCore) StartRegistration(ctx context.Context, payload map[string]any) (map[string]any, error) {
@@ -28,7 +29,7 @@ func (s *serverCore) StartRegistration(ctx context.Context, payload map[string]a
 	if reason := directRegistrationMethodUnsupportedReason(method); reason != "" {
 		return rejectedRegistrationResult(basePayload, registrationMethodUnsupportedMap(method, reason)), nil
 	}
-	phone := normalizePhone(phoneFromAction(basePayload))
+	phone := wamodel.NormalizePhone(phoneFromAction(basePayload))
 	state, stateRef, reusedState, err := gateway.registrationAttemptState(ctx, phone)
 	if err != nil {
 		return nil, err
@@ -60,17 +61,17 @@ func (s *serverCore) StartRegistration(ctx context.Context, payload map[string]a
 		challenge.VerificationRequestId = record.GetVerificationRequestId()
 	}
 	if err := gateway.server.store.SaveVerificationRequest(ctx, record); err != nil {
-		_ = gateway.discardRejectedRegistration(context.Background(), basePayload, waAccountID(account), record.GetVerificationRequestId())
+		_ = gateway.discardRejectedRegistration(context.Background(), basePayload, wamodel.WAAccountID(account), record.GetVerificationRequestId())
 		return nil, err
 	}
 	verificationRequestID := record.GetVerificationRequestId()
 	wait := registrationOTPWait{
-		WAAccountID:           waAccountID(account),
+		WAAccountID:           wamodel.WAAccountID(account),
 		VerificationRequestID: verificationRequestID,
 		CreatedAtUnix:         time.Now().UTC().Unix(),
 	}
 	if err := gateway.saveRegistrationOTPWait(ctx, wait, registrationOTPWaitDefaultTTL); err != nil {
-		_ = gateway.discardRejectedRegistration(context.Background(), basePayload, waAccountID(account), verificationRequestID)
+		_ = gateway.discardRejectedRegistration(context.Background(), basePayload, wamodel.WAAccountID(account), verificationRequestID)
 		return nil, err
 	}
 	_ = gateway.server.runtime.DeleteTransientState(context.Background(), stateRef)
@@ -79,7 +80,7 @@ func (s *serverCore) StartRegistration(ctx context.Context, payload map[string]a
 		"status":                  record.GetStatus().String(),
 		"error_message":           "",
 		"phone":                   objectField(basePayload, "phone"),
-		"wa_account_id":           waAccountID(account),
+		"wa_account_id":           wamodel.WAAccountID(account),
 		"client_profile_id":       profile.GetClientProfileId(),
 		"protocol_profile_id":     protocol.GetProtocolProfileId(),
 		"verification_request_id": verificationRequestID,
@@ -566,12 +567,12 @@ func registrationCodeAccountStatus(failed bool) string {
 	return waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REACHABLE.String()
 }
 
-func (g *actionGateway) discardRejectedRegistration(ctx context.Context, basePayload map[string]any, waAccountID string, verificationRequestID string) error {
-	if strings.TrimSpace(waAccountID) == "" {
+func (g *actionGateway) discardRejectedRegistration(ctx context.Context, basePayload map[string]any, WAAccountID string, verificationRequestID string) error {
+	if strings.TrimSpace(WAAccountID) == "" {
 		return nil
 	}
 	result, err := g.cleanupFailedRegistration(ctx, map[string]any{
-		"wa_account_id":           waAccountID,
+		"wa_account_id":           WAAccountID,
 		"verification_request_id": verificationRequestID,
 	})
 	if err != nil {

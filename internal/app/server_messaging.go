@@ -8,6 +8,7 @@ import (
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -19,7 +20,7 @@ func (s *messagingHandler) OpenMessageSession(ctx context.Context, req *waappv1.
 	if err != nil {
 		return &waappv1.OpenMessageSessionResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	waID := waAccountID(account)
+	waID := wamodel.WAAccountID(account)
 	if req.GetRegisteredIdentityId() == "" {
 		return &waappv1.OpenMessageSessionResponse{Error: shared.ToProtoError(shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "registered_identity_id is required", false))}, nil
 	}

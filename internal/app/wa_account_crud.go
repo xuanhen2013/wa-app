@@ -8,6 +8,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 )
 
 const pendingRegistrationCleanupPageLimit = 100
@@ -15,19 +16,19 @@ const pendingRegistrationCleanupPageLimit = 100
 // markWAAccountTransferredOut 在账号被接管/转出(chatd device_removed/replaced 或 device_logout)时,
 // 把账号级状态置为 TRANSFERRED_OUT,使仪表盘账号资料不再显示"正常"。账号不存在或已是该态则跳过;
 // 再次注册到本端会经注册流回到 ACTIVE。
-func (s *serverCore) markWAAccountTransferredOut(ctx context.Context, waAccountID string) {
-	if s == nil || strings.TrimSpace(waAccountID) == "" {
+func (s *serverCore) markWAAccountTransferredOut(ctx context.Context, WAAccountID string) {
+	if s == nil || strings.TrimSpace(WAAccountID) == "" {
 		return
 	}
-	account, err := s.getWAAccount(ctx, waAccountID)
+	account, err := s.getWAAccount(ctx, WAAccountID)
 	if err != nil || account == nil {
 		return
 	}
-	if waAccountStatus(account) == waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_TRANSFERRED_OUT {
+	if wamodel.WAAccountStatus(account) == waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_TRANSFERRED_OUT {
 		return
 	}
 	if _, err := s.saveWAAccount(ctx, withWAAccountStatus(account, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_TRANSFERRED_OUT, s.clock.Now())); err != nil {
-		log.Printf("WA mark account transferred out failed: wa_account=%s error=%v", waAccountID, sanitizeLogError(err))
+		log.Printf("WA mark account transferred out failed: wa_account=%s error=%v", WAAccountID, sanitizeLogError(err))
 	}
 }
 
@@ -41,8 +42,8 @@ func (s *serverCore) saveWAAccount(ctx context.Context, account *waappv1.WAAccou
 	}
 	account.WaAccountId = accountID
 	account.DisplayName = strings.TrimSpace(account.GetDisplayName())
-	account.Phone = normalizePhone(account.GetPhone())
-	account.Status = normalizeWAAccountStatus(account.GetStatus())
+	account.Phone = wamodel.NormalizePhone(account.GetPhone())
+	account.Status = wamodel.NormalizeWAAccountStatus(account.GetStatus())
 	if err := s.store.SaveWAAccount(ctx, account); err != nil {
 		return nil, err
 	}
@@ -86,10 +87,10 @@ func (s *serverCore) deletePendingRegistrationWAAccounts(ctx context.Context) (i
 			return deleted, err
 		}
 		for _, account := range accounts {
-			if waAccountStatus(account) != waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_PENDING_REGISTRATION {
+			if wamodel.WAAccountStatus(account) != waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_PENDING_REGISTRATION {
 				continue
 			}
-			accountID := waAccountID(account)
+			accountID := wamodel.WAAccountID(account)
 			if accountID == "" {
 				continue
 			}

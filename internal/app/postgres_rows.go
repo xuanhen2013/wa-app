@@ -122,7 +122,7 @@ type waAccountRow struct {
 }
 
 func (r waAccountRow) toProto() *waappv1.WAAccount {
-	account := newWAAccount(r.id, r.displayName, &waappv1.PhoneTarget{
+	account := wamodel.NewWAAccount(r.id, r.displayName, &waappv1.PhoneTarget{
 		E164Number:         r.e164,
 		CountryCallingCode: r.cc,
 		NationalNumber:     r.national,
@@ -541,6 +541,6 @@ func (r contactRow) toProto() *waappv1.WAContact {
 			waappv1.MessageEncryptionState(waappv1.MessageEncryptionState_value[r.lastEncryption]),
 		),
 	}
-	enrichWAContactFallback(contact)
+	wamodel.EnrichWAContactFallback(contact)
 	return contact
 }

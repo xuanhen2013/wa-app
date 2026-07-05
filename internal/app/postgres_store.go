@@ -11,6 +11,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -132,18 +133,18 @@ func (s *PostgresStore) GetProtocolProfile(ctx context.Context, id string) (*waa
 }
 
 func (s *PostgresStore) SaveWAAccount(ctx context.Context, account *waappv1.WAAccount) error {
-	createdAt := waAccountCreatedAt(account)
+	createdAt := wamodel.WAAccountCreatedAt(account)
 	if createdAt.IsZero() {
 		createdAt = time.Now().UTC()
 	}
-	updatedAt := waAccountUpdatedAt(account)
+	updatedAt := wamodel.WAAccountUpdatedAt(account)
 	if updatedAt.IsZero() {
 		updatedAt = createdAt
 	}
 	_, err := s.pool.Exec(ctx, `INSERT INTO wa_accounts (wa_account_id, display_name, e164_number, country_calling_code, national_number, country_iso2, status, two_factor_auth_configured, two_factor_email_configured, two_factor_email_address, two_factor_email_verified, two_factor_email_confirmed, created_at, updated_at)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14)
 ON CONFLICT (e164_number) DO UPDATE SET display_name=COALESCE(NULLIF(EXCLUDED.display_name,''), wa_accounts.display_name), country_calling_code=EXCLUDED.country_calling_code, national_number=EXCLUDED.national_number, country_iso2=EXCLUDED.country_iso2, status=EXCLUDED.status, two_factor_auth_configured=COALESCE(EXCLUDED.two_factor_auth_configured, wa_accounts.two_factor_auth_configured), two_factor_email_configured=COALESCE(EXCLUDED.two_factor_email_configured, wa_accounts.two_factor_email_configured), two_factor_email_address=COALESCE(EXCLUDED.two_factor_email_address, wa_accounts.two_factor_email_address), two_factor_email_verified=COALESCE(EXCLUDED.two_factor_email_verified, wa_accounts.two_factor_email_verified), two_factor_email_confirmed=COALESCE(EXCLUDED.two_factor_email_confirmed, wa_accounts.two_factor_email_confirmed), updated_at=EXCLUDED.updated_at`,
-		waAccountID(account), account.GetDisplayName(), account.GetPhone().GetE164Number(), account.GetPhone().GetCountryCallingCode(), account.GetPhone().GetNationalNumber(), account.GetPhone().GetCountryIso2(), waAccountStatusStorageValue(account), nullableTwoFactorConfigured(account.GetTwoFactorAuth()), nullableTwoFactorEmailConfigured(account.GetTwoFactorAuth()), nullableTwoFactorEmailAddress(account.GetTwoFactorAuth()), nullableTwoFactorEmailVerified(account.GetTwoFactorAuth()), nullableTwoFactorEmailConfirmed(account.GetTwoFactorAuth()), createdAt, updatedAt)
+		wamodel.WAAccountID(account), account.GetDisplayName(), account.GetPhone().GetE164Number(), account.GetPhone().GetCountryCallingCode(), account.GetPhone().GetNationalNumber(), account.GetPhone().GetCountryIso2(), wamodel.WAAccountStatusStorageValue(account), nullableTwoFactorConfigured(account.GetTwoFactorAuth()), nullableTwoFactorEmailConfigured(account.GetTwoFactorAuth()), nullableTwoFactorEmailAddress(account.GetTwoFactorAuth()), nullableTwoFactorEmailVerified(account.GetTwoFactorAuth()), nullableTwoFactorEmailConfirmed(account.GetTwoFactorAuth()), createdAt, updatedAt)
 	return err
 }
 
@@ -178,7 +179,7 @@ func (s *PostgresStore) ListWAAccounts(ctx context.Context, cursorValue string, 
 		return nil, "", err
 	}
 	items, nextCursor := shared.NewKeysetPage(accounts, limit, func(account *waappv1.WAAccount) shared.KeysetCursor {
-		return shared.KeysetCursorValue(waAccountUpdatedAt(account), waAccountID(account))
+		return shared.KeysetCursorValue(wamodel.WAAccountUpdatedAt(account), wamodel.WAAccountID(account))
 	})
 	return items, nextCursor, nil
 }
@@ -534,7 +535,7 @@ func (s *PostgresStore) SaveOTPMessage(ctx context.Context, msg *waappv1.OtpMess
 	if source == "" || source == "WA_OTP_SOURCE_UNSPECIFIED" {
 		source = "WA_OTP_SOURCE_AUTO_EXTRACTION"
 	}
-	otpID := shared.FirstNonEmpty(msg.GetOtpMessageId(), stableOTPMessageID(msg.GetWaAccountId(), msg.GetSourceParty(), otpValue))
+	otpID := shared.FirstNonEmpty(msg.GetOtpMessageId(), wamodel.StableOTPMessageID(msg.GetWaAccountId(), msg.GetSourceParty(), otpValue))
 	redactedValue := shared.FirstNonEmpty(msg.GetOtp().GetRedactedValue(), shared.Redacted(otpValue))
 	secretRef := shared.FirstNonEmpty(msg.GetOtp().GetSecretRef(), "wa-otp:"+shared.StableID(otpID))
 	_, err := s.pool.Exec(ctx, `INSERT INTO wa_otp_messages (otp_message_id, wa_account_id, client_profile_id, registered_identity_id, message_id, candidate_id, source, source_party, otp_value, otp_redacted, otp_secret_ref, received_at, expires_at, created_at, updated_at)

@@ -462,7 +462,7 @@ func contactFromContactUsyncUser(accountID string, userNode chatdNode, now time.
 	}
 	contact.Number = shared.FirstNonEmpty(contactNumberForJID(pnJID), contactUsyncPhoneNumber(userNode))
 	displayName, waName, verifiedName, business := contactUsyncNames(userNode)
-	contact.DisplayName = shared.FirstNonEmpty(displayName, verifiedName, waName, fallbackWAContactDisplayName(contact.GetKind(), contact.GetJid(), contact.GetNumber()))
+	contact.DisplayName = shared.FirstNonEmpty(displayName, verifiedName, waName, wamodel.FallbackWAContactDisplayName(contact.GetKind(), contact.GetJid(), contact.GetNumber()))
 	contact.WaName = waName
 	contact.VerifiedName = verifiedName
 	contact.ProfilePictureId = contactProfilePictureID(userNode)

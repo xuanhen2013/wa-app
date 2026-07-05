@@ -13,6 +13,7 @@ import (
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -100,7 +101,7 @@ func (g *actionGateway) generateTransientFingerprint(ctx context.Context, payloa
 	if err != nil {
 		return nil, err
 	}
-	phone := normalizePhone(phoneFromAction(payload))
+	phone := wamodel.NormalizePhone(phoneFromAction(payload))
 	if phone.GetE164Number() == "" {
 		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "phone is required", false)
 	}
@@ -143,14 +144,14 @@ func (g *actionGateway) commitFingerprint(ctx context.Context, payload map[strin
 	if err != nil {
 		return nil, err
 	}
-	account, profile, protocol, err := g.server.commitNativeState(ctx, normalizePhone(phoneFromAction(payload)), state)
+	account, profile, protocol, err := g.server.commitNativeState(ctx, wamodel.NormalizePhone(phoneFromAction(payload)), state)
 	if err != nil {
 		return nil, err
 	}
 	_ = g.server.runtime.DeleteTransientState(ctx, ref)
 	return map[string]any{
 		"success":             true,
-		"wa_account_id":       waAccountID(account),
+		"wa_account_id":       wamodel.WAAccountID(account),
 		"client_profile_id":   profile.GetClientProfileId(),
 		"protocol_profile_id": protocol.GetProtocolProfileId(),
 		"client_profile":      protoMap(profile),
@@ -490,7 +491,7 @@ func (g *actionGateway) cleanupFailedRegistration(ctx context.Context, payload m
 	if err != nil {
 		return nil, err
 	}
-	status := waAccountStatus(account)
+	status := wamodel.WAAccountStatus(account)
 	if status != waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_PENDING_REGISTRATION {
 		return map[string]any{"success": true, "deleted": false, "wa_account_id": normalizedAccountID, "status": status.String(), "reason": "not_pending_registration"}, nil
 	}
@@ -572,7 +573,7 @@ func (s *serverCore) commitNativeState(ctx context.Context, phone *waappv1.Phone
 	account, err := s.store.FindWAAccountByPhone(ctx, phone.GetE164Number())
 	if err != nil {
 		now := s.clock.Now()
-		account = newWAAccount(s.ids.NewID("waacc_"), "", phone, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_PENDING_REGISTRATION, &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)})
+		account = wamodel.NewWAAccount(s.ids.NewID("waacc_"), "", phone, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_PENDING_REGISTRATION, &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)})
 		account, err = s.saveWAAccount(ctx, account)
 		if err != nil {
 			return nil, nil, nil, err
@@ -583,7 +584,7 @@ func (s *serverCore) commitNativeState(ctx context.Context, phone *waappv1.Phone
 		return nil, nil, nil, err
 	}
 	now := s.clock.Now()
-	profile := &waappv1.ClientProfile{ClientProfileId: s.ids.NewID("wacp_"), WaAccountId: waAccountID(account), ProtocolProfileId: protocol.GetProtocolProfileId(), Status: waappv1.ClientProfileStatus_CLIENT_PROFILE_STATUS_PREPARING, RegistrationKeyState: waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_PENDING, MessagingKeyState: waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_PENDING, Audit: &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)}}
+	profile := &waappv1.ClientProfile{ClientProfileId: s.ids.NewID("wacp_"), WaAccountId: wamodel.WAAccountID(account), ProtocolProfileId: protocol.GetProtocolProfileId(), Status: waappv1.ClientProfileStatus_CLIENT_PROFILE_STATUS_PREPARING, RegistrationKeyState: waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_PENDING, MessagingKeyState: waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_PENDING, Audit: &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)}}
 	if err := s.store.SaveClientProfile(ctx, profile); err != nil {
 		return nil, nil, nil, err
 	}

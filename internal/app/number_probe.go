@@ -10,6 +10,7 @@ import (
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 )
 
 const numberProbeMaxAttempts = 3
@@ -19,7 +20,7 @@ func (s *serverCore) ProbeNumberSMS(ctx context.Context, payload map[string]any)
 		payload = map[string]any{}
 	}
 	ctxData := actionContext(payload)
-	phone := normalizePhone(phoneFromAction(payload))
+	phone := wamodel.NormalizePhone(phoneFromAction(payload))
 	if phone.GetE164Number() == "" {
 		err := shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "phone is required", false)
 		result := numberProbeError(payload, err)

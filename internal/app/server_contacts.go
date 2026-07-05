@@ -180,10 +180,3 @@ func firstNStrings(values []string, limit int) []string {
 	}
 	return values[:limit]
 }
-
-func contactKindStorageValue(contact *waappv1.WAContact) string {
-	if contact.GetKind() == waappv1.WAContactKind_WA_CONTACT_KIND_UNSPECIFIED {
-		return waappv1.WAContactKind_WA_CONTACT_KIND_USER.String()
-	}
-	return contact.GetKind().String()
-}

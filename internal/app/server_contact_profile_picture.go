@@ -11,6 +11,7 @@ import (
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 )
 
 const contactProfilePictureCacheTTL = 6 * time.Hour
@@ -287,7 +288,7 @@ func accountProfilePictureJID(account *waappv1.WAAccount) string {
 	if account == nil {
 		return ""
 	}
-	phone := normalizePhone(account.GetPhone())
+	phone := wamodel.NormalizePhone(account.GetPhone())
 	digits := shared.DigitsOnly(phone.GetE164Number())
 	if digits == "" {
 		digits = shared.DigitsOnly(phone.GetCountryCallingCode() + phone.GetNationalNumber())

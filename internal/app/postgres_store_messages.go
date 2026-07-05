@@ -134,8 +134,8 @@ LIMIT $4`, waAccountIDValue, waappv1.InboundMessageKind_INBOUND_MESSAGE_KIND_MES
 }
 
 func normalizeMessageActionLimit(limit int) int {
-	if limit <= 0 || limit > maxMessageActionBatchSize {
-		return maxMessageActionBatchSize
+	if limit <= 0 || limit > wamodel.MaxMessageActionBatchSize {
+		return wamodel.MaxMessageActionBatchSize
 	}
 	return limit
 }

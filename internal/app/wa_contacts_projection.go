@@ -63,7 +63,7 @@ func contactFromRef(accountID string, ref string, seenAt time.Time, now time.Tim
 		WaAccountId:    accountID,
 		Jid:            jid,
 		Number:         contactNumberForJID(jid),
-		DisplayName:    fallbackWAContactDisplayName(kind, jid, contactNumberForJID(jid)),
+		DisplayName:    wamodel.FallbackWAContactDisplayName(kind, jid, contactNumberForJID(jid)),
 		Kind:           kind,
 		IsWhatsappUser: kind == waappv1.WAContactKind_WA_CONTACT_KIND_USER || kind == waappv1.WAContactKind_WA_CONTACT_KIND_BUSINESS || kind == waappv1.WAContactKind_WA_CONTACT_KIND_GROUP,
 		IsReachable:    kind == waappv1.WAContactKind_WA_CONTACT_KIND_USER || kind == waappv1.WAContactKind_WA_CONTACT_KIND_BUSINESS || kind == waappv1.WAContactKind_WA_CONTACT_KIND_GROUP,
@@ -121,7 +121,7 @@ func contactFromContactHint(accountID string, hint wacore.WAContactHint, seenAt 
 		return nil
 	}
 	contact.Number = contactNumberForJID(hint.PNJID)
-	contact.DisplayName = shared.FirstNonEmpty(hint.DisplayName, hint.VerifiedName, hint.WAName, hint.Username, fallbackWAContactDisplayName(contact.GetKind(), contact.GetJid(), contact.GetNumber()))
+	contact.DisplayName = shared.FirstNonEmpty(hint.DisplayName, hint.VerifiedName, hint.WAName, hint.Username, wamodel.FallbackWAContactDisplayName(contact.GetKind(), contact.GetJid(), contact.GetNumber()))
 	contact.WaName = shared.FirstNonEmpty(hint.WAName, hint.Username)
 	contact.VerifiedName = hint.VerifiedName
 	if hint.VerifiedName != "" {
@@ -152,65 +152,6 @@ func contactKindForJID(jid string) waappv1.WAContactKind {
 	default:
 		return waappv1.WAContactKind_WA_CONTACT_KIND_SYSTEM
 	}
-}
-
-func fallbackWAContactDisplayName(kind waappv1.WAContactKind, jid string, number string) string {
-	if number != "" {
-		return "+" + number
-	}
-	local, _, _ := strings.Cut(jid, "@")
-	local = strings.TrimSpace(local)
-	switch kind {
-	case waappv1.WAContactKind_WA_CONTACT_KIND_GROUP:
-		return fallbackContactName("群组", local)
-	case waappv1.WAContactKind_WA_CONTACT_KIND_BUSINESS:
-		return fallbackContactName("联系人", local)
-	case waappv1.WAContactKind_WA_CONTACT_KIND_INTEROP:
-		return fallbackContactName("互通联系人", local)
-	case waappv1.WAContactKind_WA_CONTACT_KIND_SYSTEM:
-		if jid == "status@broadcast" {
-			return "状态"
-		}
-		return fallbackContactName("系统联系人", local)
-	case waappv1.WAContactKind_WA_CONTACT_KIND_USER:
-		if strings.HasSuffix(jid, "@lid") {
-			return "未知联系人"
-		}
-		return fallbackContactName("联系人", local)
-	default:
-		return fallbackContactName("联系人", local)
-	}
-}
-
-func storedWAContactDisplayName(value string, number string) string {
-	value = strings.TrimSpace(value)
-	if value == "" {
-		return ""
-	}
-	if wamodel.ContactNameNeedsResolution(value, number) {
-		return ""
-	}
-	return value
-}
-
-func enrichWAContactFallback(contact *waappv1.WAContact) {
-	if contact == nil {
-		return
-	}
-	wamodel.NormalizeWAContactNames(contact)
-	contact.DisplayName = storedWAContactDisplayName(contact.GetDisplayName(), contact.GetNumber())
-	if contact.GetDisplayName() != "" {
-		return
-	}
-	contact.DisplayName = fallbackWAContactDisplayName(contact.GetKind(), contact.GetJid(), contact.GetNumber())
-}
-
-func fallbackContactName(prefix string, value string) string {
-	value = shortContactToken(value)
-	if value == "" {
-		return prefix
-	}
-	return prefix + " " + value
 }
 
 func inferWAContactDisplayName(text string, jid string) (string, bool) {
@@ -248,13 +189,4 @@ func looksLikeVerificationCodeOnlyMessage(text string) bool {
 		}
 	}
 	return true
-}
-
-func shortContactToken(value string) string {
-	value = strings.TrimSpace(value)
-	if utf8.RuneCountInString(value) <= 12 {
-		return value
-	}
-	runes := []rune(value)
-	return string(runes[:8]) + "…" + string(runes[len(runes)-4:])
 }

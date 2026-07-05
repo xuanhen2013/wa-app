@@ -1,38 +1,16 @@
 package app
 
 import (
-	"strings"
-
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
-	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 )
 
 func contactActionRefs(contactRef string, contact *waappv1.WAContact) []string {
-	refs := contactRefVariants(contactRef)
+	refs := wamodel.ContactRefVariants(contactRef)
 	if contact != nil {
 		refs = append(refs, contact.GetContactId())
-		refs = append(refs, contactMessageRefs(contact)...)
+		refs = append(refs, wamodel.ContactMessageRefs(contact)...)
 	}
 	return shared.UniqueNonEmptyStrings(refs...)
-}
-
-func contactMessageRefs(contact *waappv1.WAContact) []string {
-	if contact == nil {
-		return nil
-	}
-	refs := contactRefVariants(contact.GetJid())
-	refs = append(refs, contactRefVariants(contact.GetNumber())...)
-	return shared.UniqueNonEmptyStrings(refs...)
-}
-
-func contactRefVariants(contactRef string) []string {
-	contactRef = strings.TrimSpace(contactRef)
-	numberRef := strings.TrimPrefix(contactRef, "+")
-	if local, domain, ok := strings.Cut(numberRef, "@"); ok && domain == "s.whatsapp.net" {
-		numberRef = local
-	} else if strings.Contains(numberRef, "@") {
-		numberRef = contactRef
-	}
-	return shared.UniqueNonEmptyStrings(contactRef, numberRef, wacore.NormalizeWAJID(numberRef))
 }
