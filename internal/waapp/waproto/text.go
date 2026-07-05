@@ -1,8 +1,9 @@
-package app
+package waproto
 
 import (
 	"encoding/json"
 	"fmt"
+	"regexp"
 	"sort"
 	"strconv"
 	"strings"
@@ -19,11 +20,15 @@ const (
 	waDisplayTextMaxRunes   = 4096
 )
 
-type waProtoField struct {
-	number protowire.Number
-	kind   protowire.Type
-	value  []byte
-	varint uint64
+// SensitiveDigitsPattern matches short digit runs (OTP-like) so display-text
+// scoring and redaction can suppress them.
+var SensitiveDigitsPattern = regexp.MustCompile(`\b[0-9]{4,8}\b`)
+
+type WAProtoField struct {
+	Number protowire.Number
+	Kind   protowire.Type
+	Value  []byte
+	Varint uint64
 }
 
 type waMessageTextCandidate struct {
@@ -91,7 +96,7 @@ var waJSONURLKeys = []string{
 	"final_url",
 }
 
-func nativeMessageDisplayText(raw []byte) (string, bool) {
+func MessageDisplayText(raw []byte) (string, bool) {
 	candidates := []waMessageTextCandidate{}
 	collectWAMessageText(raw, nil, 0, &candidates)
 	if len(candidates) == 0 {
@@ -118,20 +123,20 @@ func collectWAMessageText(raw []byte, path []protowire.Number, depth int, candid
 		return
 	}
 	for _, field := range fields {
-		if field.kind != protowire.BytesType {
+		if field.Kind != protowire.BytesType {
 			continue
 		}
-		fieldPath := appendWAPath(path, field.number)
-		if value, score, ok := waKnownTextField(fieldPath, field.value); ok {
+		fieldPath := AppendWAPath(path, field.Number)
+		if value, score, ok := waKnownTextField(fieldPath, field.Value); ok {
 			*candidates = append(*candidates, newWAMessageTextCandidate(value, score))
 		}
-		if value, score, ok := waCompositeTextField(fieldPath, field.value); ok {
+		if value, score, ok := waCompositeTextField(fieldPath, field.Value); ok {
 			*candidates = append(*candidates, newWAMessageTextCandidate(value, score))
 		}
 		if value, score, ok := waMessagePlaceholder(fieldPath); ok {
 			*candidates = append(*candidates, newWAMessageTextCandidate(value, score))
 		}
-		collectWAMessageText(field.value, fieldPath, depth+1, candidates)
+		collectWAMessageText(field.Value, fieldPath, depth+1, candidates)
 	}
 }
 
@@ -152,15 +157,15 @@ func collectOffsetWAMessageText(raw []byte, candidates *[]waMessageTextCandidate
 	}
 }
 
-func parseWAProtoFields(raw []byte) ([]waProtoField, bool) {
-	return parseWAProtoFieldsWithLimit(raw, waMessageProtoMaxFields)
+func parseWAProtoFields(raw []byte) ([]WAProtoField, bool) {
+	return ParseWAProtoFieldsWithLimit(raw, waMessageProtoMaxFields)
 }
 
-func parseWAProtoFieldsWithLimit(raw []byte, maxFields int) ([]waProtoField, bool) {
+func ParseWAProtoFieldsWithLimit(raw []byte, maxFields int) ([]WAProtoField, bool) {
 	if maxFields <= 0 {
 		return nil, false
 	}
-	fields := []waProtoField{}
+	fields := []WAProtoField{}
 	for len(raw) > 0 {
 		if len(fields) >= maxFields {
 			return nil, false
@@ -176,28 +181,28 @@ func parseWAProtoFieldsWithLimit(raw []byte, maxFields int) ([]waProtoField, boo
 			if size < 0 {
 				return nil, false
 			}
-			fields = append(fields, waProtoField{number: number, kind: kind, value: value})
+			fields = append(fields, WAProtoField{Number: number, Kind: kind, Value: value})
 			raw = valueBytes[size:]
 		case protowire.VarintType:
 			value, size := protowire.ConsumeVarint(valueBytes)
 			if size < 0 {
 				return nil, false
 			}
-			fields = append(fields, waProtoField{number: number, kind: kind, varint: value})
+			fields = append(fields, WAProtoField{Number: number, Kind: kind, Varint: value})
 			raw = valueBytes[size:]
 		case protowire.Fixed32Type:
 			_, size := protowire.ConsumeFixed32(valueBytes)
 			if size < 0 {
 				return nil, false
 			}
-			fields = append(fields, waProtoField{number: number, kind: kind})
+			fields = append(fields, WAProtoField{Number: number, Kind: kind})
 			raw = valueBytes[size:]
 		case protowire.Fixed64Type:
 			_, size := protowire.ConsumeFixed64(valueBytes)
 			if size < 0 {
 				return nil, false
 			}
-			fields = append(fields, waProtoField{number: number, kind: kind})
+			fields = append(fields, WAProtoField{Number: number, Kind: kind})
 			raw = valueBytes[size:]
 		default:
 			return nil, false
@@ -211,18 +216,18 @@ func waKnownTextField(path []protowire.Number, raw []byte) (string, int, bool) {
 	if text == "" {
 		return "", 0, false
 	}
-	if jsonText := waJSONDisplayText(text); jsonText != "" {
+	if jsonText := WAJSONDisplayText(text); jsonText != "" {
 		text = jsonText
 	}
 	if isLikelyMachineText(text) || isLikelyShortMachineFragment(text) {
 		return "", 0, false
 	}
 	paramText := waTemplateParamDisplayText(raw)
-	normalized := normalizeWAMessagePath(path)
+	normalized := NormalizeWAMessagePath(path)
 	switch {
-	case sameWAPath(normalized, 1):
+	case SameWAPath(normalized, 1):
 		return text, 1000, true
-	case sameWAPath(normalized, 6):
+	case SameWAPath(normalized, 6):
 		return text, 1005, true
 	case suffixWAPath(normalized, 6, 1):
 		return text, 995, true
@@ -287,133 +292,133 @@ func waKnownTextField(path []protowire.Number, raw []byte) (string, int, bool) {
 }
 
 func waCompositeTextField(path []protowire.Number, raw []byte) (string, int, bool) {
-	normalized := normalizeWAMessagePath(path)
+	normalized := NormalizeWAMessagePath(path)
 	switch {
-	case sameWAPath(normalized, 4):
+	case SameWAPath(normalized, 4):
 		if text := waContactDisplayText(raw); text != "" {
 			return text, 890, true
 		}
-	case sameWAPath(normalized, 5):
+	case SameWAPath(normalized, 5):
 		if text := waLocationDisplayText("位置", raw); text != "" {
 			return text, 885, true
 		}
-	case sameWAPath(normalized, 13):
+	case SameWAPath(normalized, 13):
 		if text := waContactsArrayDisplayText(raw); text != "" {
 			return text, 890, true
 		}
-	case sameWAPath(normalized, 6):
+	case SameWAPath(normalized, 6):
 		if text := waExtendedTextDisplayText(raw); text != "" {
 			return text, 1010, true
 		}
-	case sameWAPath(normalized, 18):
+	case SameWAPath(normalized, 18):
 		if text := waLocationDisplayText("实时位置", raw); text != "" {
 			return text, 875, true
 		}
-	case sameWAPath(normalized, 14):
+	case SameWAPath(normalized, 14):
 		if text := waHighlyStructuredDisplayText(raw); text != "" {
 			return text, 910, true
 		}
-	case sameWAPath(normalized, 12):
+	case SameWAPath(normalized, 12):
 		if text := waProtocolMessageDisplayText(raw); text != "" {
 			return text, 520, true
 		}
-	case sameWAPath(normalized, 25):
+	case SameWAPath(normalized, 25):
 		if text := waTemplateDisplayText(raw); text != "" {
 			return text, 915, true
 		}
-	case sameWAPath(normalized, 30):
+	case SameWAPath(normalized, 30):
 		if text := waProductDisplayText(raw); text != "" {
 			return text, 930, true
 		}
-	case sameWAPath(normalized, 36):
+	case SameWAPath(normalized, 36):
 		if text := waListDisplayText(raw); text != "" {
 			return text, 890, true
 		}
-	case sameWAPath(normalized, 38):
+	case SameWAPath(normalized, 38):
 		if text := waOrderDisplayText(raw); text != "" {
 			return text, 885, true
 		}
-	case sameWAPath(normalized, 39):
+	case SameWAPath(normalized, 39):
 		if text := waListResponseDisplayText(raw); text != "" {
 			return text, 890, true
 		}
-	case sameWAPath(normalized, 42):
+	case SameWAPath(normalized, 42):
 		if text := waButtonsDisplayText(raw); text != "" {
 			return text, 890, true
 		}
-	case sameWAPath(normalized, 45):
+	case SameWAPath(normalized, 45):
 		if text := waInteractiveDisplayText(raw); text != "" {
 			return text, 890, true
 		}
-	case sameWAPath(normalized, 48):
+	case SameWAPath(normalized, 48):
 		if text := waInteractiveResponseDisplayText(raw); text != "" {
 			return text, 880, true
 		}
-	case sameWAPath(normalized, 49), sameWAPath(normalized, 60), sameWAPath(normalized, 64), sameWAPath(normalized, 93), sameWAPath(normalized, 111), sameWAPath(normalized, 119):
+	case SameWAPath(normalized, 49), SameWAPath(normalized, 60), SameWAPath(normalized, 64), SameWAPath(normalized, 93), SameWAPath(normalized, 111), SameWAPath(normalized, 119):
 		if text := waPollDisplayText(raw); text != "" {
 			return text, 900, true
 		}
-	case sameWAPath(normalized, 61):
+	case SameWAPath(normalized, 61):
 		if text := waScheduledCallDisplayText(raw); text != "" {
 			return text, 860, true
 		}
-	case sameWAPath(normalized, 72):
+	case SameWAPath(normalized, 72):
 		if text := waMessageFieldsDisplayText("通话", raw, []protowire.Number{4}); text != "" {
 			return text, 835, true
 		}
-	case sameWAPath(normalized, 75):
+	case SameWAPath(normalized, 75):
 		if text := waEventDisplayText(raw); text != "" {
 			return text, 890, true
 		}
-	case sameWAPath(normalized, 77):
+	case SameWAPath(normalized, 77):
 		if text := waMessageFieldsDisplayText("评论", raw, []protowire.Number{1}); text != "" {
 			return text, 865, true
 		}
-	case sameWAPath(normalized, 78), sameWAPath(normalized, 108), sameWAPath(normalized, 113):
+	case SameWAPath(normalized, 78), SameWAPath(normalized, 108), SameWAPath(normalized, 113):
 		if text := waNewsletterInviteDisplayText(raw); text != "" {
 			return text, 850, true
 		}
-	case sameWAPath(normalized, 83):
+	case SameWAPath(normalized, 83):
 		if text := waMessageFieldsDisplayText("相册", raw, []protowire.Number{1}); text != "" {
 			return text, 875, true
 		}
-	case sameWAPath(normalized, 86):
+	case SameWAPath(normalized, 86):
 		if text := waStickerPackDisplayText(raw); text != "" {
 			return text, 850, true
 		}
-	case sameWAPath(normalized, 88), sameWAPath(normalized, 115):
+	case SameWAPath(normalized, 88), SameWAPath(normalized, 115):
 		if text := waPollResultDisplayText(raw); text != "" {
 			return text, 860, true
 		}
-	case sameWAPath(normalized, 97):
+	case SameWAPath(normalized, 97):
 		if text := waRichResponseDisplayText(raw); text != "" {
 			return text, 850, true
 		}
-	case sameWAPath(normalized, 105):
+	case SameWAPath(normalized, 105):
 		if text := waMessageFieldsDisplayText("状态问答", raw, []protowire.Number{2}); text != "" {
 			return text, 865, true
 		}
-	case sameWAPath(normalized, 107):
+	case SameWAPath(normalized, 107):
 		if text := waMessageFieldsDisplayText("问答回复", raw, []protowire.Number{2}); text != "" {
 			return text, 865, true
 		}
-	case sameWAPath(normalized, 109):
+	case SameWAPath(normalized, 109):
 		if text := waMessageFieldsDisplayText("状态引用", raw, []protowire.Number{2}); text != "" {
 			return text, 850, true
 		}
-	case sameWAPath(normalized, 121):
+	case SameWAPath(normalized, 121):
 		if text := waPollAddOptionDisplayText(raw); text != "" {
 			return text, 850, true
 		}
-	case sameWAPath(normalized, 122):
+	case SameWAPath(normalized, 122):
 		if text := waEventInviteDisplayText(raw); text != "" {
 			return text, 875, true
 		}
-	case sameWAPath(normalized, 124):
+	case SameWAPath(normalized, 124):
 		if text := waMessageFieldsDisplayText("付款提醒", raw, []protowire.Number{3}); text != "" {
 			return text, 840, true
 		}
-	case sameWAPath(normalized, 125):
+	case SameWAPath(normalized, 125):
 		if text := waMessageFieldsDisplayText("分摊付款", raw, []protowire.Number{3}); text != "" {
 			return text, 840, true
 		}
@@ -469,7 +474,7 @@ func waProtocolMessageDisplayText(raw []byte) string {
 		return ""
 	}
 	for _, field := range fields {
-		switch field.number {
+		switch field.Number {
 		case 6:
 			return "[系统] 历史同步"
 		case 23:
@@ -735,18 +740,18 @@ func waNestedMessageTextParts(raw []byte, depth int) []string {
 	if text := waMessageStringAtPath(raw); text != "" {
 		parts = append(parts, text)
 	}
-	fields, ok := parseWAProtoFieldsWithLimit(raw, 64)
+	fields, ok := ParseWAProtoFieldsWithLimit(raw, 64)
 	if !ok {
 		return shared.UniqueNonEmptyStrings(parts...)
 	}
 	for _, field := range fields {
-		if field.kind != protowire.BytesType {
+		if field.Kind != protowire.BytesType {
 			continue
 		}
-		if text := waMessageStringAtPath(field.value); text != "" {
+		if text := waMessageStringAtPath(field.Value); text != "" {
 			parts = append(parts, text)
 		}
-		parts = append(parts, waNestedMessageTextParts(field.value, depth+1)...)
+		parts = append(parts, waNestedMessageTextParts(field.Value, depth+1)...)
 	}
 	return shared.UniqueNonEmptyStrings(parts...)
 }
@@ -796,7 +801,7 @@ func waMessageStringAtPath(raw []byte, path ...protowire.Number) string {
 	if text == "" {
 		return ""
 	}
-	if jsonText := waJSONDisplayText(text); jsonText != "" {
+	if jsonText := WAJSONDisplayText(text); jsonText != "" {
 		return jsonText
 	}
 	if urlText := waJSONURLValue(text); urlText != "" {
@@ -825,8 +830,8 @@ func waBytesAtPath(raw []byte, path ...protowire.Number) []byte {
 		return nil
 	}
 	for _, field := range fields {
-		if field.kind == protowire.BytesType && field.number == path[0] {
-			return waBytesAtPath(field.value, path[1:]...)
+		if field.Kind == protowire.BytesType && field.Number == path[0] {
+			return waBytesAtPath(field.Value, path[1:]...)
 		}
 	}
 	return nil
@@ -842,14 +847,14 @@ func waBytesValuesAtPath(raw []byte, path ...protowire.Number) [][]byte {
 	}
 	values := [][]byte{}
 	for _, field := range fields {
-		if field.kind != protowire.BytesType || field.number != path[0] {
+		if field.Kind != protowire.BytesType || field.Number != path[0] {
 			continue
 		}
 		if len(path) == 1 {
-			values = append(values, field.value)
+			values = append(values, field.Value)
 			continue
 		}
-		values = append(values, waBytesValuesAtPath(field.value, path[1:]...)...)
+		values = append(values, waBytesValuesAtPath(field.Value, path[1:]...)...)
 	}
 	return values
 }
@@ -879,13 +884,13 @@ func waTemplateParamDisplayText(raw []byte) string {
 	if text == "" {
 		return ""
 	}
-	if value := waJSONDisplayText(text); value != "" {
+	if value := WAJSONDisplayText(text); value != "" {
 		return value
 	}
 	return waHumanDisplayText(text)
 }
 
-func waJSONDisplayText(text string) string {
+func WAJSONDisplayText(text string) string {
 	value := strings.TrimSpace(text)
 	if !strings.HasPrefix(value, "{") || !strings.HasSuffix(value, "}") {
 		return ""
@@ -929,7 +934,7 @@ func waJSONURLValue(value any) string {
 	if text == "" || (!strings.HasPrefix(lower, "http://") && !strings.HasPrefix(lower, "https://")) {
 		return ""
 	}
-	return trimWARunes(text, waDisplayTextMaxRunes)
+	return TrimWARunes(text, waDisplayTextMaxRunes)
 }
 
 func waJSONNestedTextValues(value any, depth int) []string {
@@ -976,21 +981,21 @@ func waVarintAtPath(raw []byte, path ...protowire.Number) (uint64, bool) {
 		return 0, false
 	}
 	for _, field := range fields {
-		if field.number != path[0] {
+		if field.Number != path[0] {
 			continue
 		}
-		if len(path) == 1 && field.kind == protowire.VarintType {
-			return field.varint, true
+		if len(path) == 1 && field.Kind == protowire.VarintType {
+			return field.Varint, true
 		}
-		if len(path) > 1 && field.kind == protowire.BytesType {
-			return waVarintAtPath(field.value, path[1:]...)
+		if len(path) > 1 && field.Kind == protowire.BytesType {
+			return waVarintAtPath(field.Value, path[1:]...)
 		}
 	}
 	return 0, false
 }
 
 func waMessagePlaceholder(path []protowire.Number) (string, int, bool) {
-	normalized := normalizeWAMessagePath(path)
+	normalized := NormalizeWAMessagePath(path)
 	if len(normalized) != 1 {
 		return "", 0, false
 	}
@@ -1128,28 +1133,28 @@ func waCleanDisplayText(raw []byte) string {
 	if len(raw) == 0 || !utf8.Valid(raw) {
 		return ""
 	}
-	text := normalizeWAFramedDisplayText(strings.TrimSpace(string(raw)))
-	if text == "" || strings.ContainsRune(text, 0) || !readableText(text) {
+	text := NormalizeWAFramedDisplayText(strings.TrimSpace(string(raw)))
+	if text == "" || strings.ContainsRune(text, 0) || !ReadableText(text) {
 		return ""
 	}
-	return trimWARunes(text, waDisplayTextMaxRunes)
+	return TrimWARunes(text, waDisplayTextMaxRunes)
 }
 
 func waHumanDisplayText(text string) string {
-	text = normalizeWAFramedDisplayText(strings.TrimSpace(text))
+	text = NormalizeWAFramedDisplayText(strings.TrimSpace(text))
 	if text == "" {
 		return ""
 	}
-	if jsonText := waJSONDisplayText(text); jsonText != "" {
+	if jsonText := WAJSONDisplayText(text); jsonText != "" {
 		return jsonText
 	}
 	if isLikelyMachineToken(text) || isLikelyMachineText(text) || isLikelyShortMachineFragment(text) {
 		return ""
 	}
-	return trimWARunes(text, waDisplayTextMaxRunes)
+	return TrimWARunes(text, waDisplayTextMaxRunes)
 }
 
-func normalizeWAFramedDisplayText(text string) string {
+func NormalizeWAFramedDisplayText(text string) string {
 	text = strings.TrimSpace(text)
 	if len(text) >= 3 && text[0] == '2' && (text[2] == '*' || text[2] >= '0' && text[2] <= '9') {
 		text = strings.TrimSpace(text[2:])
@@ -1209,7 +1214,7 @@ func waVCardPhone(vcard string) string {
 	return ""
 }
 
-func normalizeWAMessagePath(path []protowire.Number) []protowire.Number {
+func NormalizeWAMessagePath(path []protowire.Number) []protowire.Number {
 	out := append([]protowire.Number(nil), path...)
 	for len(out) >= 2 && isWAWrapperInnerField(out[0], out[1]) {
 		out = out[2:]
@@ -1228,14 +1233,14 @@ func isWAWrapperInnerField(field protowire.Number, inner protowire.Number) bool 
 	}
 }
 
-func appendWAPath(path []protowire.Number, field protowire.Number) []protowire.Number {
+func AppendWAPath(path []protowire.Number, field protowire.Number) []protowire.Number {
 	out := make([]protowire.Number, 0, len(path)+1)
 	out = append(out, path...)
 	out = append(out, field)
 	return out
 }
 
-func sameWAPath(path []protowire.Number, fields ...protowire.Number) bool {
+func SameWAPath(path []protowire.Number, fields ...protowire.Number) bool {
 	if len(path) != len(fields) {
 		return false
 	}
@@ -1267,7 +1272,7 @@ func withWAPrefix(label string, text string) string {
 	return "[" + label + "] " + text
 }
 
-func trimWARunes(text string, limit int) string {
+func TrimWARunes(text string, limit int) string {
 	if limit <= 0 || utf8.RuneCountInString(text) <= limit {
 		return text
 	}
@@ -1281,8 +1286,8 @@ func trimWARunes(text string, limit int) string {
 	return string(out) + "..."
 }
 
-func nativePrintableDisplayText(raw []byte) string {
-	segments := printableSegments(raw)
+func PrintableDisplayText(raw []byte) string {
+	segments := PrintableSegments(raw)
 	if len(segments) == 0 {
 		return ""
 	}
@@ -1294,7 +1299,7 @@ func nativePrintableDisplayText(raw []byte) string {
 			continue
 		}
 		score := waPrintableSegmentScore(text)
-		if jsonText := waJSONDisplayText(text); jsonText != "" {
+		if jsonText := WAJSONDisplayText(text); jsonText != "" {
 			text = jsonText
 			score = waPrintableSegmentScore(text) + 500
 		}
@@ -1304,10 +1309,10 @@ func nativePrintableDisplayText(raw []byte) string {
 		}
 	}
 	if best != "" && (len(segments) == 1 || bestScore >= 80) {
-		return trimWARunes(best, waDisplayTextMaxRunes)
+		return TrimWARunes(best, waDisplayTextMaxRunes)
 	}
 	if best != "" && bestScore >= 0 {
-		return trimWARunes(best, waDisplayTextMaxRunes)
+		return TrimWARunes(best, waDisplayTextMaxRunes)
 	}
 	return ""
 }
@@ -1315,7 +1320,7 @@ func nativePrintableDisplayText(raw []byte) string {
 func waPrintableSegmentScore(text string) int {
 	runes := utf8.RuneCountInString(text)
 	score := runes
-	if nativeSensitiveDigitsPattern.MatchString(text) {
+	if SensitiveDigitsPattern.MatchString(text) {
 		score += 600
 	}
 	if strings.Contains(strings.ToLower(text), "flag{") || strings.Contains(strings.ToLower(text), "ctf{") {
@@ -1359,7 +1364,7 @@ func waDisplayTextQuality(text string) int {
 	if containsCJK(text) {
 		score += 120
 	}
-	if nativeSensitiveDigitsPattern.MatchString(text) {
+	if SensitiveDigitsPattern.MatchString(text) {
 		score += 90
 	}
 	if strings.ContainsAny(text, " .,:;!?，。！？：；\n") {
@@ -1383,7 +1388,7 @@ func containsCJK(text string) bool {
 func isLikelyShortMachineFragment(text string) bool {
 	text = strings.TrimSpace(text)
 	runes := utf8.RuneCountInString(text)
-	if runes < 4 || runes > 12 || strings.ContainsAny(text, " \n\r\t") || nativeSensitiveDigitsPattern.MatchString(text) {
+	if runes < 4 || runes > 12 || strings.ContainsAny(text, " \n\r\t") || SensitiveDigitsPattern.MatchString(text) {
 		return false
 	}
 	letters := 0
@@ -1403,4 +1408,47 @@ func isLikelyShortMachineFragment(text string) bool {
 		return false
 	}
 	return strings.ContainsAny(text, "|\\^~`")
+}
+
+// ReadableText reports whether value is valid UTF-8 whose printable-rune ratio
+// is at least 90% (used to reject binary/garbage candidates).
+func ReadableText(value string) bool {
+	if value == "" || !utf8.ValidString(value) || strings.ContainsRune(value, 0) {
+		return false
+	}
+	total := 0
+	readable := 0
+	for _, r := range value {
+		total++
+		if r == '\n' || r == '\r' || r == '\t' || (r >= 0x20 && r != 0x7f) {
+			readable++
+		}
+	}
+	return total > 0 && readable*100/total >= 90
+}
+
+// PrintableSegments splits raw into printable ASCII runs of length >= 4,
+// capped at 32 segments.
+func PrintableSegments(raw []byte) []string {
+	segments := []string{}
+	var current strings.Builder
+	flush := func() {
+		value := strings.TrimSpace(current.String())
+		current.Reset()
+		if len(value) >= 4 {
+			segments = append(segments, value)
+		}
+	}
+	for _, b := range raw {
+		if b == '\n' || b == '\r' || b == '\t' || (b >= 0x20 && b <= 0x7e) {
+			current.WriteByte(b)
+			continue
+		}
+		flush()
+	}
+	flush()
+	if len(segments) > 32 {
+		return segments[:32]
+	}
+	return segments
 }

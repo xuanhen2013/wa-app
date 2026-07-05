@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/waproto"
 	"golang.org/x/crypto/hkdf"
 	"google.golang.org/protobuf/encoding/protowire"
 )
@@ -60,35 +61,35 @@ func collectNativeAppStateKeys(raw []byte, path []protowire.Number, depth int, k
 	if depth > waAppStateProtoMaxDepth || len(raw) == 0 {
 		return
 	}
-	fields, ok := parseWAProtoFieldsWithLimit(raw, waAppStateProtoMaxFields)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, waAppStateProtoMaxFields)
 	if !ok {
 		return
 	}
 	for _, field := range fields {
-		if field.kind != protowire.BytesType {
+		if field.Kind != protowire.BytesType {
 			continue
 		}
-		fieldPath := appendWAPath(path, field.number)
-		normalized := normalizeWAMessagePath(fieldPath)
-		if sameWAPath(normalized, 12, 7) {
-			*keys = append(*keys, parseNativeAppStateKeyShare(field.value)...)
+		fieldPath := waproto.AppendWAPath(path, field.Number)
+		normalized := waproto.NormalizeWAMessagePath(fieldPath)
+		if waproto.SameWAPath(normalized, 12, 7) {
+			*keys = append(*keys, parseNativeAppStateKeyShare(field.Value)...)
 			continue
 		}
-		if maybeNativeAppStateKeyShare(field.value) {
-			*keys = append(*keys, parseNativeAppStateKeyShare(field.value)...)
+		if maybeNativeAppStateKeyShare(field.Value) {
+			*keys = append(*keys, parseNativeAppStateKeyShare(field.Value)...)
 		}
-		collectNativeAppStateKeys(field.value, fieldPath, depth+1, keys)
+		collectNativeAppStateKeys(field.Value, fieldPath, depth+1, keys)
 	}
 }
 
 func maybeNativeAppStateKeyShare(raw []byte) bool {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, 8)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, 8)
 	if !ok {
 		return false
 	}
 	keyRecords := 0
 	for _, field := range fields {
-		if field.kind == protowire.BytesType && field.number == 1 && parseNativeAppStateKeyRecord(field.value).valid() {
+		if field.Kind == protowire.BytesType && field.Number == 1 && parseNativeAppStateKeyRecord(field.Value).valid() {
 			keyRecords++
 		}
 	}
@@ -96,16 +97,16 @@ func maybeNativeAppStateKeyShare(raw []byte) bool {
 }
 
 func parseNativeAppStateKeyShare(raw []byte) []nativeAppStateKey {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, waAppStateProtoMaxFields)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, waAppStateProtoMaxFields)
 	if !ok {
 		return nil
 	}
 	keys := []nativeAppStateKey{}
 	for _, field := range fields {
-		if field.kind != protowire.BytesType || field.number != 1 {
+		if field.Kind != protowire.BytesType || field.Number != 1 {
 			continue
 		}
-		if key := parseNativeAppStateKeyRecord(field.value); key.valid() {
+		if key := parseNativeAppStateKeyRecord(field.Value); key.valid() {
 			keys = append(keys, key)
 		}
 	}
@@ -113,21 +114,21 @@ func parseNativeAppStateKeyShare(raw []byte) []nativeAppStateKey {
 }
 
 func parseNativeAppStateKeyRecord(raw []byte) nativeAppStateKey {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, 8)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, 8)
 	if !ok {
 		return nativeAppStateKey{}
 	}
 	var keyID []byte
 	var keyData nativeAppStateKeyData
 	for _, field := range fields {
-		if field.kind != protowire.BytesType {
+		if field.Kind != protowire.BytesType {
 			continue
 		}
-		switch field.number {
+		switch field.Number {
 		case 1:
-			keyID = parseNativeAppStateKeyID(field.value)
+			keyID = parseNativeAppStateKeyID(field.Value)
 		case 2:
-			keyData = parseNativeAppStateKeyData(field.value)
+			keyData = parseNativeAppStateKeyData(field.Value)
 		}
 	}
 	out := nativeAppStateKey{
@@ -140,13 +141,13 @@ func parseNativeAppStateKeyRecord(raw []byte) nativeAppStateKey {
 }
 
 func parseNativeAppStateKeyID(raw []byte) []byte {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, 4)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, 4)
 	if !ok {
 		return nil
 	}
 	for _, field := range fields {
-		if field.kind == protowire.BytesType && field.number == 1 && validNativeAppStateKeyID(field.value) {
-			return append([]byte{}, field.value...)
+		if field.Kind == protowire.BytesType && field.Number == 1 && validNativeAppStateKeyID(field.Value) {
+			return append([]byte{}, field.Value...)
 		}
 	}
 	return nil
@@ -159,19 +160,19 @@ type nativeAppStateKeyData struct {
 }
 
 func parseNativeAppStateKeyData(raw []byte) nativeAppStateKeyData {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, 16)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, 16)
 	if !ok {
 		return nativeAppStateKeyData{}
 	}
 	var out nativeAppStateKeyData
 	for _, field := range fields {
 		switch {
-		case field.kind == protowire.BytesType && field.number == 1:
-			out.keyData = append([]byte{}, field.value...)
-		case field.kind == protowire.BytesType && field.number == 2:
-			out.fingerprint = append([]byte{}, field.value...)
-		case field.kind == protowire.VarintType && field.number == 3:
-			out.timestamp = int64(field.varint)
+		case field.Kind == protowire.BytesType && field.Number == 1:
+			out.keyData = append([]byte{}, field.Value...)
+		case field.Kind == protowire.BytesType && field.Number == 2:
+			out.fingerprint = append([]byte{}, field.Value...)
+		case field.Kind == protowire.VarintType && field.Number == 3:
+			out.timestamp = int64(field.Varint)
 		}
 	}
 	if !validNativeAppStateKeyData(out.keyData) {
@@ -267,15 +268,15 @@ func collectNativeAppStateContactHints(state *nativeState, raw []byte, depth int
 	}
 	*hints = append(*hints, waAppStateSnapshotContactHints(raw)...)
 	*hints = append(*hints, waAppStatePatchContactHints(state, raw)...)
-	fields, ok := parseWAProtoFieldsWithLimit(raw, waAppStateProtoMaxFields)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, waAppStateProtoMaxFields)
 	if !ok {
 		return
 	}
 	for _, field := range fields {
-		if field.kind != protowire.BytesType {
+		if field.Kind != protowire.BytesType {
 			continue
 		}
-		collectNativeAppStateContactHints(state, field.value, depth+1, hints)
+		collectNativeAppStateContactHints(state, field.Value, depth+1, hints)
 	}
 }
 
@@ -286,7 +287,7 @@ func waAppStateSnapshotContactHints(raw []byte) []waContactHint {
 	}
 	hints := []waContactHint{}
 	for _, payload := range payloads {
-		fields, ok := parseWAProtoFieldsWithLimit(payload, waAppStateProtoMaxFields)
+		fields, ok := waproto.ParseWAProtoFieldsWithLimit(payload, waAppStateProtoMaxFields)
 		if !ok {
 			continue
 		}
@@ -294,10 +295,10 @@ func waAppStateSnapshotContactHints(raw []byte) []waContactHint {
 		records := [][]byte{}
 		for _, field := range fields {
 			switch {
-			case field.kind == protowire.BytesType && field.number == 2:
-				collectionName = waAppStateCollectionName(field.value)
-			case field.kind == protowire.BytesType && field.number == 3:
-				records = append(records, field.value)
+			case field.Kind == protowire.BytesType && field.Number == 2:
+				collectionName = waAppStateCollectionName(field.Value)
+			case field.Kind == protowire.BytesType && field.Number == 3:
+				records = append(records, field.Value)
 			}
 		}
 		if collectionName == "" || len(records) == 0 {
@@ -314,7 +315,7 @@ func waAppStateSnapshotContactHints(raw []byte) []waContactHint {
 }
 
 func waAppStateSnapshotEnvelopePayload(raw []byte) ([]byte, bool) {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, 8)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, 8)
 	if !ok {
 		return nil, false
 	}
@@ -322,10 +323,10 @@ func waAppStateSnapshotEnvelopePayload(raw []byte) ([]byte, bool) {
 	compressed := false
 	for _, field := range fields {
 		switch {
-		case field.kind == protowire.BytesType && field.number == 1:
-			payload = field.value
-		case field.kind == protowire.VarintType && field.number == 2:
-			compressed = field.varint != 0
+		case field.Kind == protowire.BytesType && field.Number == 1:
+			payload = field.Value
+		case field.Kind == protowire.VarintType && field.Number == 2:
+			compressed = field.Varint != 0
 		}
 	}
 	if len(payload) == 0 {
@@ -340,20 +341,20 @@ func waAppStateSnapshotEnvelopePayload(raw []byte) ([]byte, bool) {
 }
 
 func waAppStateSnapshotRecordContactHints(raw []byte) []waContactHint {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, 16)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, 16)
 	if !ok {
 		return nil
 	}
 	for _, field := range fields {
-		if field.kind == protowire.BytesType && field.number == 1 {
-			return waSyncdIndexedContactHints(field.value)
+		if field.Kind == protowire.BytesType && field.Number == 1 {
+			return waSyncdIndexedContactHints(field.Value)
 		}
 	}
 	return nil
 }
 
 func waAppStatePatchContactHints(state *nativeState, raw []byte) []waContactHint {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, waAppStateProtoMaxFields)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, waAppStateProtoMaxFields)
 	if !ok {
 		return nil
 	}
@@ -361,18 +362,18 @@ func waAppStatePatchContactHints(state *nativeState, raw []byte) []waContactHint
 	fieldOneMutations := []nativeAppStateMutation{}
 	for _, field := range fields {
 		switch {
-		case field.kind == protowire.BytesType && field.number == 2:
-			if mutation, ok := parseNativeAppStateMutation(field.value); ok {
+		case field.Kind == protowire.BytesType && field.Number == 2:
+			if mutation, ok := parseNativeAppStateMutation(field.Value); ok {
 				patch.mutations = append(patch.mutations, mutation)
 			}
-		case field.kind == protowire.BytesType && field.number == 1:
-			if mutation, ok := parseNativeAppStateMutation(field.value); ok {
+		case field.Kind == protowire.BytesType && field.Number == 1:
+			if mutation, ok := parseNativeAppStateMutation(field.Value); ok {
 				fieldOneMutations = append(fieldOneMutations, mutation)
 			}
-		case field.kind == protowire.BytesType && field.number == 6:
-			patch.keyID = parseNativeAppStateRawKeyID(field.value)
-		case field.kind == protowire.BytesType && field.number == 9:
-			patch.collectionName = shared.FirstNonEmpty(patch.collectionName, waAppStatePatchDebugCollectionName(field.value))
+		case field.Kind == protowire.BytesType && field.Number == 6:
+			patch.keyID = parseNativeAppStateRawKeyID(field.Value)
+		case field.Kind == protowire.BytesType && field.Number == 9:
+			patch.collectionName = shared.FirstNonEmpty(patch.collectionName, waAppStatePatchDebugCollectionName(field.Value))
 		}
 	}
 	if len(patch.mutations) == 0 {
@@ -410,7 +411,7 @@ type nativeAppStateMutationRecord struct {
 }
 
 func parseNativeAppStateMutation(raw []byte) (nativeAppStateMutation, bool) {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, 16)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, 16)
 	if !ok {
 		return nativeAppStateMutation{}, false
 	}
@@ -419,14 +420,14 @@ func parseNativeAppStateMutation(raw []byte) (nativeAppStateMutation, bool) {
 	hasRecord := false
 	for _, field := range fields {
 		switch {
-		case field.kind == protowire.VarintType && field.number == 1:
-			if field.varint > 1 {
+		case field.Kind == protowire.VarintType && field.Number == 1:
+			if field.Varint > 1 {
 				return nativeAppStateMutation{}, false
 			}
-			mutation.operation = field.varint
+			mutation.operation = field.Varint
 			hasOperation = true
-		case field.kind == protowire.BytesType && field.number == 2:
-			if record, ok := parseNativeAppStateMutationRecord(field.value); ok {
+		case field.Kind == protowire.BytesType && field.Number == 2:
+			if record, ok := parseNativeAppStateMutationRecord(field.Value); ok {
 				mutation.record = record
 				mutation.keyID = record.keyID
 				hasRecord = true
@@ -440,22 +441,22 @@ func parseNativeAppStateMutation(raw []byte) (nativeAppStateMutation, bool) {
 }
 
 func parseNativeAppStateMutationRecord(raw []byte) (nativeAppStateMutationRecord, bool) {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, 16)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, 16)
 	if !ok {
 		return nativeAppStateMutationRecord{}, false
 	}
 	record := nativeAppStateMutationRecord{}
 	for _, field := range fields {
-		if field.kind != protowire.BytesType {
+		if field.Kind != protowire.BytesType {
 			continue
 		}
-		switch field.number {
+		switch field.Number {
 		case 1:
-			record.index = parseNativeAppStateBlob(field.value)
+			record.index = parseNativeAppStateBlob(field.Value)
 		case 2:
-			record.value = parseNativeAppStateBlob(field.value)
+			record.value = parseNativeAppStateBlob(field.Value)
 		case 3:
-			record.keyID = parseNativeAppStateRawKeyID(field.value)
+			record.keyID = parseNativeAppStateRawKeyID(field.Value)
 		}
 	}
 	if len(record.value) == 0 || len(record.index) == 0 {
@@ -465,13 +466,13 @@ func parseNativeAppStateMutationRecord(raw []byte) (nativeAppStateMutationRecord
 }
 
 func parseNativeAppStateBlob(raw []byte) []byte {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, 4)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, 4)
 	if !ok {
 		return nil
 	}
 	for _, field := range fields {
-		if field.kind == protowire.BytesType && field.number == 1 {
-			return append([]byte{}, field.value...)
+		if field.Kind == protowire.BytesType && field.Number == 1 {
+			return append([]byte{}, field.Value...)
 		}
 	}
 	return nil
@@ -601,13 +602,13 @@ func nativeAppStateOperationByte(operation uint64) (byte, bool) {
 }
 
 func nativeAppStateSyncActionIndex(raw []byte) []byte {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, 8)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, 8)
 	if !ok {
 		return nil
 	}
 	for _, field := range fields {
-		if field.kind == protowire.BytesType && field.number == 1 && len(waSyncdIndexValues(field.value)) > 0 {
-			return append([]byte{}, field.value...)
+		if field.Kind == protowire.BytesType && field.Number == 1 && len(waSyncdIndexValues(field.Value)) > 0 {
+			return append([]byte{}, field.Value...)
 		}
 	}
 	return nil
@@ -630,13 +631,13 @@ func pkcs7Unpad(raw []byte, blockSize int) ([]byte, bool) {
 }
 
 func waAppStatePatchDebugCollectionName(raw []byte) string {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, 32)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, 32)
 	if !ok {
 		return ""
 	}
 	for _, field := range fields {
-		if field.kind == protowire.BytesType && field.number == 4 {
-			if value := waAppStateCollectionName(field.value); value != "" {
+		if field.Kind == protowire.BytesType && field.Number == 4 {
+			if value := waAppStateCollectionName(field.Value); value != "" {
 				return value
 			}
 		}

@@ -12,6 +12,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/waproto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -26,7 +27,6 @@ const (
 	nativeDefaultSMSCodeLength int32 = 6
 )
 
-var nativeSensitiveDigitsPattern = regexp.MustCompile(`\b[0-9]{4,8}\b`)
 var chatdNodeTokenErrorPattern = regexp.MustCompile(`(?i)(readstring could not match token|invalid list-size token)\s+([0-9]{1,3})`)
 
 // engineCore holds the immutable per-proxy-binding collaborators plus the request
@@ -777,56 +777,17 @@ func nativePlaintextText(raw []byte) string {
 	if len(raw) == 0 {
 		return ""
 	}
-	if text, ok := nativeMessageDisplayText(raw); ok {
+	if text, ok := waproto.MessageDisplayText(raw); ok {
 		return text
 	}
 	plain := string(raw)
-	if text := waJSONDisplayText(plain); text != "" {
+	if text := waproto.WAJSONDisplayText(plain); text != "" {
 		return text
 	}
-	if readableText(plain) {
+	if waproto.ReadableText(plain) {
 		return strings.TrimSpace(plain)
 	}
-	return nativePrintableDisplayText(raw)
-}
-
-func readableText(value string) bool {
-	if value == "" || !utf8.ValidString(value) || strings.ContainsRune(value, 0) {
-		return false
-	}
-	total := 0
-	readable := 0
-	for _, r := range value {
-		total++
-		if r == '\n' || r == '\r' || r == '\t' || (r >= 0x20 && r != 0x7f) {
-			readable++
-		}
-	}
-	return total > 0 && readable*100/total >= 90
-}
-
-func printableSegments(raw []byte) []string {
-	segments := []string{}
-	var current strings.Builder
-	flush := func() {
-		value := strings.TrimSpace(current.String())
-		current.Reset()
-		if len(value) >= 4 {
-			segments = append(segments, value)
-		}
-	}
-	for _, b := range raw {
-		if b == '\n' || b == '\r' || b == '\t' || (b >= 0x20 && b <= 0x7e) {
-			current.WriteByte(b)
-			continue
-		}
-		flush()
-	}
-	flush()
-	if len(segments) > 32 {
-		return segments[:32]
-	}
-	return segments
+	return waproto.PrintableDisplayText(raw)
 }
 
 func omitEmptyNativeOperatorField(key string, value string) bool {
@@ -1006,7 +967,7 @@ func safeResponseSnippet(text string) string {
 	if text == "" {
 		return ""
 	}
-	text = nativeSensitiveDigitsPattern.ReplaceAllString(text, "<digits>")
+	text = waproto.SensitiveDigitsPattern.ReplaceAllString(text, "<digits>")
 	for _, marker := range []string{"token", "auth", "key", "code", "sig"} {
 		if strings.Contains(strings.ToLower(text), marker) {
 			return "<redacted>"

@@ -10,6 +10,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/waproto"
 	"google.golang.org/protobuf/encoding/protowire"
 )
 
@@ -199,24 +200,24 @@ func collectWAContactHints(raw []byte, path []protowire.Number, depth int, hints
 	if depth > waContactProtoMaxDepth || len(raw) == 0 {
 		return
 	}
-	fields, ok := parseWAProtoFieldsWithLimit(raw, waContactProtoMaxFields)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, waContactProtoMaxFields)
 	if !ok {
 		return
 	}
 	for _, field := range fields {
-		if field.kind != protowire.BytesType {
+		if field.Kind != protowire.BytesType {
 			continue
 		}
-		fieldPath := appendWAPath(path, field.number)
-		normalized := normalizeWAMessagePath(fieldPath)
+		fieldPath := waproto.AppendWAPath(path, field.Number)
+		normalized := waproto.NormalizeWAMessagePath(fieldPath)
 		switch {
-		case sameWAPath(normalized, 12, 23, 1):
-			*hints = append(*hints, waLIDMigrationMappingPayloadHints(field.value)...)
-		case sameWAPath(normalized, 12, 6, 11):
-			*hints = append(*hints, waHistorySyncContactHints(field.value)...)
+		case waproto.SameWAPath(normalized, 12, 23, 1):
+			*hints = append(*hints, waLIDMigrationMappingPayloadHints(field.Value)...)
+		case waproto.SameWAPath(normalized, 12, 6, 11):
+			*hints = append(*hints, waHistorySyncContactHints(field.Value)...)
 		}
-		*hints = append(*hints, waKnownContactRecordHints(field.value)...)
-		collectWAContactHints(field.value, fieldPath, depth+1, hints)
+		*hints = append(*hints, waKnownContactRecordHints(field.Value)...)
+		collectWAContactHints(field.Value, fieldPath, depth+1, hints)
 	}
 }
 
@@ -245,21 +246,21 @@ func waKnownContactRecordHints(raw []byte) []waContactHint {
 }
 
 func waSyncdIndexedContactHints(raw []byte) []waContactHint {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, 16)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, 16)
 	if !ok {
 		return nil
 	}
 	var indexRaw []byte
 	var valueRaw []byte
 	for _, field := range fields {
-		if field.kind != protowire.BytesType {
+		if field.Kind != protowire.BytesType {
 			continue
 		}
-		switch field.number {
+		switch field.Number {
 		case 1:
-			indexRaw = field.value
+			indexRaw = field.Value
 		case 2:
-			valueRaw = field.value
+			valueRaw = field.Value
 		}
 	}
 	index := waSyncdIndexValues(indexRaw)
@@ -292,7 +293,7 @@ func waSyncdIndexValues(raw []byte) []string {
 }
 
 func waAppStateActionHintsForIndex(index []string, raw []byte) []waContactHint {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, 256)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, 256)
 	if !ok {
 		return nil
 	}
@@ -300,24 +301,24 @@ func waAppStateActionHintsForIndex(index []string, raw []byte) []waContactHint {
 	indexPN := waSyncdIndexJID(index, "@s.whatsapp.net")
 	hints := []waContactHint{}
 	for _, field := range fields {
-		if field.kind != protowire.BytesType {
+		if field.Kind != protowire.BytesType {
 			continue
 		}
-		switch field.number {
+		switch field.Number {
 		case 3:
-			if hint := waIndexedAppStateContactActionHint(field.value, indexLID, indexPN); hint.valid() {
+			if hint := waIndexedAppStateContactActionHint(field.Value, indexLID, indexPN); hint.valid() {
 				hints = append(hints, hint)
 			}
 		case 37:
-			if hint := waIndexedPNForLIDChatActionHint(field.value, indexLID); hint.valid() {
+			if hint := waIndexedPNForLIDChatActionHint(field.Value, indexLID); hint.valid() {
 				hints = append(hints, hint)
 			}
 		case 61:
-			if hint := waIndexedLIDContactActionHint(field.value, indexLID, indexPN); hint.valid() {
+			if hint := waIndexedLIDContactActionHint(field.Value, indexLID, indexPN); hint.valid() {
 				hints = append(hints, hint)
 			}
 		case 79:
-			if hint := waIndexedOutContactActionHint(field.value, indexLID, indexPN); hint.valid() {
+			if hint := waIndexedOutContactActionHint(field.Value, indexLID, indexPN); hint.valid() {
 				hints = append(hints, hint)
 			}
 		}
@@ -363,85 +364,85 @@ func waIndexedOutContactActionHint(raw []byte, indexLID string, indexPN string) 
 }
 
 func waAppStateContactActionHint(raw []byte) waContactHint {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, 32)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, 32)
 	if !ok {
 		return waContactHint{}
 	}
 	var hint waContactHint
 	for _, field := range fields {
-		if field.kind != protowire.BytesType {
+		if field.Kind != protowire.BytesType {
 			continue
 		}
-		switch field.number {
+		switch field.Number {
 		case 1:
-			hint.DisplayName = waContactNameString(field.value)
+			hint.DisplayName = waContactNameString(field.Value)
 		case 2:
-			hint.WAName = waContactNameString(field.value)
+			hint.WAName = waContactNameString(field.Value)
 		case 3:
-			hint.LIDJID = normalizeWAJID(waProtoPlainString(field.value))
+			hint.LIDJID = normalizeWAJID(waProtoPlainString(field.Value))
 		case 5:
-			hint.PNJID = normalizeWAJID(waProtoPlainString(field.value))
+			hint.PNJID = normalizeWAJID(waProtoPlainString(field.Value))
 		case 6:
-			hint.Username = waContactNameString(field.value)
+			hint.Username = waContactNameString(field.Value)
 		}
 	}
 	return hint.normalized()
 }
 
 func waLIDContactActionHint(raw []byte) waContactHint {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, 16)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, 16)
 	if !ok {
 		return waContactHint{}
 	}
 	var hint waContactHint
 	for _, field := range fields {
-		if field.kind != protowire.BytesType {
+		if field.Kind != protowire.BytesType {
 			continue
 		}
-		switch field.number {
+		switch field.Number {
 		case 1:
-			hint.DisplayName = waContactNameString(field.value)
+			hint.DisplayName = waContactNameString(field.Value)
 		case 2:
-			hint.WAName = waContactNameString(field.value)
+			hint.WAName = waContactNameString(field.Value)
 		case 3:
-			hint.Username = waContactNameString(field.value)
+			hint.Username = waContactNameString(field.Value)
 		}
 	}
 	return hint.normalized()
 }
 
 func waOutContactActionHint(raw []byte) waContactHint {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, 8)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, 8)
 	if !ok {
 		return waContactHint{}
 	}
 	var hint waContactHint
 	for _, field := range fields {
-		if field.kind != protowire.BytesType {
+		if field.Kind != protowire.BytesType {
 			continue
 		}
-		switch field.number {
+		switch field.Number {
 		case 1:
-			hint.DisplayName = waContactNameString(field.value)
+			hint.DisplayName = waContactNameString(field.Value)
 		case 2:
-			hint.WAName = waContactNameString(field.value)
+			hint.WAName = waContactNameString(field.Value)
 		}
 	}
 	return hint.normalized()
 }
 
 func waPNForLIDChatActionHint(raw []byte) waContactHint {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, 8)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, 8)
 	if !ok {
 		return waContactHint{}
 	}
 	var hint waContactHint
 	for _, field := range fields {
-		if field.kind != protowire.BytesType {
+		if field.Kind != protowire.BytesType {
 			continue
 		}
-		if field.number == 1 {
-			hint.PNJID = normalizeWAJID(waProtoPlainString(field.value))
+		if field.Number == 1 {
+			hint.PNJID = normalizeWAJID(waProtoPlainString(field.Value))
 		}
 	}
 	return hint.normalized()
@@ -454,15 +455,15 @@ func waLIDMigrationMappingPayloadHints(raw []byte) []waContactHint {
 	}
 	hints := []waContactHint{}
 	for _, payload := range payloads {
-		fields, ok := parseWAProtoFieldsWithLimit(payload, waContactProtoMaxFields)
+		fields, ok := waproto.ParseWAProtoFieldsWithLimit(payload, waContactProtoMaxFields)
 		if !ok {
 			continue
 		}
 		for _, field := range fields {
-			if field.kind != protowire.BytesType || field.number != 1 {
+			if field.Kind != protowire.BytesType || field.Number != 1 {
 				continue
 			}
-			hints = append(hints, waNumericLIDMappingRecordHints(field.value)...)
+			hints = append(hints, waNumericLIDMappingRecordHints(field.Value)...)
 		}
 		if len(hints) > 0 {
 			break
@@ -472,22 +473,22 @@ func waLIDMigrationMappingPayloadHints(raw []byte) []waContactHint {
 }
 
 func waNumericLIDMappingRecordHints(raw []byte) []waContactHint {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, 16)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, 16)
 	if !ok {
 		return nil
 	}
 	var pn uint64
 	lids := []uint64{}
 	for _, field := range fields {
-		if field.kind != protowire.VarintType {
+		if field.Kind != protowire.VarintType {
 			continue
 		}
-		switch field.number {
+		switch field.Number {
 		case 1:
-			pn = field.varint
+			pn = field.Varint
 		case 2, 3:
-			if field.varint > 0 {
-				lids = append(lids, field.varint)
+			if field.Varint > 0 {
+				lids = append(lids, field.Varint)
 			}
 		}
 	}
@@ -514,21 +515,21 @@ func waHistorySyncContactHints(raw []byte) []waContactHint {
 	}
 	hints := []waContactHint{}
 	for _, payload := range payloads {
-		fields, ok := parseWAProtoFieldsWithLimit(payload, waContactProtoMaxFields)
+		fields, ok := waproto.ParseWAProtoFieldsWithLimit(payload, waContactProtoMaxFields)
 		if !ok {
 			continue
 		}
 		for _, field := range fields {
-			if field.kind != protowire.BytesType {
+			if field.Kind != protowire.BytesType {
 				continue
 			}
-			switch field.number {
+			switch field.Number {
 			case 15:
-				if hint := waStringLIDMappingRecordHint(field.value); hint.valid() {
+				if hint := waStringLIDMappingRecordHint(field.Value); hint.valid() {
 					hints = append(hints, hint)
 				}
 			case 20:
-				if hint := waInlineContactRecordHint(field.value); hint.valid() {
+				if hint := waInlineContactRecordHint(field.Value); hint.valid() {
 					hints = append(hints, hint)
 				}
 			}
@@ -541,107 +542,107 @@ func waHistorySyncContactHints(raw []byte) []waContactHint {
 }
 
 func waStringLIDMappingRecordHint(raw []byte) waContactHint {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, 16)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, 16)
 	if !ok {
 		return waContactHint{}
 	}
 	var hint waContactHint
 	for _, field := range fields {
-		if field.kind != protowire.BytesType {
+		if field.Kind != protowire.BytesType {
 			continue
 		}
-		switch field.number {
+		switch field.Number {
 		case 1:
-			hint.PNJID = normalizeWAJID(waProtoPlainString(field.value))
+			hint.PNJID = normalizeWAJID(waProtoPlainString(field.Value))
 		case 2:
-			hint.LIDJID = normalizeWAJID(waProtoPlainString(field.value))
+			hint.LIDJID = normalizeWAJID(waProtoPlainString(field.Value))
 		}
 	}
 	return hint.normalized()
 }
 
 func waInlineContactRecordHint(raw []byte) waContactHint {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, 16)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, 16)
 	if !ok {
 		return waContactHint{}
 	}
 	var hint waContactHint
 	for _, field := range fields {
-		if field.kind != protowire.BytesType {
+		if field.Kind != protowire.BytesType {
 			continue
 		}
-		switch field.number {
+		switch field.Number {
 		case 1:
-			hint.PNJID = normalizeWAJID(waProtoPlainString(field.value))
+			hint.PNJID = normalizeWAJID(waProtoPlainString(field.Value))
 		case 2:
-			hint.LIDJID = normalizeWAJID(waProtoPlainString(field.value))
+			hint.LIDJID = normalizeWAJID(waProtoPlainString(field.Value))
 		case 3:
-			hint.DisplayName = waContactNameString(field.value)
+			hint.DisplayName = waContactNameString(field.Value)
 		case 4:
-			hint.WAName = waContactNameString(field.value)
+			hint.WAName = waContactNameString(field.Value)
 		case 5:
-			hint.Username = waContactNameString(field.value)
+			hint.Username = waContactNameString(field.Value)
 		}
 	}
 	return hint.normalized()
 }
 
 func waHistorySyncConversationRecordHint(raw []byte) waContactHint {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, 96)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, 96)
 	if !ok {
 		return waContactHint{}
 	}
 	var hint waContactHint
 	for _, field := range fields {
-		if field.kind != protowire.BytesType {
+		if field.Kind != protowire.BytesType {
 			continue
 		}
-		switch field.number {
+		switch field.Number {
 		case 1:
-			applyContactRecordJID(&hint, waProtoPlainString(field.value))
+			applyContactRecordJID(&hint, waProtoPlainString(field.Value))
 		case 13:
-			hint.WAName = waContactNameString(field.value)
+			hint.WAName = waContactNameString(field.Value)
 		case 38:
-			hint.DisplayName = waContactNameString(field.value)
+			hint.DisplayName = waContactNameString(field.Value)
 		case 39:
-			hint.PNJID = normalizeWAJID(waProtoPlainString(field.value))
+			hint.PNJID = normalizeWAJID(waProtoPlainString(field.Value))
 		case 42:
-			hint.LIDJID = normalizeWAJID(waProtoPlainString(field.value))
+			hint.LIDJID = normalizeWAJID(waProtoPlainString(field.Value))
 		case 43:
-			hint.Username = waContactNameString(field.value)
+			hint.Username = waContactNameString(field.Value)
 		}
 	}
 	return hint.normalized()
 }
 
 func waHistorySyncMessageRecordHint(raw []byte) waContactHint {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, 128)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, 128)
 	if !ok {
 		return waContactHint{}
 	}
 	var hint waContactHint
 	for _, field := range fields {
-		if field.kind != protowire.BytesType {
+		if field.Kind != protowire.BytesType {
 			continue
 		}
-		switch field.number {
+		switch field.Number {
 		case 1:
-			for _, jid := range waMessageKeyJIDs(field.value) {
+			for _, jid := range waMessageKeyJIDs(field.Value) {
 				applyContactRecordJID(&hint, jid)
 			}
 		case 5:
-			applyContactRecordJID(&hint, waProtoPlainString(field.value))
+			applyContactRecordJID(&hint, waProtoPlainString(field.Value))
 		case 19:
-			hint.DisplayName = waContactNameString(field.value)
+			hint.DisplayName = waContactNameString(field.Value)
 		case 37:
-			hint.WAName = waContactNameString(field.value)
+			hint.WAName = waContactNameString(field.Value)
 		}
 	}
 	return hint.normalized()
 }
 
 func waContactMetadataRecordHint(raw []byte) waContactHint {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, 16)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, 16)
 	if !ok {
 		return waContactHint{}
 	}
@@ -651,25 +652,25 @@ func waContactMetadataRecordHint(raw []byte) waContactHint {
 	var hint waContactHint
 	for _, field := range fields {
 		switch {
-		case field.kind == protowire.BytesType:
-			switch field.number {
+		case field.Kind == protowire.BytesType:
+			switch field.Number {
 			case 1:
-				firstName = waContactNameString(field.value)
+				firstName = waContactNameString(field.Value)
 			case 2:
-				lastName = waContactNameString(field.value)
+				lastName = waContactNameString(field.Value)
 			case 3:
-				hint.DisplayName = waContactNameString(field.value)
+				hint.DisplayName = waContactNameString(field.Value)
 			case 6:
-				hint.Username = waContactNameString(field.value)
+				hint.Username = waContactNameString(field.Value)
 			case 7:
-				hint.PNJID = phoneNumberWAJID(waProtoPlainString(field.value))
+				hint.PNJID = phoneNumberWAJID(waProtoPlainString(field.Value))
 			}
-		case field.kind == protowire.VarintType:
-			switch field.number {
+		case field.Kind == protowire.VarintType:
+			switch field.Number {
 			case 4, 9:
 				hasContactMetadataMarker = true
 			case 8:
-				hint.LIDJID = numericWAJID(field.varint, "lid")
+				hint.LIDJID = numericWAJID(field.Varint, "lid")
 			}
 		}
 	}
@@ -683,18 +684,18 @@ func waContactMetadataRecordHint(raw []byte) waContactHint {
 }
 
 func waMessageKeyJIDs(raw []byte) []string {
-	fields, ok := parseWAProtoFieldsWithLimit(raw, 8)
+	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, 8)
 	if !ok {
 		return nil
 	}
 	out := []string{}
 	for _, field := range fields {
-		if field.kind != protowire.BytesType {
+		if field.Kind != protowire.BytesType {
 			continue
 		}
-		switch field.number {
+		switch field.Number {
 		case 1, 4:
-			if jid := waProtoPlainString(field.value); jid != "" {
+			if jid := waProtoPlainString(field.Value); jid != "" {
 				out = append(out, jid)
 			}
 		}
@@ -822,5 +823,5 @@ func waContactName(value string) string {
 	if value == "" || !utf8.ValidString(value) || strings.ContainsRune(value, 0) {
 		return ""
 	}
-	return trimWARunes(value, 120)
+	return waproto.TrimWARunes(value, 120)
 }
