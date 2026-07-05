@@ -49,7 +49,7 @@ func (g *actionGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	action := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/wa/actions/"), "/")
-	var result map[string]any
+	var result any
 	var err error
 	switch action {
 	case "proxy-settings":
@@ -97,7 +97,15 @@ func (g *actionGateway) proxySettings(ctx context.Context, payload map[string]an
 	return out, nil
 }
 
-func (g *actionGateway) generateTransientFingerprint(ctx context.Context, payload map[string]any) (map[string]any, error) {
+type transientFingerprintDTO struct {
+	Success                 bool           `json:"success"`
+	FingerprintRef          string         `json:"fingerprint_ref"`
+	TransientFingerprintRef string         `json:"transient_fingerprint_ref"`
+	FingerprintPersistence  string         `json:"fingerprint_persistence"`
+	Fingerprint             fingerprintDTO `json:"fingerprint"`
+}
+
+func (g *actionGateway) generateTransientFingerprint(ctx context.Context, payload map[string]any) (any, error) {
 	nativeEngine, err := g.nativeEngine()
 	if err != nil {
 		return nil, err
@@ -119,27 +127,47 @@ func (g *actionGateway) generateTransientFingerprint(ctx context.Context, payloa
 		return nil, err
 	}
 	profile := engine.PhoneProfileToProto(phone, state.Profile)
-	return map[string]any{
-		"success":                   true,
-		"fingerprint_ref":           ref,
-		"transient_fingerprint_ref": ref,
-		"fingerprint_persistence":   "TRANSIENT_NOT_COMMITTED",
-		"fingerprint":               fingerprintSummary(profile),
+	return transientFingerprintDTO{
+		Success:                 true,
+		FingerprintRef:          ref,
+		TransientFingerprintRef: ref,
+		FingerprintPersistence:  "TRANSIENT_NOT_COMMITTED",
+		Fingerprint:             fingerprintSummary(profile),
 	}, nil
 }
 
-func fingerprintSummary(profile *waappv1.PhoneFingerprintProfile) map[string]any {
-	return map[string]any{
-		"schema":          profile.GetSchema(),
-		"profile_sha256":  profile.GetProfileSha256(),
-		"phone_sha256":    profile.GetPhoneSha256(),
-		"device_vendor":   profile.GetDeviceVendor(),
-		"device_model":    profile.GetDeviceModel(),
-		"android_version": profile.GetAndroidVersion(),
+// fingerprintDTO is the dashboard-facing device-fingerprint summary. Field tags
+// mirror the previous map[string]any keys exactly (no omitempty) so the JSON
+// object contract is unchanged.
+type fingerprintDTO struct {
+	Schema         string `json:"schema"`
+	ProfileSHA256  string `json:"profile_sha256"`
+	PhoneSHA256    string `json:"phone_sha256"`
+	DeviceVendor   string `json:"device_vendor"`
+	DeviceModel    string `json:"device_model"`
+	AndroidVersion string `json:"android_version"`
+}
+
+func fingerprintSummary(profile *waappv1.PhoneFingerprintProfile) fingerprintDTO {
+	return fingerprintDTO{
+		Schema:         profile.GetSchema(),
+		ProfileSHA256:  profile.GetProfileSha256(),
+		PhoneSHA256:    profile.GetPhoneSha256(),
+		DeviceVendor:   profile.GetDeviceVendor(),
+		DeviceModel:    profile.GetDeviceModel(),
+		AndroidVersion: profile.GetAndroidVersion(),
 	}
 }
 
-func (g *actionGateway) commitFingerprint(ctx context.Context, payload map[string]any) (map[string]any, error) {
+type commitFingerprintDTO struct {
+	Success           bool           `json:"success"`
+	WAAccountID       string         `json:"wa_account_id"`
+	ClientProfileID   string         `json:"client_profile_id"`
+	ProtocolProfileID string         `json:"protocol_profile_id"`
+	ClientProfile     map[string]any `json:"client_profile"`
+}
+
+func (g *actionGateway) commitFingerprint(ctx context.Context, payload map[string]any) (any, error) {
 	ref := shared.TextField(payload, "transient_fingerprint_ref")
 	state, err := g.loadTransientState(ctx, ref)
 	if err != nil {
@@ -150,12 +178,12 @@ func (g *actionGateway) commitFingerprint(ctx context.Context, payload map[strin
 		return nil, err
 	}
 	_ = g.server.runtime.DeleteTransientState(ctx, ref)
-	return map[string]any{
-		"success":             true,
-		"wa_account_id":       wamodel.WAAccountID(account),
-		"client_profile_id":   profile.GetClientProfileId(),
-		"protocol_profile_id": protocol.GetProtocolProfileId(),
-		"client_profile":      protoMap(profile),
+	return commitFingerprintDTO{
+		Success:           true,
+		WAAccountID:       wamodel.WAAccountID(account),
+		ClientProfileID:   profile.GetClientProfileId(),
+		ProtocolProfileID: protocol.GetProtocolProfileId(),
+		ClientProfile:     protoMap(profile),
 	}, nil
 }
 
