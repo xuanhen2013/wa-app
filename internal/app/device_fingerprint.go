@@ -14,7 +14,11 @@ func (s *serverCore) attachClientProfileRuntime(ctx context.Context, profile *wa
 	if profile == nil {
 		return nil
 	}
-	state, err := s.store.GetNativeState(ctx, profile.GetClientProfileId())
+	data, err := s.store.GetNativeState(ctx, profile.GetClientProfileId())
+	if err != nil {
+		return profile
+	}
+	state, err := unmarshalNativeState(data)
 	if err != nil {
 		return profile
 	}

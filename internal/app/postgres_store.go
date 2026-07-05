@@ -254,24 +254,20 @@ func (s *PostgresStore) queryClientProfilePage(ctx context.Context, waAccountIDV
 	return s.pool.Query(ctx, base+` AND (updated_at, client_profile_id) < ($2, $3) ORDER BY updated_at DESC, client_profile_id DESC LIMIT $4`, waAccountIDValue, cursor.UpdatedAt, cursor.ID, limit)
 }
 
-func (s *PostgresStore) SaveNativeState(ctx context.Context, clientProfileID string, state nativeState) error {
-	data, err := marshalNativeState(state)
-	if err != nil {
-		return err
-	}
-	_, err = s.pool.Exec(ctx, `INSERT INTO wa_client_profile_states (client_profile_id, state_json, created_at, updated_at)
+func (s *PostgresStore) SaveNativeState(ctx context.Context, clientProfileID string, data []byte) error {
+	_, err := s.pool.Exec(ctx, `INSERT INTO wa_client_profile_states (client_profile_id, state_json, created_at, updated_at)
 VALUES ($1,$2::jsonb,now(),now())
 ON CONFLICT (client_profile_id) DO UPDATE SET state_json=EXCLUDED.state_json, updated_at=EXCLUDED.updated_at`, clientProfileID, string(data))
 	return err
 }
 
-func (s *PostgresStore) GetNativeState(ctx context.Context, clientProfileID string) (nativeState, error) {
+func (s *PostgresStore) GetNativeState(ctx context.Context, clientProfileID string) ([]byte, error) {
 	row := s.pool.QueryRow(ctx, `SELECT state_json FROM wa_client_profile_states WHERE client_profile_id=$1`, clientProfileID)
 	var data []byte
 	if err := row.Scan(&data); err != nil {
-		return nativeState{}, err
+		return nil, err
 	}
-	return unmarshalNativeState(data)
+	return data, nil
 }
 
 func (s *PostgresStore) SaveAccountProbe(ctx context.Context, probe *waappv1.AccountProbe) error {

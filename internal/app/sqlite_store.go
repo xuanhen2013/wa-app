@@ -199,23 +199,19 @@ func (s *SQLiteStore) ListClientProfiles(ctx context.Context, waAccountIDValue s
 	return items, nextCursor, nil
 }
 
-func (s *SQLiteStore) SaveNativeState(ctx context.Context, clientProfileID string, state nativeState) error {
-	data, err := marshalNativeState(state)
-	if err != nil {
-		return err
-	}
-	_, err = s.db.ExecContext(ctx, `INSERT INTO wa_sqlite_native_states (client_profile_id,state_json,updated_at) VALUES (?,?,?)
+func (s *SQLiteStore) SaveNativeState(ctx context.Context, clientProfileID string, data []byte) error {
+	_, err := s.db.ExecContext(ctx, `INSERT INTO wa_sqlite_native_states (client_profile_id,state_json,updated_at) VALUES (?,?,?)
 ON CONFLICT(client_profile_id) DO UPDATE SET state_json=excluded.state_json, updated_at=excluded.updated_at`, clientProfileID, string(data), sqliteTimeValue(time.Now().UTC()))
 	return err
 }
 
-func (s *SQLiteStore) GetNativeState(ctx context.Context, clientProfileID string) (nativeState, error) {
+func (s *SQLiteStore) GetNativeState(ctx context.Context, clientProfileID string) ([]byte, error) {
 	var data string
 	err := s.db.QueryRowContext(ctx, `SELECT state_json FROM wa_sqlite_native_states WHERE client_profile_id=?`, clientProfileID).Scan(&data)
 	if err != nil {
-		return nativeState{}, sqliteNotFound(err, waappv1.WaErrorCode_WA_ERROR_CODE_PROFILE_NOT_FOUND, "native state not found")
+		return nil, sqliteNotFound(err, waappv1.WaErrorCode_WA_ERROR_CODE_PROFILE_NOT_FOUND, "native state not found")
 	}
-	return unmarshalNativeState([]byte(data))
+	return []byte(data), nil
 }
 
 func (s *SQLiteStore) SaveAccountProbe(ctx context.Context, probe *waappv1.AccountProbe) error {

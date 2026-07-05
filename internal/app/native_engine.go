@@ -855,7 +855,11 @@ func applyRegisterCodeResultParams(params map[string]string, state nativeState) 
 }
 
 func (e *engineCore) loadState(ctx context.Context, clientProfileID string) (nativeState, error) {
-	state, err := e.stateStore.GetNativeState(ctx, clientProfileID)
+	data, err := e.stateStore.GetNativeState(ctx, clientProfileID)
+	if err != nil {
+		return nativeState{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_PROFILE_NOT_FOUND, "native client profile state not found", false)
+	}
+	state, err := unmarshalNativeState(data)
 	if err != nil {
 		return nativeState{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_PROFILE_NOT_FOUND, "native client profile state not found", false)
 	}
@@ -867,7 +871,11 @@ func (e *engineCore) newState(phone *waappv1.PhoneTarget) (nativeState, error) {
 }
 
 func (e *engineCore) saveState(ctx context.Context, clientProfileID string, state nativeState) error {
-	return e.stateStore.SaveNativeState(ctx, clientProfileID, state)
+	data, err := marshalNativeState(state)
+	if err != nil {
+		return err
+	}
+	return e.stateStore.SaveNativeState(ctx, clientProfileID, data)
 }
 
 func sanitizeResponse(data map[string]any) map[string]any {

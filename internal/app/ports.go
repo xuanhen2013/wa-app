@@ -106,11 +106,12 @@ type RuntimeState interface {
 	CloseSessionLease(context.Context, string) error
 }
 
-// NativeStateStore persists the engine's native protocol state. nativeState is
-// engine-internal; the store treats it as an opaque unit.
+// NativeStateStore persists the engine's native protocol state. The state is
+// engine-internal; the store treats it as an opaque serialized blob and never
+// depends on its shape (the engine owns marshal/unmarshal).
 type NativeStateStore interface {
-	SaveNativeState(context.Context, string, nativeState) error
-	GetNativeState(context.Context, string) (nativeState, error)
+	SaveNativeState(context.Context, string, []byte) error
+	GetNativeState(context.Context, string) ([]byte, error)
 }
 
 type LoginStateRecord struct {
