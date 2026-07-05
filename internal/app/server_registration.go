@@ -161,7 +161,7 @@ func (s *registrationHandler) GetActiveLoginState(ctx context.Context, req *waap
 	if err := shared.ValidateContext(req.GetContext()); err != nil {
 		return &waappv1.GetActiveLoginStateResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	accountID, err := requireWAAccountID(req.GetWaAccountId())
+	accountID, err := wamodel.RequireWAAccountID(req.GetWaAccountId())
 	if err != nil {
 		return &waappv1.GetActiveLoginStateResponse{Error: shared.ToProtoError(err)}, nil
 	}
@@ -221,7 +221,7 @@ func (s *serverCore) loginStateForCheck(ctx context.Context, req *waappv1.CheckL
 		return s.store.GetLoginStateByRegisteredIdentity(ctx, req.GetRegisteredIdentityId())
 	}
 	if req.GetWaAccountId() != "" && req.GetClientProfileId() != "" {
-		accountID, err := requireWAAccountID(req.GetWaAccountId())
+		accountID, err := wamodel.RequireWAAccountID(req.GetWaAccountId())
 		if err != nil {
 			return nil, err
 		}
@@ -283,7 +283,7 @@ func (s *serverCore) loginStateFromRegistration(registration *waappv1.Registrati
 }
 
 func (s *serverCore) waAccountAndProfile(ctx context.Context, waAccountIDValue string, clientProfileID string) (*waappv1.WAAccount, *waappv1.ClientProfile, error) {
-	accountID, err := requireWAAccountID(waAccountIDValue)
+	accountID, err := wamodel.RequireWAAccountID(waAccountIDValue)
 	if err != nil {
 		return nil, nil, err
 	}

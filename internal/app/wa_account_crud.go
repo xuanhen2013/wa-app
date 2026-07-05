@@ -3,7 +3,6 @@ package app
 import (
 	"context"
 	"encoding/json"
-	"errors"
 	"log"
 	"strings"
 
@@ -37,7 +36,7 @@ func (s *serverCore) saveWAAccount(ctx context.Context, account *waappv1.WAAccou
 	if account == nil {
 		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "WA account is required", false)
 	}
-	accountID, err := requireWAAccountID(account.GetWaAccountId())
+	accountID, err := wamodel.RequireWAAccountID(account.GetWaAccountId())
 	if err != nil {
 		return nil, err
 	}
@@ -52,12 +51,12 @@ func (s *serverCore) saveWAAccount(ctx context.Context, account *waappv1.WAAccou
 }
 
 func (s *serverCore) getWAAccount(ctx context.Context, accountID string) (*waappv1.WAAccount, error) {
-	accountID, err := requireWAAccountID(accountID)
+	accountID, err := wamodel.RequireWAAccountID(accountID)
 	if err != nil {
 		return nil, err
 	}
 	account, err := s.store.GetWAAccount(ctx, accountID)
-	if isWAAccountNotFound(err) {
+	if wamodel.IsWAAccountNotFound(err) {
 		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_WA_ACCOUNT_NOT_FOUND, "WA account not found", false)
 	}
 	return account, err
@@ -68,12 +67,12 @@ func (s *serverCore) listWAAccounts(ctx context.Context, cursor string, limit in
 }
 
 func (s *serverCore) deleteWAAccount(ctx context.Context, accountID string) (bool, error) {
-	accountID, err := requireWAAccountID(accountID)
+	accountID, err := wamodel.RequireWAAccountID(accountID)
 	if err != nil {
 		return false, err
 	}
 	err = s.store.DeleteWAAccount(ctx, accountID)
-	if isWAAccountNotFound(err) {
+	if wamodel.IsWAAccountNotFound(err) {
 		return false, nil
 	}
 	return err == nil, err
@@ -123,9 +122,4 @@ func (s *serverCore) deleteRegistrationOTPWaitForAccount(ctx context.Context, ac
 		}
 	}
 	_ = s.runtime.DeleteTransientState(ctx, accountKey)
-}
-
-func isWAAccountNotFound(err error) bool {
-	var appErr *shared.AppError
-	return errors.As(err, &appErr) && appErr.Code == waappv1.WaErrorCode_WA_ERROR_CODE_WA_ACCOUNT_NOT_FOUND
 }

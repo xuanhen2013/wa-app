@@ -131,7 +131,7 @@ func (s *messagingHandler) ListAccountMessages(ctx context.Context, req *waappv1
 	if err := shared.ValidateContext(req.GetContext()); err != nil {
 		return &waappv1.ListAccountMessagesResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	accountID, err := requireWAAccountID(req.GetWaAccountId())
+	accountID, err := wamodel.RequireWAAccountID(req.GetWaAccountId())
 	if err != nil {
 		return &waappv1.ListAccountMessagesResponse{Error: shared.ToProtoError(err)}, nil
 	}
@@ -154,7 +154,7 @@ func (s *messagingHandler) GetLongConnectionStatus(ctx context.Context, req *waa
 		return &waappv1.GetLongConnectionStatusResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	if req.GetWaAccountId() != "" {
-		accountID, err := requireWAAccountID(req.GetWaAccountId())
+		accountID, err := wamodel.RequireWAAccountID(req.GetWaAccountId())
 		if err != nil {
 			return &waappv1.GetLongConnectionStatusResponse{Error: shared.ToProtoError(err)}, nil
 		}

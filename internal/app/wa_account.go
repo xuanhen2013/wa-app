@@ -1,7 +1,6 @@
 package app
 
 import (
-	"regexp"
 	"strings"
 	"time"
 
@@ -9,8 +8,6 @@ import (
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 )
-
-var waAccountIDPattern = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9:_-]{0,127}$`)
 
 func withWAAccountStatus(account *waappv1.WAAccount, status waappv1.WAAccountStatus, updatedAt time.Time) *waappv1.WAAccount {
 	createdAt := wamodel.WAAccountCreatedAt(account)
@@ -53,15 +50,4 @@ func cloneTwoFactorAuthStatus(status *waappv1.TwoFactorAuthStatus) *waappv1.TwoF
 		EmailVerified:   status.GetEmailVerified(),
 		EmailConfirmed:  status.GetEmailConfirmed(),
 	}
-}
-
-func requireWAAccountID(value string) (string, error) {
-	accountID := strings.TrimSpace(value)
-	if accountID == "" {
-		return "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "wa_account_id is required", false)
-	}
-	if !waAccountIDPattern.MatchString(accountID) {
-		return "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "wa_account_id must use letters, digits, colon, underscore or dash", false)
-	}
-	return accountID, nil
 }

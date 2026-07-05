@@ -8,6 +8,7 @@ import (
 	"github.com/byte-v-forge/wa-app/internal/waapp/engine"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 )
 
 const defaultContactResolveLimit = 50
@@ -20,7 +21,7 @@ func (s *contactHandler) ListWAContacts(ctx context.Context, req *waappv1.ListWA
 	if err := shared.ValidateContext(req.GetContext()); err != nil {
 		return &waappv1.ListWAContactsResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	accountID, err := requireWAAccountID(req.GetWaAccountId())
+	accountID, err := wamodel.RequireWAAccountID(req.GetWaAccountId())
 	if err != nil {
 		return &waappv1.ListWAContactsResponse{Error: shared.ToProtoError(err)}, nil
 	}
@@ -38,7 +39,7 @@ func (s *contactHandler) ResolveWAContacts(ctx context.Context, req *waappv1.Res
 	if err := shared.ValidateContext(req.GetContext()); err != nil {
 		return &waappv1.ResolveWAContactsResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	accountID, err := requireWAAccountID(req.GetWaAccountId())
+	accountID, err := wamodel.RequireWAAccountID(req.GetWaAccountId())
 	if err != nil {
 		return &waappv1.ResolveWAContactsResponse{Error: shared.ToProtoError(err)}, nil
 	}
@@ -86,7 +87,7 @@ func (s *contactHandler) DeleteWAContact(ctx context.Context, req *waappv1.Delet
 	if err := shared.ValidateContext(req.GetContext()); err != nil {
 		return &waappv1.DeleteWAContactResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	accountID, err := requireWAAccountID(req.GetWaAccountId())
+	accountID, err := wamodel.RequireWAAccountID(req.GetWaAccountId())
 	if err != nil {
 		return &waappv1.DeleteWAContactResponse{Error: shared.ToProtoError(err)}, nil
 	}

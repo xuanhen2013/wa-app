@@ -9,6 +9,7 @@ import (
 	"github.com/byte-v-forge/wa-app/internal/waapp/engine"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -20,7 +21,7 @@ func (s *messagingHandler) SendTextMessage(ctx context.Context, req *waappv1.Sen
 	if err := shared.ValidateContext(req.GetContext()); err != nil {
 		return &waappv1.SendTextMessageResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	accountID, err := requireWAAccountID(req.GetWaAccountId())
+	accountID, err := wamodel.RequireWAAccountID(req.GetWaAccountId())
 	if err != nil {
 		return &waappv1.SendTextMessageResponse{Error: shared.ToProtoError(err)}, nil
 	}

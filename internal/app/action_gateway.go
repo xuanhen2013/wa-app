@@ -310,7 +310,7 @@ func registrationOTPWaitFromPayload(payload map[string]any) (registrationOTPWait
 		return registrationOTPWait{}, 0, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "verification_request_id is required", false)
 	}
 	if wait.WAAccountID != "" {
-		accountID, err := requireWAAccountID(wait.WAAccountID)
+		accountID, err := wamodel.RequireWAAccountID(wait.WAAccountID)
 		if err != nil {
 			return registrationOTPWait{}, 0, err
 		}
@@ -344,7 +344,7 @@ func (g *actionGateway) loadRegistrationOTPWait(ctx context.Context, waAccountID
 	if verificationRequestID != "" {
 		key = registrationOTPWaitKey(verificationRequestID)
 	} else if waAccountIDValue != "" {
-		accountID, err := requireWAAccountID(waAccountIDValue)
+		accountID, err := wamodel.RequireWAAccountID(waAccountIDValue)
 		if err != nil {
 			return registrationOTPWait{}, err
 		}
@@ -538,12 +538,12 @@ func (g *actionGateway) cleanupFailedRegistration(ctx context.Context, payload m
 	if accountID == "" {
 		return map[string]any{"success": true, "deleted": false, "reason": "missing_wa_account_id"}, nil
 	}
-	normalizedAccountID, err := requireWAAccountID(accountID)
+	normalizedAccountID, err := wamodel.RequireWAAccountID(accountID)
 	if err != nil {
 		return nil, err
 	}
 	account, err := g.server.getWAAccount(ctx, normalizedAccountID)
-	if isWAAccountNotFound(err) {
+	if wamodel.IsWAAccountNotFound(err) {
 		return map[string]any{"success": true, "deleted": false, "wa_account_id": normalizedAccountID, "reason": "already_deleted"}, nil
 	}
 	if err != nil {

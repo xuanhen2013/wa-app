@@ -11,6 +11,7 @@ import (
 	"github.com/byte-v-forge/wa-app/internal/waapp/engine"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -375,13 +376,13 @@ func mergeTwoFactorAuthStatus(status *waappv1.TwoFactorAuthStatus, patch *waappv
 
 func (s *serverCore) accountSettingsAccountID(ctx context.Context, selector *waappv1.AccountLoginSelector) (string, error) {
 	if selector.GetWaAccountId() != "" {
-		return requireWAAccountID(selector.GetWaAccountId())
+		return wamodel.RequireWAAccountID(selector.GetWaAccountId())
 	}
 	loginState, err := s.accountSettingsLoginState(ctx, selector)
 	if err != nil {
 		return "", err
 	}
-	return requireWAAccountID(loginState.GetWaAccountId())
+	return wamodel.RequireWAAccountID(loginState.GetWaAccountId())
 }
 
 func (s *serverCore) saveAccountDisplayName(ctx context.Context, accountID string, displayName string, updatedAt time.Time) error {
@@ -431,7 +432,7 @@ func (s *serverCore) accountSettingsLoginState(ctx context.Context, selector *wa
 			return s.store.GetLoginStateByRegisteredIdentity(ctx, selector.GetRegisteredIdentityId())
 		})
 	}
-	accountID, err := requireWAAccountID(selector.GetWaAccountId())
+	accountID, err := wamodel.RequireWAAccountID(selector.GetWaAccountId())
 	if err != nil {
 		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "login_state_id, registered_identity_id, or wa_account_id is required", false)
 	}

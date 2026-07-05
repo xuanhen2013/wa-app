@@ -217,7 +217,7 @@ func (s *profileHandler) GetWAAccount(ctx context.Context, req *waappv1.GetWAAcc
 	if err := shared.ValidateContext(req.GetContext()); err != nil {
 		return &waappv1.GetWAAccountResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	accountID, err := requireWAAccountID(req.GetWaAccountId())
+	accountID, err := wamodel.RequireWAAccountID(req.GetWaAccountId())
 	if err != nil {
 		return &waappv1.GetWAAccountResponse{Error: shared.ToProtoError(err)}, nil
 	}
@@ -243,7 +243,7 @@ func (s *profileHandler) DeleteWAAccount(ctx context.Context, req *waappv1.Delet
 	if err := shared.ValidateContext(req.GetContext()); err != nil {
 		return &waappv1.DeleteWAAccountResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	accountID, err := requireWAAccountID(req.GetWaAccountId())
+	accountID, err := wamodel.RequireWAAccountID(req.GetWaAccountId())
 	if err != nil {
 		return &waappv1.DeleteWAAccountResponse{Error: shared.ToProtoError(err)}, nil
 	}
@@ -272,7 +272,7 @@ func (s *profileHandler) PrepareClientProfile(ctx context.Context, req *waappv1.
 	if err := shared.ValidateContext(req.GetContext()); err != nil {
 		return &waappv1.PrepareClientProfileResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	accountID, err := requireWAAccountID(req.GetWaAccountId())
+	accountID, err := wamodel.RequireWAAccountID(req.GetWaAccountId())
 	if err != nil {
 		return &waappv1.PrepareClientProfileResponse{Error: shared.ToProtoError(err)}, nil
 	}
@@ -322,7 +322,7 @@ func (s *profileHandler) ListClientProfiles(ctx context.Context, req *waappv1.Li
 	if err := shared.ValidateContext(req.GetContext()); err != nil {
 		return &waappv1.ListClientProfilesResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	accountID, err := requireWAAccountID(req.GetWaAccountId())
+	accountID, err := wamodel.RequireWAAccountID(req.GetWaAccountId())
 	if err != nil {
 		return &waappv1.ListClientProfilesResponse{Error: shared.ToProtoError(err)}, nil
 	}

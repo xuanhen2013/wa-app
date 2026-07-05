@@ -86,7 +86,7 @@ func (s *extractionHandler) ListAccountOtpMessages(ctx context.Context, req *waa
 	if err := shared.ValidateContext(req.GetContext()); err != nil {
 		return &waappv1.ListAccountOtpMessagesResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	accountID, err := requireWAAccountID(req.GetWaAccountId())
+	accountID, err := wamodel.RequireWAAccountID(req.GetWaAccountId())
 	if err != nil {
 		return &waappv1.ListAccountOtpMessagesResponse{Error: shared.ToProtoError(err)}, nil
 	}
