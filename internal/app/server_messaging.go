@@ -135,7 +135,7 @@ func (s *messagingHandler) ListAccountMessages(ctx context.Context, req *waappv1
 	if err != nil {
 		return &waappv1.ListAccountMessagesResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	if _, err := s.getWAAccount(ctx, accountID); err != nil {
+	if _, err := s.GetWAAccountRecord(ctx, accountID); err != nil {
 		return &waappv1.ListAccountMessagesResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	if strings.TrimSpace(req.GetContactRef()) == "" {

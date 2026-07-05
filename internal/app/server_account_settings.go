@@ -292,7 +292,7 @@ func (s *serverCore) cachedTwoFactorAuthStatus(ctx context.Context, selector *wa
 	if err != nil {
 		return nil, err
 	}
-	account, err := s.getWAAccount(ctx, accountID)
+	account, err := s.GetWAAccountRecord(ctx, accountID)
 	if err != nil {
 		return nil, err
 	}
@@ -300,7 +300,7 @@ func (s *serverCore) cachedTwoFactorAuthStatus(ctx context.Context, selector *wa
 }
 
 func (s *serverCore) patchTwoFactorAuthStatus(ctx context.Context, accountID string, updatedAt time.Time, patch func(*waappv1.TwoFactorAuthStatus)) error {
-	account, err := s.getWAAccount(ctx, accountID)
+	account, err := s.GetWAAccountRecord(ctx, accountID)
 	if err != nil {
 		return err
 	}
@@ -313,7 +313,7 @@ func (s *serverCore) patchTwoFactorAuthStatus(ctx context.Context, accountID str
 }
 
 func (s *serverCore) saveTwoFactorAuthStatus(ctx context.Context, accountID string, status *waappv1.TwoFactorAuthStatus, updatedAt time.Time) error {
-	account, err := s.getWAAccount(ctx, accountID)
+	account, err := s.GetWAAccountRecord(ctx, accountID)
 	if err != nil {
 		return err
 	}
@@ -324,7 +324,7 @@ func (s *serverCore) saveTwoFactorAuthStatusForAccount(ctx context.Context, acco
 	if updatedAt.IsZero() {
 		updatedAt = s.clock.Now()
 	}
-	_, err := s.saveWAAccount(ctx, withWAAccountTwoFactorAuthStatus(account, preserveTwoFactorEmailProjection(account.GetTwoFactorAuth(), status), updatedAt))
+	_, err := s.SaveWAAccountRecord(ctx, withWAAccountTwoFactorAuthStatus(account, preserveTwoFactorEmailProjection(account.GetTwoFactorAuth(), status), updatedAt))
 	return err
 }
 
@@ -386,11 +386,11 @@ func (s *serverCore) accountSettingsAccountID(ctx context.Context, selector *waa
 }
 
 func (s *serverCore) saveAccountDisplayName(ctx context.Context, accountID string, displayName string, updatedAt time.Time) error {
-	account, err := s.getWAAccount(ctx, accountID)
+	account, err := s.GetWAAccountRecord(ctx, accountID)
 	if err != nil {
 		return err
 	}
-	_, err = s.saveWAAccount(ctx, withWAAccountDisplayName(account, displayName, updatedAt))
+	_, err = s.SaveWAAccountRecord(ctx, withWAAccountDisplayName(account, displayName, updatedAt))
 	return err
 }
 

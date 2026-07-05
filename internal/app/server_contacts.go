@@ -25,7 +25,7 @@ func (s *contactHandler) ListWAContacts(ctx context.Context, req *waappv1.ListWA
 	if err != nil {
 		return &waappv1.ListWAContactsResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	if _, err := s.getWAAccount(ctx, accountID); err != nil {
+	if _, err := s.GetWAAccountRecord(ctx, accountID); err != nil {
 		return &waappv1.ListWAContactsResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	contacts, nextCursor, err := s.store.ListWAContacts(ctx, accountID, req.GetCursor(), int(req.GetLimit()))
@@ -43,7 +43,7 @@ func (s *contactHandler) ResolveWAContacts(ctx context.Context, req *waappv1.Res
 	if err != nil {
 		return &waappv1.ResolveWAContactsResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	if _, err := s.getWAAccount(ctx, accountID); err != nil {
+	if _, err := s.GetWAAccountRecord(ctx, accountID); err != nil {
 		return &waappv1.ResolveWAContactsResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	jids, err := s.resolveContactJIDs(ctx, accountID, req.GetJids(), int(req.GetLimit()))
@@ -91,7 +91,7 @@ func (s *contactHandler) DeleteWAContact(ctx context.Context, req *waappv1.Delet
 	if err != nil {
 		return &waappv1.DeleteWAContactResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	if _, err := s.getWAAccount(ctx, accountID); err != nil {
+	if _, err := s.GetWAAccountRecord(ctx, accountID); err != nil {
 		return &waappv1.DeleteWAContactResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	contactRef := strings.TrimSpace(req.GetContactRef())

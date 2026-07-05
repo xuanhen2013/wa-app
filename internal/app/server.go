@@ -92,12 +92,15 @@ func newServerFacade(core *serverCore) *Server {
 	return server
 }
 
-// Clock, IDs, Store and Runner expose the core dependencies the long-connection
-// manager needs through the LongConnectionHost port (see long_connection.go).
+// Clock, IDs, Store, Runner, Runtime and CommonProxyURL expose the core
+// dependencies that out-of-package consumers (the long-connection manager and
+// the bff action gateway) need without reaching into unexported fields.
 func (s *serverCore) Clock() shared.Clock           { return s.clock }
 func (s *serverCore) IDs() shared.IDGenerator       { return s.ids }
 func (s *serverCore) Store() store.Store            { return s.store }
 func (s *serverCore) Runner() wacore.ProtocolEngine { return s.runner }
+func (s *serverCore) Runtime() runtime.RuntimeState { return s.runtime }
+func (s *serverCore) CommonProxyURL() string        { return s.commonProxyURL }
 
 func NewServer(store store.Store, runtime runtime.RuntimeState, runner wacore.ProtocolEngine, clock shared.Clock, ids shared.IDGenerator) *Server {
 	if clock == nil {
@@ -206,7 +209,7 @@ func (s *profileHandler) CreateWAAccount(ctx context.Context, req *waappv1.Creat
 	}
 	now := s.clock.Now()
 	account := wamodel.NewWAAccount(s.ids.NewID("waacc_"), "", phone, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_PENDING_REGISTRATION, &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)})
-	account, err := s.saveWAAccount(ctx, account)
+	account, err := s.SaveWAAccountRecord(ctx, account)
 	if err != nil {
 		return &waappv1.CreateWAAccountResponse{Error: shared.ToProtoError(err)}, nil
 	}
@@ -221,7 +224,7 @@ func (s *profileHandler) GetWAAccount(ctx context.Context, req *waappv1.GetWAAcc
 	if err != nil {
 		return &waappv1.GetWAAccountResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	account, err := s.getWAAccount(ctx, accountID)
+	account, err := s.GetWAAccountRecord(ctx, accountID)
 	if err != nil {
 		return &waappv1.GetWAAccountResponse{Error: shared.ToProtoError(err)}, nil
 	}
@@ -276,7 +279,7 @@ func (s *profileHandler) PrepareClientProfile(ctx context.Context, req *waappv1.
 	if err != nil {
 		return &waappv1.PrepareClientProfileResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	account, err := s.getWAAccount(ctx, accountID)
+	account, err := s.GetWAAccountRecord(ctx, accountID)
 	if err != nil {
 		return &waappv1.PrepareClientProfileResponse{Error: shared.ToProtoError(err)}, nil
 	}
@@ -326,7 +329,7 @@ func (s *profileHandler) ListClientProfiles(ctx context.Context, req *waappv1.Li
 	if err != nil {
 		return &waappv1.ListClientProfilesResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	if _, err := s.getWAAccount(ctx, accountID); err != nil {
+	if _, err := s.GetWAAccountRecord(ctx, accountID); err != nil {
 		return &waappv1.ListClientProfilesResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	profiles, nextCursor, err := s.store.ListClientProfiles(ctx, accountID, req.GetCursor(), int(req.GetLimit()))

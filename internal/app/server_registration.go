@@ -29,10 +29,10 @@ func (s *registrationHandler) ProbeAccount(ctx context.Context, req *waappv1.Pro
 }
 
 func (s *registrationHandler) RequestVerificationCode(ctx context.Context, req *waappv1.RequestVerificationCodeRequest) (*waappv1.RequestVerificationCodeResponse, error) {
-	return s.requestVerificationCode(ctx, req, s.runner)
+	return s.RequestVerificationCodeWithRunner(ctx, req, s.runner)
 }
 
-func (s *serverCore) requestVerificationCode(ctx context.Context, req *waappv1.RequestVerificationCodeRequest, runner wacore.ProtocolEngine) (*waappv1.RequestVerificationCodeResponse, error) {
+func (s *serverCore) RequestVerificationCodeWithRunner(ctx context.Context, req *waappv1.RequestVerificationCodeRequest, runner wacore.ProtocolEngine) (*waappv1.RequestVerificationCodeResponse, error) {
 	if err := shared.ValidateContext(req.GetContext()); err != nil {
 		return &waappv1.RequestVerificationCodeResponse{Error: shared.ToProtoError(err)}, nil
 	}
@@ -45,7 +45,7 @@ func (s *serverCore) requestVerificationCode(ctx context.Context, req *waappv1.R
 		method = waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS
 	}
 	result := runner.RequestVerificationCode(ctx, wacore.EngineRegistrationInput{WAAccountID: wamodel.WAAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: profile.GetProtocolProfileId(), AppVersion: s.clientProfileAppVersion(ctx, profile), Phone: account.GetPhone(), DeliveryMethod: method})
-	record := s.newVerificationCodeRequestRecord(account, profile, method, result)
+	record := s.NewVerificationCodeRequestRecord(account, profile, method, result)
 	challenge := result.AccountTransferChallenge
 	if challenge != nil {
 		challenge.VerificationRequestId = record.GetVerificationRequestId()
@@ -86,10 +86,10 @@ func (s *registrationHandler) RefreshAccountTransferChallenge(ctx context.Contex
 }
 
 func (s *registrationHandler) SubmitVerificationCode(ctx context.Context, req *waappv1.SubmitVerificationCodeRequest) (*waappv1.SubmitVerificationCodeResponse, error) {
-	return s.submitVerificationCode(ctx, req, s.runner)
+	return s.SubmitVerificationCodeWithRunner(ctx, req, s.runner)
 }
 
-func (s *serverCore) submitVerificationCode(ctx context.Context, req *waappv1.SubmitVerificationCodeRequest, runner wacore.ProtocolEngine) (*waappv1.SubmitVerificationCodeResponse, error) {
+func (s *serverCore) SubmitVerificationCodeWithRunner(ctx context.Context, req *waappv1.SubmitVerificationCodeRequest, runner wacore.ProtocolEngine) (*waappv1.SubmitVerificationCodeResponse, error) {
 	if err := shared.ValidateContext(req.GetContext()); err != nil {
 		return &waappv1.SubmitVerificationCodeResponse{Error: shared.ToProtoError(err)}, nil
 	}
@@ -118,7 +118,7 @@ func (s *serverCore) submitVerificationCode(ctx context.Context, req *waappv1.Su
 		return &waappv1.SubmitVerificationCodeResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	if registration.GetStatus() == waappv1.RegistrationStatus_REGISTRATION_STATUS_REGISTERED {
-		if _, err := s.saveWAAccount(ctx, withWAAccountStatus(account, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_ACTIVE, s.clock.Now())); err != nil {
+		if _, err := s.SaveWAAccountRecord(ctx, withWAAccountStatus(account, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_ACTIVE, s.clock.Now())); err != nil {
 			return &waappv1.SubmitVerificationCodeResponse{Registration: registration, Error: shared.ToProtoError(err)}, nil
 		}
 	}
@@ -173,10 +173,10 @@ func (s *registrationHandler) GetActiveLoginState(ctx context.Context, req *waap
 }
 
 func (s *registrationHandler) CheckLoginState(ctx context.Context, req *waappv1.CheckLoginStateRequest) (*waappv1.CheckLoginStateResponse, error) {
-	return s.checkLoginState(ctx, req, s.runner)
+	return s.CheckLoginStateWithRunner(ctx, req, s.runner)
 }
 
-func (s *serverCore) checkLoginState(ctx context.Context, req *waappv1.CheckLoginStateRequest, runner wacore.ProtocolEngine) (*waappv1.CheckLoginStateResponse, error) {
+func (s *serverCore) CheckLoginStateWithRunner(ctx context.Context, req *waappv1.CheckLoginStateRequest, runner wacore.ProtocolEngine) (*waappv1.CheckLoginStateResponse, error) {
 	if err := shared.ValidateContext(req.GetContext()); err != nil {
 		return &waappv1.CheckLoginStateResponse{Error: shared.ToProtoError(err)}, nil
 	}
@@ -287,7 +287,7 @@ func (s *serverCore) waAccountAndProfile(ctx context.Context, waAccountIDValue s
 	if err != nil {
 		return nil, nil, err
 	}
-	account, err := s.getWAAccount(ctx, accountID)
+	account, err := s.GetWAAccountRecord(ctx, accountID)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -308,7 +308,7 @@ func defaultExpiry(now time.Time, expiresAt *timestamppb.Timestamp) *timestamppb
 	return timestamppb.New(now.Add(10 * time.Minute))
 }
 
-func (s *serverCore) newVerificationCodeRequestRecord(account *waappv1.WAAccount, profile *waappv1.ClientProfile, method waappv1.VerificationDeliveryMethod, result wacore.EngineCodeResult) *waappv1.VerificationCodeRequestRecord {
+func (s *serverCore) NewVerificationCodeRequestRecord(account *waappv1.WAAccount, profile *waappv1.ClientProfile, method waappv1.VerificationDeliveryMethod, result wacore.EngineCodeResult) *waappv1.VerificationCodeRequestRecord {
 	now := s.clock.Now()
 	return &waappv1.VerificationCodeRequestRecord{
 		VerificationRequestId: s.ids.NewID("wavrf_"),

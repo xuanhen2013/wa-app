@@ -20,19 +20,19 @@ func (s *serverCore) markWAAccountTransferredOut(ctx context.Context, WAAccountI
 	if s == nil || strings.TrimSpace(WAAccountID) == "" {
 		return
 	}
-	account, err := s.getWAAccount(ctx, WAAccountID)
+	account, err := s.GetWAAccountRecord(ctx, WAAccountID)
 	if err != nil || account == nil {
 		return
 	}
 	if wamodel.WAAccountStatus(account) == waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_TRANSFERRED_OUT {
 		return
 	}
-	if _, err := s.saveWAAccount(ctx, withWAAccountStatus(account, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_TRANSFERRED_OUT, s.clock.Now())); err != nil {
+	if _, err := s.SaveWAAccountRecord(ctx, withWAAccountStatus(account, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_TRANSFERRED_OUT, s.clock.Now())); err != nil {
 		log.Printf("WA mark account transferred out failed: wa_account=%s error=%v", WAAccountID, shared.SanitizeLogError(err))
 	}
 }
 
-func (s *serverCore) saveWAAccount(ctx context.Context, account *waappv1.WAAccount) (*waappv1.WAAccount, error) {
+func (s *serverCore) SaveWAAccountRecord(ctx context.Context, account *waappv1.WAAccount) (*waappv1.WAAccount, error) {
 	if account == nil {
 		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "WA account is required", false)
 	}
@@ -50,7 +50,7 @@ func (s *serverCore) saveWAAccount(ctx context.Context, account *waappv1.WAAccou
 	return s.store.GetWAAccount(ctx, accountID)
 }
 
-func (s *serverCore) getWAAccount(ctx context.Context, accountID string) (*waappv1.WAAccount, error) {
+func (s *serverCore) GetWAAccountRecord(ctx context.Context, accountID string) (*waappv1.WAAccount, error) {
 	accountID, err := wamodel.RequireWAAccountID(accountID)
 	if err != nil {
 		return nil, err

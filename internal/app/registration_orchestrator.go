@@ -61,12 +61,12 @@ func (g *actionGateway) startRegistration(ctx context.Context, payload map[strin
 	if err != nil {
 		return nil, err
 	}
-	record := g.server.newVerificationCodeRequestRecord(account, profile, method, codeResult)
+	record := g.server.NewVerificationCodeRequestRecord(account, profile, method, codeResult)
 	challenge := codeResult.AccountTransferChallenge
 	if challenge != nil {
 		challenge.VerificationRequestId = record.GetVerificationRequestId()
 	}
-	if err := g.server.store.SaveVerificationRequest(ctx, record); err != nil {
+	if err := g.server.Store().SaveVerificationRequest(ctx, record); err != nil {
 		_ = g.discardRejectedRegistration(context.Background(), basePayload, wamodel.WAAccountID(account), record.GetVerificationRequestId())
 		return nil, err
 	}
@@ -80,7 +80,7 @@ func (g *actionGateway) startRegistration(ctx context.Context, payload map[strin
 		_ = g.discardRejectedRegistration(context.Background(), basePayload, wamodel.WAAccountID(account), verificationRequestID)
 		return nil, err
 	}
-	_ = g.server.runtime.DeleteTransientState(context.Background(), stateRef)
+	_ = g.server.Runtime().DeleteTransientState(context.Background(), stateRef)
 	response := map[string]any{
 		"success":                 true,
 		"status":                  record.GetStatus().String(),
@@ -112,12 +112,12 @@ func (g *actionGateway) startRegistration(ctx context.Context, payload map[strin
 
 func (g *actionGateway) registrationAttemptState(ctx context.Context, phone *waappv1.PhoneTarget) (engine.NativeState, string, bool, error) {
 	ref := registrationAttemptStateKey(phone)
-	if data, err := g.server.runtime.GetTransientState(ctx, ref); err == nil {
+	if data, err := g.server.Runtime().GetTransientState(ctx, ref); err == nil {
 		state, err := engine.UnmarshalNativeState(data)
 		if err == nil {
 			return state, ref, true, nil
 		}
-		_ = g.server.runtime.DeleteTransientState(ctx, ref)
+		_ = g.server.Runtime().DeleteTransientState(ctx, ref)
 	}
 	nativeEngine, err := g.nativeEngine()
 	if err != nil {
@@ -138,7 +138,7 @@ func (g *actionGateway) saveRegistrationAttemptState(ctx context.Context, ref st
 	if err != nil {
 		return err
 	}
-	return g.server.runtime.SaveTransientState(ctx, ref, data, registrationAttemptStateTTL)
+	return g.server.Runtime().SaveTransientState(ctx, ref, data, registrationAttemptStateTTL)
 }
 
 func registrationAttemptStateKey(phone *waappv1.PhoneTarget) string {

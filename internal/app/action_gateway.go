@@ -75,7 +75,7 @@ func (g *actionGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	case "registration/persist-login-state":
 		result, err = g.persistLoginState(r.Context(), payload)
 	case "registration/check-login-state":
-		result, err = g.checkLoginState(r.Context(), payload)
+		result, err = g.CheckLoginStateWithRunner(r.Context(), payload)
 	default:
 		writeActionJSON(w, http.StatusNotFound, map[string]string{"error": "unknown WA action"})
 		return
@@ -122,8 +122,8 @@ func (g *actionGateway) generateTransientFingerprint(ctx context.Context, payloa
 	if err != nil {
 		return nil, err
 	}
-	ref := g.server.ids.NewID("wafp_")
-	if err := g.server.runtime.SaveTransientState(ctx, ref, data, transientStateTTL); err != nil {
+	ref := g.server.IDs().NewID("wafp_")
+	if err := g.server.Runtime().SaveTransientState(ctx, ref, data, transientStateTTL); err != nil {
 		return nil, err
 	}
 	profile := engine.PhoneProfileToProto(phone, state.Profile)
@@ -177,7 +177,7 @@ func (g *actionGateway) commitFingerprint(ctx context.Context, payload map[strin
 	if err != nil {
 		return nil, err
 	}
-	_ = g.server.runtime.DeleteTransientState(ctx, ref)
+	_ = g.server.Runtime().DeleteTransientState(ctx, ref)
 	return commitFingerprintDTO{
 		Success:           true,
 		WAAccountID:       wamodel.WAAccountID(account),
@@ -197,7 +197,7 @@ func (g *actionGateway) requestSMSOTP(ctx context.Context, payload map[string]an
 		return nil, err
 	}
 	reqCtx := actionContext(payload)
-	resp, err := g.server.requestVerificationCode(ctx, &waappv1.RequestVerificationCodeRequest{
+	resp, err := g.server.RequestVerificationCodeWithRunner(ctx, &waappv1.RequestVerificationCodeRequest{
 		Context:           reqCtx,
 		WaAccountId:       shared.TextField(payload, "wa_account_id"),
 		ClientProfileId:   shared.TextField(payload, "client_profile_id"),
@@ -328,11 +328,11 @@ func (g *actionGateway) saveRegistrationOTPWait(ctx context.Context, wait regist
 	if err != nil {
 		return err
 	}
-	if err := g.server.runtime.SaveTransientState(ctx, registrationOTPWaitKey(wait.VerificationRequestID), data, ttl); err != nil {
+	if err := g.server.Runtime().SaveTransientState(ctx, registrationOTPWaitKey(wait.VerificationRequestID), data, ttl); err != nil {
 		return err
 	}
 	if wait.WAAccountID != "" {
-		if err := g.server.runtime.SaveTransientState(ctx, registrationOTPWaitAccountKey(wait.WAAccountID), data, ttl); err != nil {
+		if err := g.server.Runtime().SaveTransientState(ctx, registrationOTPWaitAccountKey(wait.WAAccountID), data, ttl); err != nil {
 			return err
 		}
 	}
@@ -353,7 +353,7 @@ func (g *actionGateway) loadRegistrationOTPWait(ctx context.Context, waAccountID
 	if key == "" {
 		return registrationOTPWait{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "wa_account_id or verification_request_id is required", false)
 	}
-	data, err := g.server.runtime.GetTransientState(ctx, key)
+	data, err := g.server.Runtime().GetTransientState(ctx, key)
 	if err != nil {
 		return registrationOTPWait{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_PROFILE_NOT_FOUND, "registration otp wait not found", false)
 	}
@@ -365,9 +365,9 @@ func (g *actionGateway) loadRegistrationOTPWait(ctx context.Context, waAccountID
 }
 
 func (g *actionGateway) deleteRegistrationOTPWait(ctx context.Context, wait registrationOTPWait) error {
-	_ = g.server.runtime.DeleteTransientState(ctx, registrationOTPWaitKey(wait.VerificationRequestID))
+	_ = g.server.Runtime().DeleteTransientState(ctx, registrationOTPWaitKey(wait.VerificationRequestID))
 	if wait.WAAccountID != "" {
-		_ = g.server.runtime.DeleteTransientState(ctx, registrationOTPWaitAccountKey(wait.WAAccountID))
+		_ = g.server.Runtime().DeleteTransientState(ctx, registrationOTPWaitAccountKey(wait.WAAccountID))
 	}
 	return nil
 }
@@ -413,7 +413,7 @@ func (g *actionGateway) submitOTP(ctx context.Context, payload map[string]any) (
 	if err != nil {
 		return nil, err
 	}
-	resp, err := g.server.submitVerificationCode(ctx, &waappv1.SubmitVerificationCodeRequest{
+	resp, err := g.server.SubmitVerificationCodeWithRunner(ctx, &waappv1.SubmitVerificationCodeRequest{
 		Context:               actionContext(payload),
 		VerificationRequestId: shared.TextField(payload, "verification_request_id"),
 		SubmittedCode:         &waappv1.SubmitVerificationCodeRequest_Code{Code: shared.TextField(payload, "code")},
@@ -542,7 +542,7 @@ func (g *actionGateway) cleanupFailedRegistration(ctx context.Context, payload m
 	if err != nil {
 		return nil, err
 	}
-	account, err := g.server.getWAAccount(ctx, normalizedAccountID)
+	account, err := g.server.GetWAAccountRecord(ctx, normalizedAccountID)
 	if wamodel.IsWAAccountNotFound(err) {
 		return map[string]any{"success": true, "deleted": false, "wa_account_id": normalizedAccountID, "reason": "already_deleted"}, nil
 	}
@@ -572,9 +572,9 @@ func (g *actionGateway) persistLoginState(ctx context.Context, payload map[strin
 	var loginState *waappv1.LoginState
 	var err error
 	if registrationID != "" {
-		loginState, err = g.server.store.GetLoginStateByRegistration(ctx, registrationID)
+		loginState, err = g.server.Store().GetLoginStateByRegistration(ctx, registrationID)
 	} else if clientProfileID := shared.TextField(payload, "client_profile_id"); clientProfileID != "" {
-		loginState, err = g.server.store.GetActiveLoginState(ctx, shared.TextField(registration, "wa_account_id"), clientProfileID)
+		loginState, err = g.server.Store().GetActiveLoginState(ctx, shared.TextField(registration, "wa_account_id"), clientProfileID)
 	} else {
 		err = shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "registration_id or client_profile_id is required", false)
 	}
@@ -604,7 +604,7 @@ type checkLoginStateResultDTO struct {
 	ErrorMessage *string        `json:"error_message,omitempty"`
 }
 
-func (g *actionGateway) checkLoginState(ctx context.Context, payload map[string]any) (any, error) {
+func (g *actionGateway) CheckLoginStateWithRunner(ctx context.Context, payload map[string]any) (any, error) {
 	runner, err := g.nativeEngineForPayload(payload)
 	if err != nil {
 		return nil, err
@@ -620,7 +620,7 @@ func (g *actionGateway) checkLoginState(ctx context.Context, payload map[string]
 	if timeout := numberField(payload, "remote_timeout_seconds"); timeout > 0 {
 		req.RemoteTimeout = durationpb.New(time.Duration(timeout) * time.Second)
 	}
-	resp, err := g.server.checkLoginState(ctx, req, runner)
+	resp, err := g.server.CheckLoginStateWithRunner(ctx, req, runner)
 	if err != nil {
 		return nil, err
 	}
@@ -641,18 +641,18 @@ func (g *actionGateway) checkLoginState(ctx context.Context, payload map[string]
 }
 
 func (g *actionGateway) commitNativeState(ctx context.Context, phone *waappv1.PhoneTarget, state engine.NativeState) (*waappv1.WAAccount, *waappv1.ClientProfile, *waappv1.ProtocolProfile, error) {
-	saver, ok := g.server.runner.(nativeStateSaver)
+	saver, ok := g.server.Runner().(nativeStateSaver)
 	if !ok {
 		return nil, nil, nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "native engine is required", false)
 	}
 	if phone.GetE164Number() == "" {
 		return nil, nil, nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "phone is required", false)
 	}
-	account, err := g.server.store.FindWAAccountByPhone(ctx, phone.GetE164Number())
+	account, err := g.server.Store().FindWAAccountByPhone(ctx, phone.GetE164Number())
 	if err != nil {
-		now := g.server.clock.Now()
-		account = wamodel.NewWAAccount(g.server.ids.NewID("waacc_"), "", phone, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_PENDING_REGISTRATION, &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)})
-		account, err = g.server.saveWAAccount(ctx, account)
+		now := g.server.Clock().Now()
+		account = wamodel.NewWAAccount(g.server.IDs().NewID("waacc_"), "", phone, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_PENDING_REGISTRATION, &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)})
+		account, err = g.server.SaveWAAccountRecord(ctx, account)
 		if err != nil {
 			return nil, nil, nil, err
 		}
@@ -661,9 +661,9 @@ func (g *actionGateway) commitNativeState(ctx context.Context, phone *waappv1.Ph
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	now := g.server.clock.Now()
-	profile := &waappv1.ClientProfile{ClientProfileId: g.server.ids.NewID("wacp_"), WaAccountId: wamodel.WAAccountID(account), ProtocolProfileId: protocol.GetProtocolProfileId(), Status: waappv1.ClientProfileStatus_CLIENT_PROFILE_STATUS_PREPARING, RegistrationKeyState: waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_PENDING, MessagingKeyState: waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_PENDING, Audit: &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)}}
-	if err := g.server.store.SaveClientProfile(ctx, profile); err != nil {
+	now := g.server.Clock().Now()
+	profile := &waappv1.ClientProfile{ClientProfileId: g.server.IDs().NewID("wacp_"), WaAccountId: wamodel.WAAccountID(account), ProtocolProfileId: protocol.GetProtocolProfileId(), Status: waappv1.ClientProfileStatus_CLIENT_PROFILE_STATUS_PREPARING, RegistrationKeyState: waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_PENDING, MessagingKeyState: waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_PENDING, Audit: &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)}}
+	if err := g.server.Store().SaveClientProfile(ctx, profile); err != nil {
 		return nil, nil, nil, err
 	}
 	state.CC = shared.FirstNonEmpty(state.CC, shared.PhoneCC(phone))
@@ -671,14 +671,14 @@ func (g *actionGateway) commitNativeState(ctx context.Context, phone *waappv1.Ph
 	if err := saver.SaveState(ctx, profile.GetClientProfileId(), state); err != nil {
 		profile.Status = waappv1.ClientProfileStatus_CLIENT_PROFILE_STATUS_REJECTED
 		profile.LastError = shared.ToProtoError(err)
-		_ = g.server.store.SaveClientProfile(ctx, profile)
+		_ = g.server.Store().SaveClientProfile(ctx, profile)
 		return nil, nil, nil, err
 	}
 	profile.Status = waappv1.ClientProfileStatus_CLIENT_PROFILE_STATUS_READY
 	profile.RegistrationKeyState = waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_READY
 	profile.MessagingKeyState = waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_READY
-	profile.Audit.UpdatedAt = timestamppb.New(g.server.clock.Now())
-	if err := g.server.store.SaveClientProfile(ctx, profile); err != nil {
+	profile.Audit.UpdatedAt = timestamppb.New(g.server.Clock().Now())
+	if err := g.server.Store().SaveClientProfile(ctx, profile); err != nil {
 		return nil, nil, nil, err
 	}
 	return account, profile, protocol, nil
@@ -690,17 +690,17 @@ type nativeStateSaver interface {
 
 func (g *actionGateway) ensureDefaultProtocolProfile(ctx context.Context) (*waappv1.ProtocolProfile, error) {
 	protocolID := "waproto_native"
-	if profile, err := g.server.store.GetProtocolProfile(ctx, protocolID); err == nil {
+	if profile, err := g.server.Store().GetProtocolProfile(ctx, protocolID); err == nil {
 		if engine.NativeAppVersion(profile.GetAppVersion()) != engine.DefaultWAAppVersion {
 			profile.AppVersion = engine.DefaultWAAppVersion
-			_ = g.server.store.SaveProtocolProfile(ctx, profile)
+			_ = g.server.Store().SaveProtocolProfile(ctx, profile)
 		}
 		return profile, nil
 	}
-	now := g.server.clock.Now()
+	now := g.server.Clock().Now()
 	artifactID := "waart_native"
 	artifact := &waappv1.AppArtifact{ArtifactId: artifactID, Label: "WA native app", VersionLabel: "native", ObservedAt: timestamppb.New(now)}
-	if err := g.server.store.SaveAppArtifact(ctx, artifact); err != nil {
+	if err := g.server.Store().SaveAppArtifact(ctx, artifact); err != nil {
 		return nil, err
 	}
 	profile := &waappv1.ProtocolProfile{
@@ -721,7 +721,7 @@ func (g *actionGateway) ensureDefaultProtocolProfile(ctx context.Context) (*waap
 		DiscoveredAt:      timestamppb.New(now),
 		Audit:             &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)},
 	}
-	if err := g.server.store.SaveProtocolProfile(ctx, profile); err != nil {
+	if err := g.server.Store().SaveProtocolProfile(ctx, profile); err != nil {
 		return nil, err
 	}
 	return profile, nil
@@ -826,7 +826,7 @@ func cleanupVerificationRequestID(payload map[string]any) string {
 }
 
 func (g *actionGateway) nativeEngine() (*engine.NativeEngine, error) {
-	engine, ok := g.server.runner.(*engine.NativeEngine)
+	engine, ok := g.server.Runner().(*engine.NativeEngine)
 	if !ok {
 		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "native engine is required", false)
 	}
@@ -834,7 +834,7 @@ func (g *actionGateway) nativeEngine() (*engine.NativeEngine, error) {
 }
 
 func (g *actionGateway) loadTransientState(ctx context.Context, ref string) (engine.NativeState, error) {
-	data, err := g.server.runtime.GetTransientState(ctx, ref)
+	data, err := g.server.Runtime().GetTransientState(ctx, ref)
 	if err != nil {
 		return engine.NativeState{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_PROFILE_NOT_FOUND, "transient fingerprint state not found", false)
 	}

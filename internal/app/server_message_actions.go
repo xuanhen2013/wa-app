@@ -29,7 +29,7 @@ func (s *messagingHandler) MarkAccountMessagesRead(ctx context.Context, req *waa
 	if err != nil {
 		return &waappv1.MarkAccountMessagesReadResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	if _, err := s.getWAAccount(ctx, accountID); err != nil {
+	if _, err := s.GetWAAccountRecord(ctx, accountID); err != nil {
 		return &waappv1.MarkAccountMessagesReadResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	records, err := s.loadMessageReadRecords(ctx, accountID, req.GetAccountMessageIds(), req.GetContactRef())
@@ -63,7 +63,7 @@ func (s *messagingHandler) DeleteAccountMessages(ctx context.Context, req *waapp
 	if err != nil {
 		return &waappv1.DeleteAccountMessagesResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	if _, err := s.getWAAccount(ctx, accountID); err != nil {
+	if _, err := s.GetWAAccountRecord(ctx, accountID); err != nil {
 		return &waappv1.DeleteAccountMessagesResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	mode := req.GetMode()

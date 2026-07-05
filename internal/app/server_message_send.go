@@ -25,7 +25,7 @@ func (s *messagingHandler) SendTextMessage(ctx context.Context, req *waappv1.Sen
 	if err != nil {
 		return &waappv1.SendTextMessageResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	if _, err := s.getWAAccount(ctx, accountID); err != nil {
+	if _, err := s.GetWAAccountRecord(ctx, accountID); err != nil {
 		return &waappv1.SendTextMessageResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	text := strings.TrimSpace(req.GetText().GetValue())

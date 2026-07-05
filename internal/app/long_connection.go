@@ -35,13 +35,13 @@ const (
 type LongConnectionHost interface {
 	OpenMessageSession(ctx context.Context, req *waappv1.OpenMessageSessionRequest) (*waappv1.OpenMessageSessionResponse, error)
 	CloseMessageSession(ctx context.Context, req *waappv1.CloseMessageSessionRequest) (*waappv1.CloseMessageSessionResponse, error)
-	checkLoginState(ctx context.Context, req *waappv1.CheckLoginStateRequest, runner wacore.ProtocolEngine) (*waappv1.CheckLoginStateResponse, error)
+	CheckLoginStateWithRunner(ctx context.Context, req *waappv1.CheckLoginStateRequest, runner wacore.ProtocolEngine) (*waappv1.CheckLoginStateResponse, error)
 	decryptMessage(ctx context.Context, req *waappv1.DecryptMessageRequest, runner wacore.ProtocolEngine, otpSource waappv1.WaOtpSource) (*waappv1.DecryptMessageResponse, error)
-	getWAAccount(ctx context.Context, accountID string) (*waappv1.WAAccount, error)
+	GetWAAccountRecord(ctx context.Context, accountID string) (*waappv1.WAAccount, error)
 	longConnectionRunner(ctx context.Context, loginState *waappv1.LoginState, session *waappv1.MessageSession) (wacore.ProtocolEngine, error)
 	markLoginTransferredOut(ctx context.Context, loginState *waappv1.LoginState, cause error)
 	receiveMessageBatch(ctx context.Context, req *waappv1.ReceiveMessageBatchRequest, runner wacore.ProtocolEngine) (*waappv1.ReceiveMessageBatchResponse, error)
-	saveWAAccount(ctx context.Context, account *waappv1.WAAccount) (*waappv1.WAAccount, error)
+	SaveWAAccountRecord(ctx context.Context, account *waappv1.WAAccount) (*waappv1.WAAccount, error)
 	Clock() shared.Clock
 	IDs() shared.IDGenerator
 	Store() store.Store
@@ -273,9 +273,9 @@ func (m *LongConnectionManager) reactivateFalselyRevoked(ctx context.Context, lo
 		log.Printf("WA long connection reactivate (replaced) persist failed: registered_identity=%s error=%v", loginState.GetRegisteredIdentityId(), shared.SanitizeLogError(err))
 		return
 	}
-	if account, err := m.host.getWAAccount(ctx, loginState.GetWaAccountId()); err == nil && account != nil &&
+	if account, err := m.host.GetWAAccountRecord(ctx, loginState.GetWaAccountId()); err == nil && account != nil &&
 		wamodel.WAAccountStatus(account) == waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_TRANSFERRED_OUT {
-		_, _ = m.host.saveWAAccount(ctx, withWAAccountStatus(account, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_ACTIVE, now))
+		_, _ = m.host.SaveWAAccountRecord(ctx, withWAAccountStatus(account, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_ACTIVE, now))
 	}
 	log.Printf("WA long connection reactivated falsely-revoked account (replaced): registered_identity=%s", loginState.GetRegisteredIdentityId())
 	m.Ensure(ctx, loginState)
@@ -375,7 +375,7 @@ func (m *LongConnectionManager) reconcileStoppedAccounts(ctx context.Context) {
 			Context:      &waappv1.RequestContext{RequestId: m.host.IDs().NewID("wa-reconcile_"), CorrelationId: loginState.GetLoginStateId()},
 			LoginStateId: loginState.GetLoginStateId(),
 		}
-		if _, err := m.host.checkLoginState(ctx, req, m.host.Runner()); err != nil {
+		if _, err := m.host.CheckLoginStateWithRunner(ctx, req, m.host.Runner()); err != nil {
 			log.Printf("WA long connection reconcile check failed: registered_identity=%s error=%v", loginState.GetRegisteredIdentityId(), shared.SanitizeLogError(err))
 		}
 	}

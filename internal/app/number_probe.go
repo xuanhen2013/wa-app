@@ -34,7 +34,7 @@ func (g *actionGateway) probeNumberSMS(ctx context.Context, payload map[string]a
 		logNumberProbeResult(ctxData, phone, wacore.WAProxyRoute{}, result)
 		return result, nil
 	}
-	engine, ok := g.server.runner.(*engine.NativeEngine)
+	engine, ok := g.server.Runner().(*engine.NativeEngine)
 	if !ok {
 		err := shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "native engine is required", false)
 		result := numberProbeError(payload, err)

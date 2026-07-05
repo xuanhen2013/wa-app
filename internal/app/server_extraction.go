@@ -90,7 +90,7 @@ func (s *extractionHandler) ListAccountOtpMessages(ctx context.Context, req *waa
 	if err != nil {
 		return &waappv1.ListAccountOtpMessagesResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	if _, err := s.getWAAccount(ctx, accountID); err != nil {
+	if _, err := s.GetWAAccountRecord(ctx, accountID); err != nil {
 		return &waappv1.ListAccountOtpMessagesResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	items, nextCursor, err := s.store.ListAccountOTPMessages(ctx, accountID, req.GetCursor(), int(req.GetLimit()), req.GetIncludeSensitiveValues())
