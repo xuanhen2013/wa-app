@@ -187,7 +187,7 @@ func (g *actionGateway) commitFingerprint(ctx context.Context, payload map[strin
 	}, nil
 }
 
-func (g *actionGateway) requestSMSOTP(ctx context.Context, payload map[string]any) (map[string]any, error) {
+func (g *actionGateway) requestSMSOTP(ctx context.Context, payload map[string]any) (any, error) {
 	method := registrationMethodFromPayload(payload)
 	if reason := directRegistrationMethodUnsupportedReason(method); reason != "" {
 		return registrationMethodUnsupportedMap(method, reason), nil
@@ -209,7 +209,7 @@ func (g *actionGateway) requestSMSOTP(ctx context.Context, payload map[string]an
 		return nil, err
 	}
 	if resp.GetError() != nil {
-		return map[string]any{"success": false, "error": protoMap(resp.GetError()), "error_message": resp.GetError().GetMessage()}, nil
+		return actionErrorFromProto(resp.GetError()), nil
 	}
 	record := resp.GetVerificationRequest()
 	success := record.GetStatus() == waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_SENT || record.GetStatus() == waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_WAITING
@@ -425,7 +425,7 @@ func (g *actionGateway) submitOTP(ctx context.Context, payload map[string]any) (
 	}, nil
 }
 
-func (g *actionGateway) refreshAccountTransferChallenge(ctx context.Context, payload map[string]any) (map[string]any, error) {
+func (g *actionGateway) refreshAccountTransferChallenge(ctx context.Context, payload map[string]any) (any, error) {
 	resp, err := g.server.RefreshAccountTransferChallenge(ctx, &waappv1.RefreshAccountTransferChallengeRequest{
 		Context:               actionContext(payload),
 		VerificationRequestId: shared.TextField(payload, "verification_request_id"),
@@ -434,7 +434,7 @@ func (g *actionGateway) refreshAccountTransferChallenge(ctx context.Context, pay
 		return nil, err
 	}
 	if resp.GetError() != nil {
-		return map[string]any{"success": false, "error": protoMap(resp.GetError()), "error_message": resp.GetError().GetMessage()}, nil
+		return actionErrorFromProto(resp.GetError()), nil
 	}
 	return map[string]any{
 		"success":                    true,
@@ -541,7 +541,7 @@ func (g *actionGateway) cleanupFailedRegistration(ctx context.Context, payload m
 	return map[string]any{"success": true, "deleted": resp.GetSuccess(), "wa_account_id": normalizedAccountID}, nil
 }
 
-func (g *actionGateway) persistLoginState(ctx context.Context, payload map[string]any) (map[string]any, error) {
+func (g *actionGateway) persistLoginState(ctx context.Context, payload map[string]any) (any, error) {
 	registration := shared.ObjectField(payload, "registration")
 	if nested := shared.ObjectField(registration, "registration"); len(nested) > 0 {
 		registration = nested
@@ -557,7 +557,7 @@ func (g *actionGateway) persistLoginState(ctx context.Context, payload map[strin
 		err = shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "registration_id or client_profile_id is required", false)
 	}
 	if err != nil {
-		return map[string]any{"success": false, "error": protoMap(shared.ToProtoError(err)), "error_message": shared.ToProtoError(err).GetMessage()}, nil
+		return actionError(err), nil
 	}
 	ok := loginState.GetStatus() == waappv1.LoginStateStatus_LOGIN_STATE_STATUS_ACTIVE
 	return map[string]any{"success": ok, "status": loginState.GetStatus().String(), "login_state": protoMap(loginState)}, nil
@@ -875,9 +875,20 @@ func protoMap(msg proto.Message) map[string]any {
 	return out
 }
 
-func actionError(err error) map[string]any {
-	protoErr := shared.ToProtoError(err)
-	return map[string]any{"success": false, "error": protoMap(protoErr), "error_message": protoErr.GetMessage()}
+// actionErrorDTO is the uniform dashboard error envelope. Both keys are always
+// present (no omitempty), matching the previous map[string]any error responses.
+type actionErrorDTO struct {
+	Success      bool           `json:"success"`
+	Error        map[string]any `json:"error"`
+	ErrorMessage string         `json:"error_message"`
+}
+
+func actionError(err error) actionErrorDTO {
+	return actionErrorFromProto(shared.ToProtoError(err))
+}
+
+func actionErrorFromProto(protoErr *waappv1.WaError) actionErrorDTO {
+	return actionErrorDTO{Success: false, Error: protoMap(protoErr), ErrorMessage: protoErr.GetMessage()}
 }
 
 func enumNames[T interface{ String() string }](values []T) []string {
