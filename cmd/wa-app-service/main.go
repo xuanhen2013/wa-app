@@ -10,9 +10,9 @@ import (
 	"syscall"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
-	"github.com/byte-v-forge/wa-app/internal/app"
 	"github.com/byte-v-forge/wa-app/internal/config"
 	"github.com/byte-v-forge/wa-app/internal/waapp/engine"
+	"github.com/byte-v-forge/wa-app/internal/waapp/rpc"
 	"github.com/byte-v-forge/wa-app/internal/waapp/runtime"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/store"
@@ -68,7 +68,7 @@ func main() {
 			log.Fatalf("initialize wa-app common proxy: %v", err)
 		}
 	}
-	service := app.NewServer(store, runtime, nativeEngine, clock, ids)
+	service := rpc.NewServer(store, runtime, nativeEngine, clock, ids)
 	service.SetCommonProxyURL(cfg.CommonProxy)
 	authConfig := newDashboardAuthConfig(cfg.DashboardAuthPass)
 	grpcListenAddr := configValue(cfg.GRPCListenAddr, defaultGRPCListenAddr)

@@ -8,8 +8,8 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
-	"github.com/byte-v-forge/wa-app/internal/app"
 	"github.com/byte-v-forge/wa-app/internal/waapp/engine"
+	"github.com/byte-v-forge/wa-app/internal/waapp/rpc"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
@@ -18,7 +18,7 @@ import (
 const numberProbeMaxAttempts = 3
 
 // ProbeNumberSMS is the dashboard number-probe entry point.
-func ProbeNumberSMS(server *app.Server, ctx context.Context, payload map[string]any) (map[string]any, error) {
+func ProbeNumberSMS(server *rpc.Server, ctx context.Context, payload map[string]any) (map[string]any, error) {
 	return (&actionGateway{server: server}).probeNumberSMS(ctx, payload)
 }
 

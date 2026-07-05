@@ -1,4 +1,4 @@
-package app
+package rpc
 
 import (
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"

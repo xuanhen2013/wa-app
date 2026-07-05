@@ -11,8 +11,8 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
-	"github.com/byte-v-forge/wa-app/internal/app"
 	"github.com/byte-v-forge/wa-app/internal/waapp/engine"
+	"github.com/byte-v-forge/wa-app/internal/waapp/rpc"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
@@ -26,9 +26,9 @@ const transientStateTTL = 30 * time.Minute
 const registrationAttemptStateTTL = 26 * time.Hour
 const registrationOTPWaitDefaultTTL = 20 * time.Minute
 
-type actionGateway struct{ server *app.Server }
+type actionGateway struct{ server *rpc.Server }
 
-func NewActionGateway(server *app.Server) http.Handler {
+func NewActionGateway(server *rpc.Server) http.Handler {
 	return &actionGateway{server: server}
 }
 

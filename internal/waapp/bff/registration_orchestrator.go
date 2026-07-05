@@ -7,8 +7,8 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
-	"github.com/byte-v-forge/wa-app/internal/app"
 	"github.com/byte-v-forge/wa-app/internal/waapp/engine"
+	"github.com/byte-v-forge/wa-app/internal/waapp/rpc"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
@@ -16,7 +16,7 @@ import (
 
 // StartRegistration is the dashboard registration entry point; it drives the
 // multi-step orchestration on a fresh action gateway bound to the given server.
-func StartRegistration(server *app.Server, ctx context.Context, payload map[string]any) (map[string]any, error) {
+func StartRegistration(server *rpc.Server, ctx context.Context, payload map[string]any) (map[string]any, error) {
 	return (&actionGateway{server: server}).startRegistration(ctx, payload)
 }
 

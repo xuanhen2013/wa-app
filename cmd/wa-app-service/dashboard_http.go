@@ -20,8 +20,8 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
-	"github.com/byte-v-forge/wa-app/internal/app"
 	"github.com/byte-v-forge/wa-app/internal/waapp/bff"
+	"github.com/byte-v-forge/wa-app/internal/waapp/rpc"
 	"github.com/nyaruka/phonenumbers"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -29,11 +29,11 @@ import (
 
 type dashboardHTTP struct {
 	staticDir     string
-	service       *app.Server
+	service       *rpc.Server
 	actionHandler http.Handler
 }
 
-func runDashboardHTTP(ctx context.Context, listenAddr, staticDir string, service *app.Server, actionHandler http.Handler, auth dashboardAuthConfig) error {
+func runDashboardHTTP(ctx context.Context, listenAddr, staticDir string, service *rpc.Server, actionHandler http.Handler, auth dashboardAuthConfig) error {
 	if strings.TrimSpace(listenAddr) == "" {
 		return nil
 	}
@@ -592,7 +592,7 @@ func (s *dashboardHTTP) handleResolveContacts(w http.ResponseWriter, r *http.Req
 	writeProtoJSON(w, http.StatusOK, resp)
 }
 
-func newWAActionHandler(service *app.Server) http.Handler {
+func newWAActionHandler(service *rpc.Server) http.Handler {
 	return bff.NewActionGateway(service)
 }
 
