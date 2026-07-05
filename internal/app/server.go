@@ -6,6 +6,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -15,7 +16,7 @@ import (
 type serverCore struct {
 	store   Store
 	runtime RuntimeState
-	runner  ProtocolEngine
+	runner  wacore.ProtocolEngine
 	clock   shared.Clock
 	ids     shared.IDGenerator
 
@@ -92,7 +93,7 @@ func newServerFacade(core *serverCore) *Server {
 	return server
 }
 
-func NewServer(store Store, runtime RuntimeState, runner ProtocolEngine, clock shared.Clock, ids shared.IDGenerator) *Server {
+func NewServer(store Store, runtime RuntimeState, runner wacore.ProtocolEngine, clock shared.Clock, ids shared.IDGenerator) *Server {
 	if clock == nil {
 		clock = shared.SystemClock{}
 	}
@@ -282,7 +283,7 @@ func (s *profileHandler) PrepareClientProfile(ctx context.Context, req *waappv1.
 	if err := s.store.SaveClientProfile(ctx, profile); err != nil {
 		return &waappv1.PrepareClientProfileResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	runErr := s.runner.PrepareClientProfile(ctx, EngineProfileInput{WAAccountID: waAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: req.GetProtocolProfileId(), AppVersion: protocolAppVersion(protocol), Phone: account.GetPhone()})
+	runErr := s.runner.PrepareClientProfile(ctx, wacore.EngineProfileInput{WAAccountID: waAccountID(account), ClientProfileID: profile.GetClientProfileId(), ProtocolProfileID: req.GetProtocolProfileId(), AppVersion: protocolAppVersion(protocol), Phone: account.GetPhone()})
 	profile.Audit.UpdatedAt = timestamppb.New(s.clock.Now())
 	if runErr != nil {
 		profile.Status = waappv1.ClientProfileStatus_CLIENT_PROFILE_STATUS_REJECTED

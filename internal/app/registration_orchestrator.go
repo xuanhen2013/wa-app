@@ -39,7 +39,7 @@ func (s *serverCore) StartRegistration(ctx context.Context, payload map[string]a
 		return nil, err
 	}
 	defer runner.CloseIdleConnections()
-	probeResult, state := runner.probeAccountWithState(ctx, EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone, DeliveryMethod: method, AuthCodeContext: authCodeContext, IntegrityMode: integrityMode}, state)
+	probeResult, state := runner.probeAccountWithState(ctx, wacore.EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone, DeliveryMethod: method, AuthCodeContext: authCodeContext, IntegrityMode: integrityMode}, state)
 	_ = gateway.saveRegistrationAttemptState(context.Background(), stateRef, state)
 	logRegistrationProbeResult(basePayload, phone, route, method, probeResult)
 	if !registrationProbeAllowsMethod(probeResult, method) {
@@ -152,7 +152,7 @@ func logRegistrationAttemptState(payload map[string]any, phone *waappv1.PhoneTar
 	)
 }
 
-func logRegistrationCodeResult(payload map[string]any, phone *waappv1.PhoneTarget, route WAProxyRoute, method waappv1.VerificationDeliveryMethod, result EngineCodeResult) {
+func logRegistrationCodeResult(payload map[string]any, phone *waappv1.PhoneTarget, route WAProxyRoute, method waappv1.VerificationDeliveryMethod, result wacore.EngineCodeResult) {
 	phoneHash := ""
 	if phone != nil && phone.GetE164Number() != "" {
 		phoneHash = shared.StableID(phone.GetE164Number())
@@ -175,7 +175,7 @@ func logRegistrationCodeResult(payload map[string]any, phone *waappv1.PhoneTarge
 	)
 }
 
-func logRegistrationProbeResult(payload map[string]any, phone *waappv1.PhoneTarget, route WAProxyRoute, method waappv1.VerificationDeliveryMethod, result EngineProbeResult) {
+func logRegistrationProbeResult(payload map[string]any, phone *waappv1.PhoneTarget, route WAProxyRoute, method waappv1.VerificationDeliveryMethod, result wacore.EngineProbeResult) {
 	phoneHash := ""
 	if phone != nil && phone.GetE164Number() != "" {
 		phoneHash = shared.StableID(phone.GetE164Number())
@@ -268,7 +268,7 @@ func registrationPhase(success bool, verificationRequestID string, retryAfter ti
 	return "OTP_WAITING"
 }
 
-func verificationCodeRequestAccepted(result EngineCodeResult) bool {
+func verificationCodeRequestAccepted(result wacore.EngineCodeResult) bool {
 	return result.Err == nil && (result.Status == waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_SENT || result.Status == waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_WAITING)
 }
 
@@ -285,13 +285,13 @@ var registrationFallbackMethods = map[waappv1.VerificationDeliveryMethod]bool{
 // server lists in fallback_methods when the current method fails non-terminally
 // (next_method, no_routes, provider timeout, cooldown). It stops on the first
 // accepted request, a terminal rejection, or once no offered method remains.
-func (g *actionGateway) requestVerificationCodeWithFallback(ctx context.Context, runner *NativeEngine, phone *waappv1.PhoneTarget, requested waappv1.VerificationDeliveryMethod, authCodeContext string, integrityMode wacore.IntegrityMode, state nativeState, stateRef string) (EngineCodeResult, waappv1.VerificationDeliveryMethod, nativeState) {
+func (g *actionGateway) requestVerificationCodeWithFallback(ctx context.Context, runner *NativeEngine, phone *waappv1.PhoneTarget, requested waappv1.VerificationDeliveryMethod, authCodeContext string, integrityMode wacore.IntegrityMode, state nativeState, stateRef string) (wacore.EngineCodeResult, waappv1.VerificationDeliveryMethod, nativeState) {
 	tried := map[waappv1.VerificationDeliveryMethod]bool{}
 	current := requested
 	currentState := state
-	var result EngineCodeResult
+	var result wacore.EngineCodeResult
 	for {
-		result, currentState = runner.requestVerificationCodeWithState(ctx, EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone, DeliveryMethod: current, AuthCodeContext: authCodeContext, IntegrityMode: integrityMode}, currentState)
+		result, currentState = runner.requestVerificationCodeWithState(ctx, wacore.EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone, DeliveryMethod: current, AuthCodeContext: authCodeContext, IntegrityMode: integrityMode}, currentState)
 		_ = g.saveRegistrationAttemptState(context.Background(), stateRef, currentState)
 		tried[current] = true
 		if verificationCodeRequestAccepted(result) || !codeFailureAllowsFallback(result) {
@@ -313,7 +313,7 @@ func (g *actionGateway) requestVerificationCodeWithFallback(ctx context.Context,
 
 // codeFailureAllowsFallback reports whether a failed /v2/code response is a
 // non-terminal failure for which the APK would try another delivery method.
-func codeFailureAllowsFallback(result EngineCodeResult) bool {
+func codeFailureAllowsFallback(result wacore.EngineCodeResult) bool {
 	switch strings.ToLower(strings.TrimSpace(result.RawReason)) {
 	case "blocked", "format_wrong", "length_short", "length_long",
 		"bad_param", "missing_param", "bad_token", "old_version", "invalid_skey",
@@ -327,7 +327,7 @@ func codeFailureAllowsFallback(result EngineCodeResult) bool {
 
 // nextFallbackMethod picks the next untried delivery method the server offers as
 // available (via fallback_methods) in the APK's default method order.
-func nextFallbackMethod(result EngineCodeResult, tried map[waappv1.VerificationDeliveryMethod]bool) (waappv1.VerificationDeliveryMethod, bool) {
+func nextFallbackMethod(result wacore.EngineCodeResult, tried map[waappv1.VerificationDeliveryMethod]bool) (waappv1.VerificationDeliveryMethod, bool) {
 	for _, code := range apkDefaultRegistrationMethodOrder {
 		method := verificationMethodFromName(code)
 		if method == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_UNSPECIFIED || tried[method] || !registrationFallbackMethods[method] {
@@ -340,7 +340,7 @@ func nextFallbackMethod(result EngineCodeResult, tried map[waappv1.VerificationD
 	return waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_UNSPECIFIED, false
 }
 
-func fallbackMethodAvailable(statuses []VerificationMethodStatus, method waappv1.VerificationDeliveryMethod) bool {
+func fallbackMethodAvailable(statuses []wacore.VerificationMethodStatus, method waappv1.VerificationDeliveryMethod) bool {
 	for _, status := range statuses {
 		if status.Method == method {
 			return status.Available
@@ -349,7 +349,7 @@ func fallbackMethodAvailable(statuses []VerificationMethodStatus, method waappv1
 	return false
 }
 
-func registrationProbeAllowsMethod(result EngineProbeResult, method waappv1.VerificationDeliveryMethod) bool {
+func registrationProbeAllowsMethod(result wacore.EngineProbeResult, method waappv1.VerificationDeliveryMethod) bool {
 	if result.Err != nil || result.Blocked ||
 		result.AccountFlow == accountProbeFlowInvalidNumber ||
 		result.AccountFlow == accountProbeFlowConsentRequired ||
@@ -367,7 +367,7 @@ func registrationProbeAllowsMethod(result EngineProbeResult, method waappv1.Veri
 	return registrationProbeMethodAvailable(result, method)
 }
 
-func registrationProbeMethodAvailable(result EngineProbeResult, method waappv1.VerificationDeliveryMethod) bool {
+func registrationProbeMethodAvailable(result wacore.EngineProbeResult, method waappv1.VerificationDeliveryMethod) bool {
 	for _, status := range result.MethodStatuses {
 		if status.Method == method {
 			return status.Available
@@ -376,7 +376,7 @@ func registrationProbeMethodAvailable(result EngineProbeResult, method waappv1.V
 	return result.Status == waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REACHABLE && method == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS && result.CanSendSMS
 }
 
-func registrationRequestFailureMap(result EngineCodeResult, method waappv1.VerificationDeliveryMethod, route WAProxyRoute, managedRoute bool) map[string]any {
+func registrationRequestFailureMap(result wacore.EngineCodeResult, method waappv1.VerificationDeliveryMethod, route WAProxyRoute, managedRoute bool) map[string]any {
 	err := result.Err
 	if err == nil {
 		err = registrationCodeRequestError(result)
@@ -414,7 +414,7 @@ func registrationRequestFailureMap(result EngineCodeResult, method waappv1.Verif
 	return response
 }
 
-func registrationCodeRequestError(result EngineCodeResult) error {
+func registrationCodeRequestError(result wacore.EngineCodeResult) error {
 	switch {
 	case result.RetryAfter > 0 || existRateLimitedReason(result.RawReason):
 		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_RATE_LIMITED, "verification request is cooling down", true)
@@ -431,7 +431,7 @@ func registrationCodeRequestError(result EngineCodeResult) error {
 	}
 }
 
-func registrationCodeRequestFlow(result EngineCodeResult, protoErr *waappv1.WaError) string {
+func registrationCodeRequestFlow(result wacore.EngineCodeResult, protoErr *waappv1.WaError) string {
 	raw := strings.ToLower(strings.TrimSpace(result.RawReason + " " + result.RawStatus + " " + protoErr.GetMessage()))
 	switch {
 	case existInvalidNumberReason(raw) || strings.Contains(raw, "format_wrong") || strings.Contains(raw, "length_short") || strings.Contains(raw, "length_long"):
@@ -445,7 +445,7 @@ func registrationCodeRequestFlow(result EngineCodeResult, protoErr *waappv1.WaEr
 	}
 }
 
-func registrationProbeFailureMap(result EngineProbeResult, route WAProxyRoute, managedRoute bool) map[string]any {
+func registrationProbeFailureMap(result wacore.EngineProbeResult, route WAProxyRoute, managedRoute bool) map[string]any {
 	err := result.Err
 	if err == nil {
 		err = registrationProbeError(result)
@@ -479,7 +479,7 @@ func registrationProbeFailureMap(result EngineProbeResult, route WAProxyRoute, m
 	return response
 }
 
-func registrationProbeError(result EngineProbeResult) error {
+func registrationProbeError(result wacore.EngineProbeResult) error {
 	switch {
 	case result.SMSWaitSeconds > 0 || result.AccountFlow == accountProbeFlowRateLimited:
 		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_RATE_LIMITED, "verification request is cooling down", true)
@@ -496,7 +496,7 @@ func registrationProbeError(result EngineProbeResult) error {
 	}
 }
 
-func registrationProbeSMSStatus(result EngineProbeResult) string {
+func registrationProbeSMSStatus(result wacore.EngineProbeResult) string {
 	if result.CanSendSMS {
 		return "AVAILABLE"
 	}
@@ -506,7 +506,7 @@ func registrationProbeSMSStatus(result EngineProbeResult) string {
 	return "UNAVAILABLE"
 }
 
-func registrationCodeResultPhoneStatus(result EngineCodeResult, method waappv1.VerificationDeliveryMethod, failed bool) map[string]any {
+func registrationCodeResultPhoneStatus(result wacore.EngineCodeResult, method waappv1.VerificationDeliveryMethod, failed bool) map[string]any {
 	smsStatus, smsAvailable, smsWaitSeconds := registrationCodeSMSStatus(result.MethodStatuses)
 	if method == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS && smsStatus == "UNKNOWN" && result.RetryAfter > 0 {
 		smsStatus = "COOLDOWN"
@@ -544,7 +544,7 @@ func registrationCodeResultPhoneStatus(result EngineCodeResult, method waappv1.V
 	}
 }
 
-func registrationCodeSMSStatus(statuses []VerificationMethodStatus) (string, bool, int64) {
+func registrationCodeSMSStatus(statuses []wacore.VerificationMethodStatus) (string, bool, int64) {
 	for _, status := range statuses {
 		if status.Code == "sms" || status.Method == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS {
 			if status.CooldownSeconds > 0 {

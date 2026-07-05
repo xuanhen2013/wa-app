@@ -5,25 +5,27 @@ import (
 	"fmt"
 	"strings"
 	"time"
+
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 )
 
 const defaultMessageReadReceiptTimeout = 15 * time.Second
 
-func (e *messagingService) SendReadReceipts(ctx context.Context, input EngineMessageReadReceiptInput) EngineMessageReadReceiptResult {
+func (e *messagingService) SendReadReceipts(ctx context.Context, input wacore.EngineMessageReadReceiptInput) wacore.EngineMessageReadReceiptResult {
 	if e == nil {
-		return EngineMessageReadReceiptResult{Err: fmt.Errorf("native engine is required")}
+		return wacore.EngineMessageReadReceiptResult{Err: fmt.Errorf("native engine is required")}
 	}
 	messages := normalizeReadReceiptMessages(input.Messages)
 	if len(messages) == 0 {
-		return EngineMessageReadReceiptResult{}
+		return wacore.EngineMessageReadReceiptResult{}
 	}
 	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
-		return EngineMessageReadReceiptResult{Err: err}
+		return wacore.EngineMessageReadReceiptResult{Err: err}
 	}
 	proxyURL, err := e.proxyURL()
 	if err != nil {
-		return EngineMessageReadReceiptResult{Err: err}
+		return wacore.EngineMessageReadReceiptResult{Err: err}
 	}
 	timeout := input.RemoteTimeout
 	if timeout <= 0 {
@@ -32,7 +34,7 @@ func (e *messagingService) SendReadReceipts(ctx context.Context, input EngineMes
 	client := newChatdClient(chatdConfigForState(proxyURL, state, timeout))
 	session, err := client.openSession(ctx, state, input.RegisteredIdentityID, defaultLoginPayload, input.AppVersion)
 	if err != nil {
-		return EngineMessageReadReceiptResult{Err: chatdReceiveError(err)}
+		return wacore.EngineMessageReadReceiptResult{Err: chatdReceiveError(err)}
 	}
 	defer session.Close()
 	if applyChatdSessionUpdateState(&state, session.update()) {
@@ -41,15 +43,15 @@ func (e *messagingService) SendReadReceipts(ctx context.Context, input EngineMes
 	sent := 0
 	for _, node := range buildReadReceiptNodes(messages) {
 		if err := session.transport.sendNode(node); err != nil {
-			return EngineMessageReadReceiptResult{Sent: sent, Err: chatdReceiveError(err)}
+			return wacore.EngineMessageReadReceiptResult{Sent: sent, Err: chatdReceiveError(err)}
 		}
 		sent += readReceiptNodeMessageCount(node)
 	}
-	return EngineMessageReadReceiptResult{Sent: sent}
+	return wacore.EngineMessageReadReceiptResult{Sent: sent}
 }
 
-func normalizeReadReceiptMessages(messages []EngineMessageReadReceipt) []EngineMessageReadReceipt {
-	out := make([]EngineMessageReadReceipt, 0, len(messages))
+func normalizeReadReceiptMessages(messages []wacore.EngineMessageReadReceipt) []wacore.EngineMessageReadReceipt {
+	out := make([]wacore.EngineMessageReadReceipt, 0, len(messages))
 	seen := map[string]struct{}{}
 	for _, message := range messages {
 		message.ChatJID = strings.TrimSpace(message.ChatJID)
@@ -68,8 +70,8 @@ func normalizeReadReceiptMessages(messages []EngineMessageReadReceipt) []EngineM
 	return out
 }
 
-func buildReadReceiptNodes(messages []EngineMessageReadReceipt) []chatdNode {
-	groups := map[string][]EngineMessageReadReceipt{}
+func buildReadReceiptNodes(messages []wacore.EngineMessageReadReceipt) []chatdNode {
+	groups := map[string][]wacore.EngineMessageReadReceipt{}
 	order := []string{}
 	for _, message := range messages {
 		key := strings.Join([]string{message.ChatJID, message.ParticipantJID}, "\x00")

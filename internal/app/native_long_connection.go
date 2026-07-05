@@ -9,6 +9,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 )
 
 const (
@@ -22,7 +23,7 @@ type longConnectionNativeEngine struct {
 	mu          sync.Mutex
 	cond        *sync.Cond
 	session     *chatdSession
-	input       EngineMessageInput
+	input       wacore.EngineMessageInput
 	pending     []chatdReceivedItem
 	pendingUp   chatdSessionUpdate
 	activeRead  *longConnectionActiveRead
@@ -44,7 +45,7 @@ type longConnectionActiveRead struct {
 type longConnectionNativeEngineOptions struct {
 	Release  func()
 	Fallback *NativeEngine
-	Input    EngineMessageInput
+	Input    wacore.EngineMessageInput
 }
 
 var longConnectionProxySessionFallbackLogs = proxyLogLimiter{last: map[string]time.Time{}}
@@ -70,14 +71,14 @@ func (e *longConnectionNativeEngine) Close() error {
 	return err
 }
 
-func (e *longConnectionNativeEngine) ReceiveMessageBatch(ctx context.Context, input EngineMessageInput) EngineMessageBatchResult {
+func (e *longConnectionNativeEngine) ReceiveMessageBatch(ctx context.Context, input wacore.EngineMessageInput) wacore.EngineMessageBatchResult {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if err := e.waitForInteractiveIQLocked(ctx); err != nil {
-		return EngineMessageBatchResult{Err: err}
+		return wacore.EngineMessageBatchResult{Err: err}
 	}
 	if e.closed {
-		return EngineMessageBatchResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, "WA long connection runner is closed", true)}
+		return wacore.EngineMessageBatchResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, "WA long connection runner is closed", true)}
 	}
 	if input.MessageSessionID != "" {
 		e.input = input
@@ -86,7 +87,7 @@ func (e *longConnectionNativeEngine) ReceiveMessageBatch(ctx context.Context, in
 	session, err := e.ensureSessionWithTimeoutLocked(ctx, input)
 	if err != nil {
 		e.closeLocked()
-		return EngineMessageBatchResult{Err: chatdReceiveError(err)}
+		return wacore.EngineMessageBatchResult{Err: chatdReceiveError(err)}
 	}
 	now := e.clock.Now()
 	messages, payloads, otps, update, drained := e.drainPendingLocked(input)
@@ -95,21 +96,21 @@ func (e *longConnectionNativeEngine) ReceiveMessageBatch(ctx context.Context, in
 		messages, payloads, otps, update, err, preempted = e.receiveBatchWithActiveReadLocked(ctx, session, input, now)
 		if err != nil {
 			if preempted {
-				return EngineMessageBatchResult{}
+				return wacore.EngineMessageBatchResult{}
 			}
 			e.closeLocked()
 			session, retryErr := e.ensureSessionWithTimeoutLocked(ctx, input)
 			if retryErr != nil {
-				return EngineMessageBatchResult{Err: chatdReceiveError(retryErr)}
+				return wacore.EngineMessageBatchResult{Err: chatdReceiveError(retryErr)}
 			}
 			now = e.clock.Now()
 			messages, payloads, otps, update, err, preempted = e.receiveBatchWithActiveReadLocked(ctx, session, input, now)
 			if err != nil {
 				if preempted {
-					return EngineMessageBatchResult{}
+					return wacore.EngineMessageBatchResult{}
 				}
 				e.closeLocked()
-				return EngineMessageBatchResult{Err: chatdReceiveError(err)}
+				return wacore.EngineMessageBatchResult{Err: chatdReceiveError(err)}
 			}
 		}
 	}
@@ -117,32 +118,32 @@ func (e *longConnectionNativeEngine) ReceiveMessageBatch(ctx context.Context, in
 		state, err := e.loadState(ctx, input.ClientProfileID)
 		if err != nil {
 			e.closeLocked()
-			return EngineMessageBatchResult{Err: err}
+			return wacore.EngineMessageBatchResult{Err: err}
 		}
 		if applyChatdReceiveState(&state, input, payloads, update) {
 			if err := e.saveState(ctx, input.ClientProfileID, state); err != nil {
 				e.closeLocked()
-				return EngineMessageBatchResult{Err: err}
+				return wacore.EngineMessageBatchResult{Err: err}
 			}
 		}
 	}
-	return EngineMessageBatchResult{Messages: messages, Contacts: contactsFromContactHints(input.WAAccountID, nil, update.ContactHints, now), OTPMessages: otps, AccountLogout: accountLogoutFromUpdate(update.AccountLogout)}
+	return wacore.EngineMessageBatchResult{Messages: messages, Contacts: contactsFromContactHints(input.WAAccountID, nil, update.ContactHints, now), OTPMessages: otps, AccountLogout: accountLogoutFromUpdate(update.AccountLogout)}
 }
 
-func (e *longConnectionNativeEngine) ResolveContactProfilePicture(ctx context.Context, input EngineContactProfilePictureInput) EngineContactProfilePictureResult {
+func (e *longConnectionNativeEngine) ResolveContactProfilePicture(ctx context.Context, input wacore.EngineContactProfilePictureInput) wacore.EngineContactProfilePictureResult {
 	if e == nil || e.NativeEngine == nil {
-		return EngineContactProfilePictureResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native engine is required", false)}
+		return wacore.EngineContactProfilePictureResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native engine is required", false)}
 	}
 	return e.NativeEngine.resolveContactProfilePictureWithSender(ctx, input, e)
 }
 
-func (e *longConnectionNativeEngine) ApplyAccountSettings(ctx context.Context, input EngineAccountSettingsInput) EngineAccountSettingsResult {
+func (e *longConnectionNativeEngine) ApplyAccountSettings(ctx context.Context, input wacore.EngineAccountSettingsInput) wacore.EngineAccountSettingsResult {
 	if e == nil || e.NativeEngine == nil {
-		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native engine is required", false)}
+		return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native engine is required", false)}
 	}
 	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
-		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: err}
+		return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: err}
 	}
 	if state.ChatStatic.Private == "" || state.ChatStatic.Public == "" {
 		state.ChatStatic = ensureChatStatic(state.ChatStatic)
@@ -153,9 +154,9 @@ func (e *longConnectionNativeEngine) ApplyAccountSettings(ctx context.Context, i
 
 // ResolveContacts 让联系人 usync 复用这条共享长连接(单 chatd),而不是另开并发 ACTIVE 连接,
 // 从而不再自我触发服务端 <conflict type="replaced">。
-func (e *longConnectionNativeEngine) ResolveContacts(ctx context.Context, input EngineContactResolveInput) EngineContactResolveResult {
+func (e *longConnectionNativeEngine) ResolveContacts(ctx context.Context, input wacore.EngineContactResolveInput) wacore.EngineContactResolveResult {
 	if e == nil || e.NativeEngine == nil {
-		return EngineContactResolveResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native engine is required", false)}
+		return wacore.EngineContactResolveResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native engine is required", false)}
 	}
 	return e.NativeEngine.resolveContactsWithSender(ctx, input, e)
 }
@@ -186,7 +187,7 @@ func (e *longConnectionNativeEngine) sendIQ(ctx context.Context, state nativeSta
 	return response, update, nil
 }
 
-func (e *longConnectionNativeEngine) ensureSessionForIQLocked(ctx context.Context, input EngineMessageInput, state nativeState) (*chatdSession, error) {
+func (e *longConnectionNativeEngine) ensureSessionForIQLocked(ctx context.Context, input wacore.EngineMessageInput, state nativeState) (*chatdSession, error) {
 	if e.session != nil {
 		return e.session, nil
 	}
@@ -215,7 +216,7 @@ func (e *longConnectionNativeEngine) ensureSessionForIQLocked(ctx context.Contex
 	return nil, err
 }
 
-func (e *longConnectionNativeEngine) drainPendingLocked(input EngineMessageInput) ([]*waappv1.InboundMessage, []chatdEncPayload, []*waappv1.OtpMessage, chatdSessionUpdate, bool) {
+func (e *longConnectionNativeEngine) drainPendingLocked(input wacore.EngineMessageInput) ([]*waappv1.InboundMessage, []chatdEncPayload, []*waappv1.OtpMessage, chatdSessionUpdate, bool) {
 	if len(e.pending) == 0 && !hasChatdSessionUpdate(e.pendingUp) {
 		return nil, nil, nil, chatdSessionUpdate{}, false
 	}
@@ -243,7 +244,7 @@ func (e *longConnectionNativeEngine) bufferPendingLocked(items []chatdReceivedIt
 	e.pendingUp = mergeChatdSessionUpdate(e.pendingUp, update)
 }
 
-func (e *longConnectionNativeEngine) receiveBatchWithActiveReadLocked(ctx context.Context, session *chatdSession, input EngineMessageInput, now time.Time) ([]*waappv1.InboundMessage, []chatdEncPayload, []*waappv1.OtpMessage, chatdSessionUpdate, error, bool) {
+func (e *longConnectionNativeEngine) receiveBatchWithActiveReadLocked(ctx context.Context, session *chatdSession, input wacore.EngineMessageInput, now time.Time) ([]*waappv1.InboundMessage, []chatdEncPayload, []*waappv1.OtpMessage, chatdSessionUpdate, error, bool) {
 	read, readCtx := e.startActiveReadLocked(ctx, session)
 	e.mu.Unlock()
 	messages, payloads, otps, update, err := receiveChatdBatchWithContext(readCtx, session, input, now)
@@ -396,7 +397,7 @@ func contextBoundTimeout(ctx context.Context, fallback time.Duration) time.Durat
 	return fallback
 }
 
-func (e *longConnectionNativeEngine) ensureSessionWithTimeoutLocked(ctx context.Context, input EngineMessageInput) (*chatdSession, error) {
+func (e *longConnectionNativeEngine) ensureSessionWithTimeoutLocked(ctx context.Context, input wacore.EngineMessageInput) (*chatdSession, error) {
 	if e.session != nil {
 		return e.session, nil
 	}
@@ -405,7 +406,7 @@ func (e *longConnectionNativeEngine) ensureSessionWithTimeoutLocked(ctx context.
 	return e.ensureSessionLocked(openCtx, input)
 }
 
-func (e *longConnectionNativeEngine) ensureSessionLocked(ctx context.Context, input EngineMessageInput) (*chatdSession, error) {
+func (e *longConnectionNativeEngine) ensureSessionLocked(ctx context.Context, input wacore.EngineMessageInput) (*chatdSession, error) {
 	if e.session != nil {
 		return e.session, nil
 	}
@@ -438,7 +439,7 @@ func (e *longConnectionNativeEngine) ensureSessionLocked(ctx context.Context, in
 	return nil, err
 }
 
-func (e *longConnectionNativeEngine) openSessionWithEngine(ctx context.Context, engine *NativeEngine, input EngineMessageInput, state nativeState) (*chatdSession, error) {
+func (e *longConnectionNativeEngine) openSessionWithEngine(ctx context.Context, engine *NativeEngine, input wacore.EngineMessageInput, state nativeState) (*chatdSession, error) {
 	if engine == nil {
 		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native engine is required", false)
 	}
@@ -526,13 +527,13 @@ func (e *longConnectionNativeEngine) closeLocked() error {
 	return err
 }
 
-func receiveChatdBatchWithContext(ctx context.Context, session *chatdSession, input EngineMessageInput, now time.Time) ([]*waappv1.InboundMessage, []chatdEncPayload, []*waappv1.OtpMessage, chatdSessionUpdate, error) {
+func receiveChatdBatchWithContext(ctx context.Context, session *chatdSession, input wacore.EngineMessageInput, now time.Time) ([]*waappv1.InboundMessage, []chatdEncPayload, []*waappv1.OtpMessage, chatdSessionUpdate, error) {
 	stopContextClose := closeChatdSessionOnContext(ctx, session)
 	defer stopContextClose()
 	return session.receiveBatch(input, now)
 }
 
-func sendChatdIQWithContext(ctx context.Context, session *chatdSession, input EngineMessageInput, request chatdNode, timeout time.Duration, timeoutMessage string) (chatdNode, []chatdReceivedItem, chatdSessionUpdate, error) {
+func sendChatdIQWithContext(ctx context.Context, session *chatdSession, input wacore.EngineMessageInput, request chatdNode, timeout time.Duration, timeoutMessage string) (chatdNode, []chatdReceivedItem, chatdSessionUpdate, error) {
 	stopContextClose := closeChatdSessionOnContext(ctx, session)
 	defer stopContextClose()
 	return session.sendIQ(ctx, input, request, timeout, timeoutMessage)
@@ -558,5 +559,5 @@ func closeChatdSessionOnContext(ctx context.Context, session *chatdSession) func
 	return func() { close(done) }
 }
 
-var _ ProtocolEngine = (*longConnectionNativeEngine)(nil)
+var _ wacore.ProtocolEngine = (*longConnectionNativeEngine)(nil)
 var _ interface{ Close() error } = (*longConnectionNativeEngine)(nil)

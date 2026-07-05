@@ -20,24 +20,24 @@ const defaultTextMessageSendTimeout = 20 * time.Second
 const textMessageAckTimeoutMessage = "WA text message send acknowledgement timed out"
 
 type chatdTextMessageSendResult struct {
-	EngineTextMessageResult
+	wacore.EngineTextMessageResult
 	Items  []chatdReceivedItem
 	Update chatdSessionUpdate
 }
 
-func (e *messagingService) SendTextMessage(ctx context.Context, input EngineTextMessageInput) EngineTextMessageResult {
+func (e *messagingService) SendTextMessage(ctx context.Context, input wacore.EngineTextMessageInput) wacore.EngineTextMessageResult {
 	if e == nil {
-		return EngineTextMessageResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native engine is required", false)}
+		return wacore.EngineTextMessageResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native engine is required", false)}
 	}
 	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
-		return EngineTextMessageResult{Err: err}
+		return wacore.EngineTextMessageResult{Err: err}
 	}
 	state.ensureMaps()
 	state.ChatStatic = ensureChatStatic(state.ChatStatic)
 	proxyURL, err := e.proxyURL()
 	if err != nil {
-		return EngineTextMessageResult{Err: err}
+		return wacore.EngineTextMessageResult{Err: err}
 	}
 	timeout := textMessageSendTimeout(input.RemoteTimeout)
 	operationCtx, cancel := context.WithTimeout(ctx, timeout)
@@ -45,10 +45,10 @@ func (e *messagingService) SendTextMessage(ctx context.Context, input EngineText
 	client := newChatdClient(chatdConfigForState(proxyURL, state, timeout))
 	session, err := client.openSession(operationCtx, state, input.RegisteredIdentityID, defaultLoginPayload, input.AppVersion)
 	if err != nil {
-		return EngineTextMessageResult{Err: chatdReceiveError(err)}
+		return wacore.EngineTextMessageResult{Err: chatdReceiveError(err)}
 	}
 	defer session.Close()
-	receiveInput := EngineMessageInput{WAAccountID: input.WAAccountID, ClientProfileID: input.ClientProfileID, RegisteredIdentityID: input.RegisteredIdentityID, AppVersion: input.AppVersion}
+	receiveInput := wacore.EngineMessageInput{WAAccountID: input.WAAccountID, ClientProfileID: input.ClientProfileID, RegisteredIdentityID: input.RegisteredIdentityID, AppVersion: input.AppVersion}
 	result := e.sendTextMessageOnSession(operationCtx, session, &state, input, receiveInput, timeout)
 	if err := e.applyTextMessageSendUpdate(operationCtx, input.ClientProfileID, &state, receiveInput, result.Items, result.Update); err != nil && result.Err == nil {
 		result.Err = err
@@ -56,15 +56,15 @@ func (e *messagingService) SendTextMessage(ctx context.Context, input EngineText
 	return result.EngineTextMessageResult
 }
 
-func (e *longConnectionNativeEngine) SendTextMessage(ctx context.Context, input EngineTextMessageInput) EngineTextMessageResult {
+func (e *longConnectionNativeEngine) SendTextMessage(ctx context.Context, input wacore.EngineTextMessageInput) wacore.EngineTextMessageResult {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.closed {
-		return EngineTextMessageResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, "WA long connection runner is closed", true)}
+		return wacore.EngineTextMessageResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, "WA long connection runner is closed", true)}
 	}
 	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
-		return EngineTextMessageResult{Err: err}
+		return wacore.EngineTextMessageResult{Err: err}
 	}
 	state.ensureMaps()
 	state.ChatStatic = ensureChatStatic(state.ChatStatic)
@@ -72,7 +72,7 @@ func (e *longConnectionNativeEngine) SendTextMessage(ctx context.Context, input 
 	session, err := e.ensureSessionForIQLocked(ctx, messageInput, state)
 	if err != nil {
 		e.closeLocked()
-		return EngineTextMessageResult{Err: chatdReceiveError(err)}
+		return wacore.EngineTextMessageResult{Err: chatdReceiveError(err)}
 	}
 	timeout := contextBoundTimeout(ctx, textMessageSendTimeout(input.RemoteTimeout))
 	result := e.NativeEngine.sendTextMessageOnSession(ctx, session, &state, input, messageInput, timeout)
@@ -86,10 +86,10 @@ func (e *longConnectionNativeEngine) SendTextMessage(ctx context.Context, input 
 	return result.EngineTextMessageResult
 }
 
-func (e *messagingService) sendTextMessageOnSession(ctx context.Context, session *chatdSession, state *nativeState, input EngineTextMessageInput, receiveInput EngineMessageInput, timeout time.Duration) chatdTextMessageSendResult {
+func (e *messagingService) sendTextMessageOnSession(ctx context.Context, session *chatdSession, state *nativeState, input wacore.EngineTextMessageInput, receiveInput wacore.EngineMessageInput, timeout time.Duration) chatdTextMessageSendResult {
 	providerID := newTextProviderMessageID(input.ClientMessageID)
 	sentAt := e.clock.Now()
-	result := chatdTextMessageSendResult{EngineTextMessageResult: EngineTextMessageResult{ProviderMessageID: providerID, SentAt: sentAt}}
+	result := chatdTextMessageSendResult{EngineTextMessageResult: wacore.EngineTextMessageResult{ProviderMessageID: providerID, SentAt: sentAt}}
 	node, err := buildNativeTextMessageNode(state, input, providerID)
 	if err != nil {
 		result.Err = err
@@ -111,7 +111,7 @@ func (e *messagingService) sendTextMessageOnSession(ctx context.Context, session
 	return result
 }
 
-func (e *messagingService) applyTextMessageSendUpdate(ctx context.Context, clientProfileID string, state *nativeState, input EngineMessageInput, items []chatdReceivedItem, update chatdSessionUpdate) error {
+func (e *messagingService) applyTextMessageSendUpdate(ctx context.Context, clientProfileID string, state *nativeState, input wacore.EngineMessageInput, items []chatdReceivedItem, update chatdSessionUpdate) error {
 	if state == nil {
 		return nil
 	}
@@ -122,7 +122,7 @@ func (e *messagingService) applyTextMessageSendUpdate(ctx context.Context, clien
 	return e.saveState(ctx, clientProfileID, *state)
 }
 
-func (e *longConnectionNativeEngine) textMessageReceiveInput(input EngineTextMessageInput) EngineMessageInput {
+func (e *longConnectionNativeEngine) textMessageReceiveInput(input wacore.EngineTextMessageInput) wacore.EngineMessageInput {
 	messageInput := e.input
 	messageInput.WAAccountID = shared.FirstNonEmpty(messageInput.WAAccountID, input.WAAccountID)
 	messageInput.ClientProfileID = shared.FirstNonEmpty(messageInput.ClientProfileID, input.ClientProfileID)
@@ -131,7 +131,7 @@ func (e *longConnectionNativeEngine) textMessageReceiveInput(input EngineTextMes
 	return messageInput
 }
 
-func buildNativeTextMessageNode(state *nativeState, input EngineTextMessageInput, providerID string) (chatdNode, error) {
+func buildNativeTextMessageNode(state *nativeState, input wacore.EngineTextMessageInput, providerID string) (chatdNode, error) {
 	contactJID := wacore.NormalizeWAJID(input.ContactJID)
 	text := strings.TrimSpace(input.Text)
 	if contactJID == "" {
@@ -304,7 +304,7 @@ func signalMessageVersion(version int) int {
 	return 3
 }
 
-func (s *chatdSession) sendMessageWithAck(ctx context.Context, input EngineMessageInput, node chatdNode, providerID string, timeout time.Duration) ([]chatdReceivedItem, chatdSessionUpdate, error) {
+func (s *chatdSession) sendMessageWithAck(ctx context.Context, input wacore.EngineMessageInput, node chatdNode, providerID string, timeout time.Duration) ([]chatdReceivedItem, chatdSessionUpdate, error) {
 	if s == nil || s.conn == nil {
 		return nil, chatdSessionUpdate{}, fmt.Errorf("chatd session is not open")
 	}

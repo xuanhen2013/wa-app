@@ -7,12 +7,13 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 )
 
 const maxMessageActionBatchSize = 100
 
 type waMessageReadReceiptSender interface {
-	SendReadReceipts(context.Context, EngineMessageReadReceiptInput) EngineMessageReadReceiptResult
+	SendReadReceipts(context.Context, wacore.EngineMessageReadReceiptInput) wacore.EngineMessageReadReceiptResult
 }
 
 type messageActionRecord struct {
@@ -205,7 +206,7 @@ func (s *serverCore) sendReadReceipts(ctx context.Context, requestContext *waapp
 	if !ok {
 		return 0, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "WA read receipt sender is not configured", false)
 	}
-	result := sender.SendReadReceipts(ctx, EngineMessageReadReceiptInput{
+	result := sender.SendReadReceipts(ctx, wacore.EngineMessageReadReceiptInput{
 		WAAccountID:          accountID,
 		ClientProfileID:      loginState.GetClientProfileId(),
 		RegisteredIdentityID: loginState.GetRegisteredIdentityId(),
@@ -216,8 +217,8 @@ func (s *serverCore) sendReadReceipts(ctx context.Context, requestContext *waapp
 	return result.Sent, result.Err
 }
 
-func readReceiptMessages(records []messageActionRecord) []EngineMessageReadReceipt {
-	out := []EngineMessageReadReceipt{}
+func readReceiptMessages(records []messageActionRecord) []wacore.EngineMessageReadReceipt {
+	out := []wacore.EngineMessageReadReceipt{}
 	for _, record := range records {
 		msg := record.message
 		if msg == nil || msg.GetKind() != waappv1.InboundMessageKind_INBOUND_MESSAGE_KIND_MESSAGE || msg.GetDeleteStatus() == waappv1.MessageDeleteStatus_MESSAGE_DELETE_STATUS_DELETED_FOR_ME || msg.GetProviderMessageId() == "" {
@@ -234,11 +235,11 @@ func readReceiptMessages(records []messageActionRecord) []EngineMessageReadRecei
 		if participantJID == chatJID {
 			participantJID = ""
 		}
-		out = append(out, EngineMessageReadReceipt{ChatJID: chatJID, ParticipantJID: participantJID, ProviderMessageID: msg.GetProviderMessageId()})
+		out = append(out, wacore.EngineMessageReadReceipt{ChatJID: chatJID, ParticipantJID: participantJID, ProviderMessageID: msg.GetProviderMessageId()})
 	}
 	return out
 }
 
-func (s *serverCore) messageActionRunner(ctx context.Context, requestContext *waappv1.RequestContext) (ProtocolEngine, func(), error) {
+func (s *serverCore) messageActionRunner(ctx context.Context, requestContext *waappv1.RequestContext) (wacore.ProtocolEngine, func(), error) {
 	return s.runner, func() {}, nil
 }

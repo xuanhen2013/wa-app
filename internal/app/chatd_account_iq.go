@@ -11,6 +11,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 )
 
 const (
@@ -22,7 +23,7 @@ const (
 	accountSettingsIQTimeoutMessage        = "account settings iq timed out"
 )
 
-func (c *chatdClient) sendAccountIQ(ctx context.Context, state nativeState, input EngineAccountSettingsInput, appVersion string, request chatdNode) (chatdNode, chatdSessionUpdate, error) {
+func (c *chatdClient) sendAccountIQ(ctx context.Context, state nativeState, input wacore.EngineAccountSettingsInput, appVersion string, request chatdNode) (chatdNode, chatdSessionUpdate, error) {
 	return c.sendIQ(ctx, state, input.RegisteredIdentityID, appVersion, request, accountSettingsIQTimeoutMessage)
 }
 
@@ -32,11 +33,11 @@ func (c *chatdClient) sendIQ(ctx context.Context, state nativeState, registeredI
 		return chatdNode{}, chatdSessionUpdate{}, err
 	}
 	defer session.Close()
-	response, _, update, err := session.sendIQ(ctx, EngineMessageInput{}, request, c.cfg.Timeout, timeoutMessage)
+	response, _, update, err := session.sendIQ(ctx, wacore.EngineMessageInput{}, request, c.cfg.Timeout, timeoutMessage)
 	return response, update, err
 }
 
-func (s *chatdSession) sendIQ(ctx context.Context, input EngineMessageInput, request chatdNode, timeout time.Duration, timeoutMessage string) (chatdNode, []chatdReceivedItem, chatdSessionUpdate, error) {
+func (s *chatdSession) sendIQ(ctx context.Context, input wacore.EngineMessageInput, request chatdNode, timeout time.Duration, timeoutMessage string) (chatdNode, []chatdReceivedItem, chatdSessionUpdate, error) {
 	if s == nil || s.conn == nil {
 		return chatdNode{}, nil, chatdSessionUpdate{}, fmt.Errorf("chatd session is not open")
 	}

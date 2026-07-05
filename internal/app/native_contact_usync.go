@@ -19,7 +19,7 @@ const (
 	businessProfileTimeoutText = "business profile iq timed out"
 )
 
-func (e *contactsService) ResolveContacts(ctx context.Context, input EngineContactResolveInput) EngineContactResolveResult {
+func (e *contactsService) ResolveContacts(ctx context.Context, input wacore.EngineContactResolveInput) wacore.EngineContactResolveResult {
 	return e.resolveContactsWithSender(ctx, input, nil)
 }
 
@@ -27,32 +27,32 @@ func (e *contactsService) ResolveContacts(ctx context.Context, input EngineConta
 // (长连接把消息/IQ/usync 多路复用在同一条 noise 连接上,对齐官方单 ConnectionThread 模型),
 // 避免为 usync 另开一条并发 ACTIVE 连接而触发服务端 <conflict type="replaced"> 自我顶替。
 // sender 为空时回退到独立短连接(无活跃长连接的窗口)。
-func (e *contactsService) resolveContactsWithSender(ctx context.Context, input EngineContactResolveInput, sender chatdIQSender) EngineContactResolveResult {
+func (e *contactsService) resolveContactsWithSender(ctx context.Context, input wacore.EngineContactResolveInput, sender chatdIQSender) wacore.EngineContactResolveResult {
 	jids := normalizeContactUsyncJIDs(input.JIDs)
 	if len(jids) == 0 {
-		return EngineContactResolveResult{}
+		return wacore.EngineContactResolveResult{}
 	}
 	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
-		return EngineContactResolveResult{Queried: len(jids), Err: err}
+		return wacore.EngineContactResolveResult{Queried: len(jids), Err: err}
 	}
 	state.ensureMaps()
 	if state.ChatStatic.Private == "" || state.ChatStatic.Public == "" {
 		state.ChatStatic = ensureChatStatic(state.ChatStatic)
 		if err := e.saveState(ctx, input.ClientProfileID, state); err != nil {
-			return EngineContactResolveResult{Queried: len(jids), Err: err}
+			return wacore.EngineContactResolveResult{Queried: len(jids), Err: err}
 		}
 	}
 	allContacts := contactsFromNativeStateMessagePayloads(input.WAAccountID, state, jids, e.clock.Now())
 	jids = unresolvedContactResolveJIDs(jids, allContacts)
 	if len(jids) == 0 {
 		allContacts = dedupeWAContacts(allContacts)
-		return EngineContactResolveResult{Contacts: allContacts, Queried: inputQueriedCount(input.JIDs), Resolved: contactUsyncIdentityCount(allContacts)}
+		return wacore.EngineContactResolveResult{Contacts: allContacts, Queried: inputQueriedCount(input.JIDs), Resolved: contactUsyncIdentityCount(allContacts)}
 	}
 	if sender == nil {
 		proxyURL, err := e.proxyURL()
 		if err != nil {
-			return EngineContactResolveResult{Contacts: allContacts, Queried: inputQueriedCount(input.JIDs), Resolved: contactUsyncIdentityCount(allContacts), Err: err}
+			return wacore.EngineContactResolveResult{Contacts: allContacts, Queried: inputQueriedCount(input.JIDs), Resolved: contactUsyncIdentityCount(allContacts), Err: err}
 		}
 		timeout := input.RemoteTimeout
 		if timeout <= 0 {
@@ -86,9 +86,9 @@ func (e *contactsService) resolveContactsWithSender(ctx context.Context, input E
 		}
 		if !hadSuccess && lastErr != nil {
 			if contactUsyncOptionalRemoteFailure(lastErr) {
-				return EngineContactResolveResult{Contacts: allContacts, Queried: inputQueriedCount(input.JIDs), Resolved: contactUsyncIdentityCount(allContacts)}
+				return wacore.EngineContactResolveResult{Contacts: allContacts, Queried: inputQueriedCount(input.JIDs), Resolved: contactUsyncIdentityCount(allContacts)}
 			}
-			return EngineContactResolveResult{Contacts: allContacts, Queried: inputQueriedCount(input.JIDs), Resolved: contactUsyncIdentityCount(allContacts), Err: contactUsyncError(lastErr)}
+			return wacore.EngineContactResolveResult{Contacts: allContacts, Queried: inputQueriedCount(input.JIDs), Resolved: contactUsyncIdentityCount(allContacts), Err: contactUsyncError(lastErr)}
 		}
 		allContacts = append(allContacts, batchContacts...)
 	}
@@ -96,7 +96,7 @@ func (e *contactsService) resolveContactsWithSender(ctx context.Context, input E
 	if profileContacts := e.resolveBusinessProfileContacts(ctx, sender, state, input, allContacts); len(profileContacts) > 0 {
 		allContacts = dedupeWAContacts(append(allContacts, profileContacts...))
 	}
-	return EngineContactResolveResult{Contacts: allContacts, Queried: inputQueriedCount(input.JIDs), Resolved: contactUsyncIdentityCount(allContacts)}
+	return wacore.EngineContactResolveResult{Contacts: allContacts, Queried: inputQueriedCount(input.JIDs), Resolved: contactUsyncIdentityCount(allContacts)}
 }
 
 func contactsFromNativeStateMessagePayloads(accountID string, state nativeState, jids []string, now time.Time) []*waappv1.WAContact {
@@ -668,7 +668,7 @@ func businessVerifiedNodeName(node chatdNode) string {
 	return ""
 }
 
-func (e *contactsService) resolveBusinessProfileContacts(ctx context.Context, sender chatdIQSender, state nativeState, input EngineContactResolveInput, contacts []*waappv1.WAContact) []*waappv1.WAContact {
+func (e *contactsService) resolveBusinessProfileContacts(ctx context.Context, sender chatdIQSender, state nativeState, input wacore.EngineContactResolveInput, contacts []*waappv1.WAContact) []*waappv1.WAContact {
 	refs := businessProfileRefs(contacts)
 	if len(refs) == 0 {
 		return nil

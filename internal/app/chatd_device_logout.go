@@ -5,6 +5,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 )
 
 // chatdDeviceLogout 表示服务端经长连接下发的 device_logout 通知:该号码已在其他
@@ -39,11 +40,11 @@ func deviceLogoutFromChatdNode(node chatdNode) (chatdDeviceLogout, bool) {
 
 // accountLogoutFromUpdate 把入站解析出的 device_logout 提升为引擎层登出事件,供
 // receiveMessageBatch 据此作废登录态、停连。
-func accountLogoutFromUpdate(l *chatdDeviceLogout) *EngineAccountLogout {
+func accountLogoutFromUpdate(l *chatdDeviceLogout) *wacore.EngineAccountLogout {
 	if l == nil {
 		return nil
 	}
-	return &EngineAccountLogout{
+	return &wacore.EngineAccountLogout{
 		Reason:              accountLoggedOutMessage(l),
 		NewDevicePlatform:   l.newDevicePlatform,
 		NewDeviceAppVersion: l.newDeviceAppVersion,

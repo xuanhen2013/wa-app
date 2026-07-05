@@ -6,12 +6,13 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 )
 
 const defaultContactResolveLimit = 50
 
 type waContactResolver interface {
-	ResolveContacts(context.Context, EngineContactResolveInput) EngineContactResolveResult
+	ResolveContacts(context.Context, wacore.EngineContactResolveInput) wacore.EngineContactResolveResult
 }
 
 func (s *contactHandler) ListWAContacts(ctx context.Context, req *waappv1.ListWAContactsRequest) (*waappv1.ListWAContactsResponse, error) {
@@ -63,7 +64,7 @@ func (s *contactHandler) ResolveWAContacts(ctx context.Context, req *waappv1.Res
 	if !ok {
 		return &waappv1.ResolveWAContactsResponse{Error: shared.ToProtoError(shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "WA contact resolver is not configured", false))}, nil
 	}
-	result := resolver.ResolveContacts(ctx, EngineContactResolveInput{
+	result := resolver.ResolveContacts(ctx, wacore.EngineContactResolveInput{
 		WAAccountID:          accountID,
 		ClientProfileID:      loginState.GetClientProfileId(),
 		RegisteredIdentityID: loginState.GetRegisteredIdentityId(),
@@ -154,7 +155,7 @@ func (s *serverCore) activeContactResolveLoginState(ctx context.Context, account
 // contactResolverRunner 优先复用该账号已建立的长连接 runner,让 usync 走同一条 chatd 连接
 // (每账号一条连接),避免另开并发 ACTIVE 连接触发服务端 <conflict type="replaced"> 自我顶替。
 // 长连接尚未就绪时回退到独立 runner(短连接窗口),与 accountSettingsRunner 一致。
-func (s *serverCore) contactResolverRunner(loginState *waappv1.LoginState) (ProtocolEngine, func(), error) {
+func (s *serverCore) contactResolverRunner(loginState *waappv1.LoginState) (wacore.ProtocolEngine, func(), error) {
 	if s.longConnections != nil {
 		if runner := s.longConnections.Runner(loginState); runner != nil {
 			return runner, func() {}, nil

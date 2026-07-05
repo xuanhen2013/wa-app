@@ -559,7 +559,7 @@ func existDeviceMap(state nativeState) map[string]string {
 	}
 }
 
-func parseExistProbeResult(data map[string]any) EngineProbeResult {
+func parseExistProbeResult(data map[string]any) wacore.EngineProbeResult {
 	status := responseStatus(data)
 	reason := responseReason(data)
 	methodStatuses := verificationMethodStatuses(data, nil)
@@ -592,7 +592,7 @@ func parseExistProbeResult(data map[string]any) EngineProbeResult {
 		consentRequired:   consentRequired,
 		challengeRequired: challengeRequired,
 	})
-	result := EngineProbeResult{
+	result := wacore.EngineProbeResult{
 		Status:           waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_UNKNOWN,
 		AccountFlow:      accountFlow,
 		RawStatus:        status,
@@ -819,7 +819,7 @@ func accountTransferRegisterTerminalFailure(data map[string]any) bool {
 	}
 }
 
-func methodsFromStatuses(statuses []VerificationMethodStatus) []waappv1.VerificationDeliveryMethod {
+func methodsFromStatuses(statuses []wacore.VerificationMethodStatus) []waappv1.VerificationDeliveryMethod {
 	seen := map[waappv1.VerificationDeliveryMethod]struct{}{}
 	out := make([]waappv1.VerificationDeliveryMethod, 0, len(statuses))
 	for _, status := range statuses {
@@ -882,30 +882,30 @@ type verificationWaitStatus struct {
 
 var apkDefaultRegistrationMethodOrder = []string{"flash", "sms", "voice", "wa_old", "acc_tr", "send_sms", "email_otp"}
 
-func verificationMethodStatuses(data map[string]any, _ []waappv1.VerificationDeliveryMethod) []VerificationMethodStatus {
-	out := []VerificationMethodStatus{}
+func verificationMethodStatuses(data map[string]any, _ []waappv1.VerificationDeliveryMethod) []wacore.VerificationMethodStatus {
+	out := []wacore.VerificationMethodStatus{}
 	for _, code := range apkVisibleFallbackMethodCodes(data) {
 		out = upsertVerificationMethodStatus(out, code, verificationMethodWaitStatus(data, code, false))
 	}
 	return out
 }
 
-func verificationCodeMethodStatuses(data map[string]any, _ waappv1.VerificationDeliveryMethod) []VerificationMethodStatus {
+func verificationCodeMethodStatuses(data map[string]any, _ waappv1.VerificationDeliveryMethod) []wacore.VerificationMethodStatus {
 	return verificationMethodStatuses(data, nil)
 }
 
-func upsertVerificationMethodStatus(statuses []VerificationMethodStatus, code string, wait verificationWaitStatus) []VerificationMethodStatus {
+func upsertVerificationMethodStatus(statuses []wacore.VerificationMethodStatus, code string, wait verificationWaitStatus) []wacore.VerificationMethodStatus {
 	method := verificationMethodFromName(code)
 	if method == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_UNSPECIFIED {
 		return statuses
 	}
 	for i := range statuses {
 		if statuses[i].Code == code || statuses[i].Method == method {
-			statuses[i] = VerificationMethodStatus{Method: method, Code: code, Available: wait.Seconds <= 0 && !wait.Exhausted, CooldownSeconds: wait.Seconds}
+			statuses[i] = wacore.VerificationMethodStatus{Method: method, Code: code, Available: wait.Seconds <= 0 && !wait.Exhausted, CooldownSeconds: wait.Seconds}
 			return statuses
 		}
 	}
-	return append(statuses, VerificationMethodStatus{Method: method, Code: code, Available: wait.Seconds <= 0 && !wait.Exhausted, CooldownSeconds: wait.Seconds})
+	return append(statuses, wacore.VerificationMethodStatus{Method: method, Code: code, Available: wait.Seconds <= 0 && !wait.Exhausted, CooldownSeconds: wait.Seconds})
 }
 
 func verificationMethodCode(name string) string {

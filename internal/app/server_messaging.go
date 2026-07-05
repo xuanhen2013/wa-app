@@ -7,6 +7,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -58,7 +59,7 @@ func (s *messagingHandler) ReceiveMessageBatch(ctx context.Context, req *waappv1
 	return s.receiveMessageBatch(ctx, req, s.runner)
 }
 
-func (s *serverCore) receiveMessageBatch(ctx context.Context, req *waappv1.ReceiveMessageBatchRequest, runner ProtocolEngine) (*waappv1.ReceiveMessageBatchResponse, error) {
+func (s *serverCore) receiveMessageBatch(ctx context.Context, req *waappv1.ReceiveMessageBatchRequest, runner wacore.ProtocolEngine) (*waappv1.ReceiveMessageBatchResponse, error) {
 	if err := shared.ValidateContext(req.GetContext()); err != nil {
 		return &waappv1.ReceiveMessageBatchResponse{Error: shared.ToProtoError(err)}, nil
 	}
@@ -72,7 +73,7 @@ func (s *serverCore) receiveMessageBatch(ctx context.Context, req *waappv1.Recei
 	if runner == nil {
 		runner = s.runner
 	}
-	result := runner.ReceiveMessageBatch(ctx, EngineMessageInput{WAAccountID: session.GetWaAccountId(), ClientProfileID: session.GetClientProfileId(), RegisteredIdentityID: session.GetRegisteredIdentityId(), ProtocolProfileID: session.GetProtocolProfileId(), AppVersion: s.protocolIDAppVersion(ctx, session.GetProtocolProfileId()), MessageSessionID: session.GetMessageSessionId(), WaitTimeout: shared.DurationFromProto(req.GetWaitTimeout()), MaxMessages: int(req.GetMaxMessages())})
+	result := runner.ReceiveMessageBatch(ctx, wacore.EngineMessageInput{WAAccountID: session.GetWaAccountId(), ClientProfileID: session.GetClientProfileId(), RegisteredIdentityID: session.GetRegisteredIdentityId(), ProtocolProfileID: session.GetProtocolProfileId(), AppVersion: s.protocolIDAppVersion(ctx, session.GetProtocolProfileId()), MessageSessionID: session.GetMessageSessionId(), WaitTimeout: shared.DurationFromProto(req.GetWaitTimeout()), MaxMessages: int(req.GetMaxMessages())})
 	if result.Err != nil {
 		session.Status = waappv1.MessageSessionStatus_MESSAGE_SESSION_STATUS_FAILED
 		session.LastError = shared.ToProtoError(result.Err)

@@ -12,7 +12,7 @@ import (
 )
 
 type waTextMessageSender interface {
-	SendTextMessage(context.Context, EngineTextMessageInput) EngineTextMessageResult
+	SendTextMessage(context.Context, wacore.EngineTextMessageInput) wacore.EngineTextMessageResult
 }
 
 func (s *messagingHandler) SendTextMessage(ctx context.Context, req *waappv1.SendTextMessageRequest) (*waappv1.SendTextMessageResponse, error) {
@@ -48,7 +48,7 @@ func (s *messagingHandler) SendTextMessage(ctx context.Context, req *waappv1.Sen
 		return &waappv1.SendTextMessageResponse{Error: shared.ToProtoError(shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "WA text message sender is not configured", false))}, nil
 	}
 	providerID := newTextProviderMessageID(req.GetClientMessageId())
-	result := sender.SendTextMessage(ctx, EngineTextMessageInput{
+	result := sender.SendTextMessage(ctx, wacore.EngineTextMessageInput{
 		WAAccountID:          accountID,
 		ClientProfileID:      loginState.GetClientProfileId(),
 		RegisteredIdentityID: loginState.GetRegisteredIdentityId(),
@@ -95,7 +95,7 @@ func (s *serverCore) textMessageContactJID(ctx context.Context, accountID string
 	return wacore.NormalizeWAJID(contactRef)
 }
 
-func (s *serverCore) textMessageRunner(ctx context.Context, requestContext *waappv1.RequestContext, loginState *waappv1.LoginState) (ProtocolEngine, func(), error) {
+func (s *serverCore) textMessageRunner(ctx context.Context, requestContext *waappv1.RequestContext, loginState *waappv1.LoginState) (wacore.ProtocolEngine, func(), error) {
 	if s.longConnections != nil {
 		if runner := s.longConnections.Runner(loginState); runner != nil {
 			return runner, func() {}, nil

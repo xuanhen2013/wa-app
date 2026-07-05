@@ -7,16 +7,17 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 )
 
 type accountSettingsIQSender interface {
 	sendIQ(context.Context, nativeState, string, string, chatdNode, string) (chatdNode, chatdSessionUpdate, error)
 }
 
-func (e *accountSettingsService) ApplyAccountSettings(ctx context.Context, input EngineAccountSettingsInput) EngineAccountSettingsResult {
+func (e *accountSettingsService) ApplyAccountSettings(ctx context.Context, input wacore.EngineAccountSettingsInput) wacore.EngineAccountSettingsResult {
 	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
-		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: err}
+		return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: err}
 	}
 	if state.ChatStatic.Private == "" || state.ChatStatic.Public == "" {
 		state.ChatStatic = ensureChatStatic(state.ChatStatic)
@@ -24,33 +25,33 @@ func (e *accountSettingsService) ApplyAccountSettings(ctx context.Context, input
 	}
 	proxyURL, err := e.proxyURL()
 	if err != nil {
-		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: err}
+		return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: err}
 	}
 	return e.applyAccountSettingsWithSender(ctx, input, state, newChatdClient(accountSettingsChatdConfig(proxyURL, state)))
 }
 
-func (e *accountSettingsService) applyAccountSettingsWithSender(ctx context.Context, input EngineAccountSettingsInput, state nativeState, sender accountSettingsIQSender) EngineAccountSettingsResult {
+func (e *accountSettingsService) applyAccountSettingsWithSender(ctx context.Context, input wacore.EngineAccountSettingsInput, state nativeState, sender accountSettingsIQSender) wacore.EngineAccountSettingsResult {
 	if input.Kind == waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_PROFILE_NAME_SET {
 		return e.applyAccountProfileName(ctx, input, state, sender)
 	}
 	request := buildAccountSettingsIQ(e.ids.NewID("waiq_"), input)
 	if request.Tag == "" {
-		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "account settings operation is not supported", false)}
+		return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "account settings operation is not supported", false)}
 	}
 	response, update, err := sender.sendIQ(ctx, state, input.RegisteredIdentityID, input.AppVersion, request, accountSettingsIQTimeoutMessage)
 	if applyChatdSessionUpdateState(&state, update) {
 		_ = e.saveState(ctx, input.ClientProfileID, state)
 	}
 	if err != nil {
-		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: accountSettingsRequestError(err)}
+		return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: accountSettingsRequestError(err)}
 	}
 	return accountSettingsResultFromIQ(input, response)
 }
 
-func (e *accountSettingsService) applyAccountProfileName(ctx context.Context, input EngineAccountSettingsInput, state nativeState, sender accountSettingsIQSender) EngineAccountSettingsResult {
+func (e *accountSettingsService) applyAccountProfileName(ctx context.Context, input wacore.EngineAccountSettingsInput, state nativeState, sender accountSettingsIQSender) wacore.EngineAccountSettingsResult {
 	state.PushName = input.DisplayName
 	if err := e.saveState(ctx, input.ClientProfileID, state); err != nil {
-		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native account profile name could not be saved", true)}
+		return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native account profile name could not be saved", true)}
 	}
 	timestampMS := e.clock.Now().UnixMilli()
 	if timestampMS < 0 {
@@ -59,9 +60,9 @@ func (e *accountSettingsService) applyAccountProfileName(ctx context.Context, in
 	request, collection, err := buildNativePushNamePatch(&state, input.DisplayName, uint64(timestampMS))
 	if err != nil {
 		if isNativePushNamePatchOptionalError(err) {
-			return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_ACCEPTED}
+			return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_ACCEPTED}
 		}
-		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: err}
+		return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: err}
 	}
 	request.Attrs["id"] = e.ids.NewID("waiq_")
 	response, update, err := sender.sendIQ(ctx, state, input.RegisteredIdentityID, input.AppVersion, request, accountSettingsIQTimeoutMessage)
@@ -70,18 +71,18 @@ func (e *accountSettingsService) applyAccountProfileName(ctx context.Context, in
 		if changed {
 			_ = e.saveState(ctx, input.ClientProfileID, state)
 		}
-		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_ACCEPTED}
+		return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_ACCEPTED}
 	}
 	if err := chatdIQError(response); err != nil {
 		if changed {
 			_ = e.saveState(ctx, input.ClientProfileID, state)
 		}
-		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_ACCEPTED}
+		return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_ACCEPTED}
 	}
 	state.ensureMaps()
 	state.AppState.Collections[waAppStatePushNameCollection] = collection
 	_ = e.saveState(ctx, input.ClientProfileID, state)
-	return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_ACCEPTED}
+	return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_ACCEPTED}
 }
 
 func isNativePushNamePatchOptionalError(err error) bool {
@@ -103,7 +104,7 @@ func isNativePushNamePatchOptionalError(err error) bool {
 	}
 }
 
-func buildAccountSettingsIQ(id string, input EngineAccountSettingsInput) chatdNode {
+func buildAccountSettingsIQ(id string, input wacore.EngineAccountSettingsInput) chatdNode {
 	switch input.Kind {
 	case waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_TWO_FACTOR_AUTH_STATUS_GET:
 		return buildGetTwoFactorAuthStatusIQ(id)
@@ -165,9 +166,9 @@ func buildAccountProfilePictureIQ(id string, image []byte) chatdNode {
 	}
 }
 
-func accountSettingsResultFromIQ(input EngineAccountSettingsInput, node chatdNode) EngineAccountSettingsResult {
+func accountSettingsResultFromIQ(input wacore.EngineAccountSettingsInput, node chatdNode) wacore.EngineAccountSettingsResult {
 	if err := chatdIQError(node); err != nil {
-		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: err}
+		return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: err}
 	}
 	switch input.Kind {
 	case waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_TWO_FACTOR_AUTH_STATUS_GET:
@@ -181,18 +182,18 @@ func accountSettingsResultFromIQ(input EngineAccountSettingsInput, node chatdNod
 	case waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_PROFILE_PICTURE_SET:
 		return accountProfilePictureSetResultFromIQ(node)
 	default:
-		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_ACCEPTED}
+		return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_ACCEPTED}
 	}
 }
 
-func twoFactorAuthStatusFromIQ(node chatdNode) EngineAccountSettingsResult {
+func twoFactorAuthStatusFromIQ(node chatdNode) wacore.EngineAccountSettingsResult {
 	status := &waappv1.TwoFactorAuthStatus{}
 	twoFactorNode, ok := chatdChild(node, "2fa")
 	if !ok {
 		if emailNode, hasEmail := chatdChild(node, "email"); hasEmail {
 			mergeEmailStatusFromIQ(status, emailNode)
 		}
-		return EngineAccountSettingsResult{TwoFactorStatus: status}
+		return wacore.EngineAccountSettingsResult{TwoFactorStatus: status}
 	}
 	_, hasCode := chatdChild(twoFactorNode, "code")
 	emailNode, hasEmail := chatdChild(twoFactorNode, "email")
@@ -204,7 +205,7 @@ func twoFactorAuthStatusFromIQ(node chatdNode) EngineAccountSettingsResult {
 	if emailNode, hasEmail := chatdChild(node, "email"); hasEmail {
 		mergeEmailStatusFromIQ(status, emailNode)
 	}
-	return EngineAccountSettingsResult{TwoFactorStatus: status}
+	return wacore.EngineAccountSettingsResult{TwoFactorStatus: status}
 }
 
 func mergeEmailStatusFromIQ(status *waappv1.TwoFactorAuthStatus, emailNode chatdNode) {
@@ -225,54 +226,54 @@ func mergeEmailStatusFromIQ(status *waappv1.TwoFactorAuthStatus, emailNode chatd
 	}
 }
 
-func accountProfilePictureSetResultFromIQ(node chatdNode) EngineAccountSettingsResult {
+func accountProfilePictureSetResultFromIQ(node chatdNode) wacore.EngineAccountSettingsResult {
 	picture, ok := chatdChild(node, "picture")
 	if !ok {
-		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_ACCEPTED}
+		return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_ACCEPTED}
 	}
-	return EngineAccountSettingsResult{
+	return wacore.EngineAccountSettingsResult{
 		Status:           waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_ACCEPTED,
 		ProfilePictureID: contactProfilePictureIDFromPicture(picture),
 		HasStaging:       chatdNodeBool(picture, "has_staging"),
 	}
 }
 
-func emailSetResultFromIQ(node chatdNode, emailAddress string) EngineAccountSettingsResult {
+func emailSetResultFromIQ(node chatdNode, emailAddress string) wacore.EngineAccountSettingsResult {
 	status := &waappv1.TwoFactorAuthStatus{EmailConfigured: true, EmailAddress: strings.TrimSpace(emailAddress)}
 	emailNode, ok := chatdChild(node, "email")
 	if !ok {
-		return EngineAccountSettingsResult{TwoFactorStatus: status}
+		return wacore.EngineAccountSettingsResult{TwoFactorStatus: status}
 	}
 	doVerify, ok := chatdNodeBoolValue(emailNode, "do_verify")
 	if !ok {
 		if autoVerifyStatus := chatdNodeStatus(emailNode, "auto_verify"); autoVerifyStatus == "success" || chatdNodeBool(emailNode, "verified") || chatdNodeBool(emailNode, "confirmed") {
 			status.EmailVerified = true
 			status.EmailConfirmed = chatdNodeBool(emailNode, "confirmed")
-			return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_VERIFIED, TwoFactorStatus: status}
+			return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_VERIFIED, TwoFactorStatus: status}
 		}
-		return EngineAccountSettingsResult{TwoFactorStatus: status}
+		return wacore.EngineAccountSettingsResult{TwoFactorStatus: status}
 	}
 	if doVerify {
-		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_NEEDS_VERIFICATION, TwoFactorStatus: status}
+		return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_NEEDS_VERIFICATION, TwoFactorStatus: status}
 	}
 	autoVerifyStatus := chatdNodeStatus(emailNode, "auto_verify")
 	if autoVerifyStatus == "success" || chatdNodeBool(emailNode, "verified") || chatdNodeBool(emailNode, "confirmed") {
 		status.EmailVerified = true
 		status.EmailConfirmed = chatdNodeBool(emailNode, "confirmed")
-		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_VERIFIED, TwoFactorStatus: status}
+		return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_VERIFIED, TwoFactorStatus: status}
 	}
-	return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "WA set email was not accepted for verification", false)}
+	return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "WA set email was not accepted for verification", false)}
 }
 
-func emailOtpRequestResultFromIQ(node chatdNode) EngineAccountSettingsResult {
+func emailOtpRequestResultFromIQ(node chatdNode) wacore.EngineAccountSettingsResult {
 	verifyNode, ok := chatdChild(node, "verify_email")
 	if !ok {
-		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_WAITING}
+		return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_WAITING}
 	}
-	return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_WAITING, WaitTime: chatdNodeDuration(verifyNode, "wait_time")}
+	return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_WAITING, WaitTime: chatdNodeDuration(verifyNode, "wait_time")}
 }
 
-func emailOtpVerifyResultFromIQ(node chatdNode) EngineAccountSettingsResult {
+func emailOtpVerifyResultFromIQ(node chatdNode) wacore.EngineAccountSettingsResult {
 	verifyNode, ok := chatdChild(node, "verify_email")
 	if !ok {
 		return malformedAccountSettingsResult("WA email OTP verify response is missing verify_email")
@@ -285,15 +286,15 @@ func emailOtpVerifyResultFromIQ(node chatdNode) EngineAccountSettingsResult {
 	if codeMatch {
 		status = waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_VERIFIED
 	}
-	result := EngineAccountSettingsResult{Status: status, WaitTime: chatdNodeDuration(verifyNode, "wait_time")}
+	result := wacore.EngineAccountSettingsResult{Status: status, WaitTime: chatdNodeDuration(verifyNode, "wait_time")}
 	if status == waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_VERIFIED {
 		result.TwoFactorStatus = &waappv1.TwoFactorAuthStatus{EmailConfigured: true, EmailVerified: true}
 	}
 	return result
 }
 
-func malformedAccountSettingsResult(message string) EngineAccountSettingsResult {
-	return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, message, false)}
+func malformedAccountSettingsResult(message string) wacore.EngineAccountSettingsResult {
+	return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, message, false)}
 }
 
 func accountSettingsRequestError(err error) error {

@@ -18,7 +18,7 @@ const profilePictureFailureCacheTTL = 10 * time.Minute
 const contactProfilePictureLatestCacheVersion = "latest"
 
 type waContactProfilePictureResolver interface {
-	ResolveContactProfilePicture(context.Context, EngineContactProfilePictureInput) EngineContactProfilePictureResult
+	ResolveContactProfilePicture(context.Context, wacore.EngineContactProfilePictureInput) wacore.EngineContactProfilePictureResult
 }
 
 type WAContactProfilePicture struct {
@@ -33,7 +33,7 @@ type contactProfilePictureCacheEntry struct {
 	Data             []byte `json:"data"`
 }
 
-func (s *serverCore) contactProfilePictureRunner(ctx context.Context, loginState *waappv1.LoginState) (ProtocolEngine, func(), error) {
+func (s *serverCore) contactProfilePictureRunner(ctx context.Context, loginState *waappv1.LoginState) (wacore.ProtocolEngine, func(), error) {
 	if s != nil && s.longConnections != nil {
 		if runner := s.longConnections.Runner(loginState); runner != nil {
 			if _, ok := runner.(waContactProfilePictureResolver); ok {
@@ -44,7 +44,7 @@ func (s *serverCore) contactProfilePictureRunner(ctx context.Context, loginState
 	return s.contactResolverRunner(loginState)
 }
 
-func contactProfilePictureRemoteTimeout(runner ProtocolEngine) time.Duration {
+func contactProfilePictureRemoteTimeout(runner wacore.ProtocolEngine) time.Duration {
 	if _, ok := runner.(*longConnectionNativeEngine); ok {
 		return longConnectionWaitTimeout + defaultContactProfilePictureTimeout
 	}
@@ -96,7 +96,7 @@ func (s *serverCore) getWAAccountProfilePicture(ctx context.Context, selector *w
 		return WAContactProfilePicture{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "WA account profile picture resolver is not configured", false)
 	}
 	remoteTimeout := contactProfilePictureRemoteTimeout(runner)
-	result := resolver.ResolveContactProfilePicture(ctx, EngineContactProfilePictureInput{
+	result := resolver.ResolveContactProfilePicture(ctx, wacore.EngineContactProfilePictureInput{
 		WAAccountID:          loginState.GetWaAccountId(),
 		ClientProfileID:      loginState.GetClientProfileId(),
 		RegisteredIdentityID: loginState.GetRegisteredIdentityId(),
@@ -147,7 +147,7 @@ func (s *serverCore) GetWAContactProfilePicture(ctx context.Context, contactID s
 		return WAContactProfilePicture{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "WA contact profile picture resolver is not configured", false)
 	}
 	remoteTimeout := contactProfilePictureRemoteTimeout(runner)
-	result := resolver.ResolveContactProfilePicture(ctx, EngineContactProfilePictureInput{
+	result := resolver.ResolveContactProfilePicture(ctx, wacore.EngineContactProfilePictureInput{
 		WAAccountID:          contact.GetWaAccountId(),
 		ClientProfileID:      loginState.GetClientProfileId(),
 		RegisteredIdentityID: loginState.GetRegisteredIdentityId(),

@@ -38,24 +38,24 @@ type chatdIQSender interface {
 	sendIQ(context.Context, nativeState, string, string, chatdNode, string) (chatdNode, chatdSessionUpdate, error)
 }
 
-func (e *contactsService) ResolveContactProfilePicture(ctx context.Context, input EngineContactProfilePictureInput) EngineContactProfilePictureResult {
+func (e *contactsService) ResolveContactProfilePicture(ctx context.Context, input wacore.EngineContactProfilePictureInput) wacore.EngineContactProfilePictureResult {
 	return e.resolveContactProfilePictureWithSender(ctx, input, nil)
 }
 
-func (e *contactsService) resolveContactProfilePictureWithSender(ctx context.Context, input EngineContactProfilePictureInput, sender chatdIQSender) EngineContactProfilePictureResult {
+func (e *contactsService) resolveContactProfilePictureWithSender(ctx context.Context, input wacore.EngineContactProfilePictureInput, sender chatdIQSender) wacore.EngineContactProfilePictureResult {
 	jid := wacore.NormalizeWAJID(input.ContactJID)
 	if input.WAAccountID == "" || input.ClientProfileID == "" || input.RegisteredIdentityID == "" || jid == "" {
-		return EngineContactProfilePictureResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "WA contact profile picture input is incomplete", false)}
+		return wacore.EngineContactProfilePictureResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "WA contact profile picture input is incomplete", false)}
 	}
 	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
-		return EngineContactProfilePictureResult{Err: err}
+		return wacore.EngineContactProfilePictureResult{Err: err}
 	}
 	state.ensureMaps()
 	if state.ChatStatic.Private == "" || state.ChatStatic.Public == "" {
 		state.ChatStatic = ensureChatStatic(state.ChatStatic)
 		if err := e.saveState(ctx, input.ClientProfileID, state); err != nil {
-			return EngineContactProfilePictureResult{Err: err}
+			return wacore.EngineContactProfilePictureResult{Err: err}
 		}
 	}
 	timeout := input.RemoteTimeout
@@ -67,7 +67,7 @@ func (e *contactsService) resolveContactProfilePictureWithSender(ctx context.Con
 	if sender == nil {
 		proxyURL, err := e.proxyURL()
 		if err != nil {
-			return EngineContactProfilePictureResult{Err: err}
+			return wacore.EngineContactProfilePictureResult{Err: err}
 		}
 		cfg := chatdConfigForState(proxyURL, state, timeout)
 		cfg.MaxEndpoints = 1
@@ -78,7 +78,7 @@ func (e *contactsService) resolveContactProfilePictureWithSender(ctx context.Con
 		_ = e.saveState(ctx, input.ClientProfileID, state)
 	}
 	if err != nil && len(locations) == 0 {
-		return EngineContactProfilePictureResult{Err: err}
+		return wacore.EngineContactProfilePictureResult{Err: err}
 	}
 	var lastErr error
 	for _, location := range locations {
@@ -88,24 +88,24 @@ func (e *contactsService) resolveContactProfilePictureWithSender(ctx context.Con
 		}
 		if len(location.InlineData) > 0 {
 			contentType, err := profilePictureContentType(location.InlineData, "")
-			return EngineContactProfilePictureResult{ProfilePictureID: location.ID, ContentType: contentType, Data: location.InlineData, Err: err}
+			return wacore.EngineContactProfilePictureResult{ProfilePictureID: location.ID, ContentType: contentType, Data: location.InlineData, Err: err}
 		}
 		data, contentType, downloadErr := e.downloadContactProfilePicture(operationCtx, location, nativeUserAgentForState(state, input.AppVersion))
 		if downloadErr == nil {
-			return EngineContactProfilePictureResult{ProfilePictureID: location.ID, ContentType: contentType, Data: data}
+			return wacore.EngineContactProfilePictureResult{ProfilePictureID: location.ID, ContentType: contentType, Data: data}
 		}
 		lastErr = downloadErr
 	}
 	if lastErr != nil {
-		return EngineContactProfilePictureResult{Err: lastErr}
+		return wacore.EngineContactProfilePictureResult{Err: lastErr}
 	}
 	if err != nil {
-		return EngineContactProfilePictureResult{Err: err}
+		return wacore.EngineContactProfilePictureResult{Err: err}
 	}
-	return EngineContactProfilePictureResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)}
+	return wacore.EngineContactProfilePictureResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)}
 }
 
-func (e *contactsService) contactProfilePictureLocationsFromProfileIQ(ctx context.Context, sender chatdIQSender, state nativeState, input EngineContactProfilePictureInput, jid string) ([]contactProfilePictureLocation, chatdSessionUpdate, error) {
+func (e *contactsService) contactProfilePictureLocationsFromProfileIQ(ctx context.Context, sender chatdIQSender, state nativeState, input wacore.EngineContactProfilePictureInput, jid string) ([]contactProfilePictureLocation, chatdSessionUpdate, error) {
 	targets := contactProfilePictureTargets(jid, input.ContactPNJID)
 	if len(targets) == 0 {
 		return nil, chatdSessionUpdate{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "WA contact profile picture target is incomplete", false)

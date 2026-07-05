@@ -106,7 +106,7 @@ func (c *chatdClient) openTimeout() time.Duration {
 	return c.cfg.Timeout
 }
 
-func (c *chatdClient) receiveBatch(ctx context.Context, state nativeState, input EngineMessageInput, appVersion string, now time.Time) ([]*waappv1.InboundMessage, []chatdEncPayload, []*waappv1.OtpMessage, chatdSessionUpdate, error) {
+func (c *chatdClient) receiveBatch(ctx context.Context, state nativeState, input wacore.EngineMessageInput, appVersion string, now time.Time) ([]*waappv1.InboundMessage, []chatdEncPayload, []*waappv1.OtpMessage, chatdSessionUpdate, error) {
 	session, err := c.openSession(ctx, state, input.RegisteredIdentityID, defaultLoginPayload, appVersion)
 	if err != nil {
 		return nil, nil, nil, chatdSessionUpdate{}, err
@@ -258,7 +258,7 @@ func (s *chatdSession) update() chatdSessionUpdate {
 	return chatdSessionUpdate{Endpoint: s.endpoint, ServerStaticPublic: s.serverStaticPublic}
 }
 
-func (s *chatdSession) receiveBatch(input EngineMessageInput, now time.Time) ([]*waappv1.InboundMessage, []chatdEncPayload, []*waappv1.OtpMessage, chatdSessionUpdate, error) {
+func (s *chatdSession) receiveBatch(input wacore.EngineMessageInput, now time.Time) ([]*waappv1.InboundMessage, []chatdEncPayload, []*waappv1.OtpMessage, chatdSessionUpdate, error) {
 	if s == nil {
 		return nil, nil, nil, chatdSessionUpdate{}, fmt.Errorf("chatd session is not open")
 	}
@@ -299,7 +299,7 @@ func (s *chatdSession) receiveBatch(input EngineMessageInput, now time.Time) ([]
 	return messages, payloads, otps, update, nil
 }
 
-func (s *chatdSession) consumeIncomingNode(input EngineMessageInput, node chatdNode, update chatdSessionUpdate, now time.Time) (chatdSessionUpdate, []chatdReceivedItem, error) {
+func (s *chatdSession) consumeIncomingNode(input wacore.EngineMessageInput, node chatdNode, update chatdSessionUpdate, now time.Time) (chatdSessionUpdate, []chatdReceivedItem, error) {
 	if node.Tag == "xmlstreamend" {
 		return update, nil, newChatdError("server closed xml stream")
 	}
@@ -407,7 +407,7 @@ func inboundMessageID(accountID string, stanzaID string, tag string, sender stri
 	return "wamsg_" + shared.StableID(strings.Join([]string{accountID, stanzaID, tag, sender, fingerprint}, ":"))
 }
 
-func (c *chatdClient) checkLoginState(ctx context.Context, state nativeState, input EngineLoginCheckInput, appVersion string) (chatdSessionUpdate, error) {
+func (c *chatdClient) checkLoginState(ctx context.Context, state nativeState, input wacore.EngineLoginCheckInput, appVersion string) (chatdSessionUpdate, error) {
 	session, err := c.openSession(ctx, state, input.RegisteredIdentityID, passiveLoginCheckPayload, appVersion)
 	if err != nil {
 		return chatdSessionUpdate{}, err

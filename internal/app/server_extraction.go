@@ -5,13 +5,14 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 )
 
 func (s *extractionHandler) DecryptMessage(ctx context.Context, req *waappv1.DecryptMessageRequest) (*waappv1.DecryptMessageResponse, error) {
 	return s.decryptMessage(ctx, req, s.runner, waappv1.WaOtpSource_WA_OTP_SOURCE_AUTO_EXTRACTION)
 }
 
-func (s *serverCore) decryptMessage(ctx context.Context, req *waappv1.DecryptMessageRequest, runner ProtocolEngine, otpSource waappv1.WaOtpSource) (*waappv1.DecryptMessageResponse, error) {
+func (s *serverCore) decryptMessage(ctx context.Context, req *waappv1.DecryptMessageRequest, runner wacore.ProtocolEngine, otpSource waappv1.WaOtpSource) (*waappv1.DecryptMessageResponse, error) {
 	if err := shared.ValidateContext(req.GetContext()); err != nil {
 		return &waappv1.DecryptMessageResponse{Error: shared.ToProtoError(err)}, nil
 	}
@@ -26,7 +27,7 @@ func (s *serverCore) decryptMessage(ctx context.Context, req *waappv1.DecryptMes
 	if runner == nil {
 		runner = s.runner
 	}
-	result := runner.DecryptMessage(ctx, EngineDecryptInput{MessageID: msg.GetMessageId(), MessageSessionID: msg.GetMessageSessionId(), ClientProfileID: session.GetClientProfileId(), PayloadRef: msg.GetPayloadRef(), SessionCommitPolicy: req.GetSessionCommitPolicy(), IncludePlaintextText: req.GetIncludeSensitivePlaintext()})
+	result := runner.DecryptMessage(ctx, wacore.EngineDecryptInput{MessageID: msg.GetMessageId(), MessageSessionID: msg.GetMessageSessionId(), ClientProfileID: session.GetClientProfileId(), PayloadRef: msg.GetPayloadRef(), SessionCommitPolicy: req.GetSessionCommitPolicy(), IncludePlaintextText: req.GetIncludeSensitivePlaintext()})
 	if result.Err != nil {
 		return &waappv1.DecryptMessageResponse{Error: shared.ToProtoError(result.Err)}, nil
 	}
@@ -68,7 +69,7 @@ func (s *extractionHandler) ExtractCandidates(ctx context.Context, req *waappv1.
 	if err != nil {
 		return &waappv1.ExtractCandidatesResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	result := s.runner.DecryptMessage(ctx, EngineDecryptInput{MessageID: msg.GetMessageId(), MessageSessionID: msg.GetMessageSessionId(), ClientProfileID: session.GetClientProfileId(), PayloadRef: msg.GetPayloadRef(), SessionCommitPolicy: waappv1.SessionCommitPolicy_SESSION_COMMIT_POLICY_TRANSIENT, IncludePlaintextText: req.GetIncludeSensitiveValues()})
+	result := s.runner.DecryptMessage(ctx, wacore.EngineDecryptInput{MessageID: msg.GetMessageId(), MessageSessionID: msg.GetMessageSessionId(), ClientProfileID: session.GetClientProfileId(), PayloadRef: msg.GetPayloadRef(), SessionCommitPolicy: waappv1.SessionCommitPolicy_SESSION_COMMIT_POLICY_TRANSIENT, IncludePlaintextText: req.GetIncludeSensitiveValues()})
 	if result.Err != nil {
 		return &waappv1.ExtractCandidatesResponse{Error: shared.ToProtoError(result.Err)}, nil
 	}

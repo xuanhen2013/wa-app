@@ -10,6 +10,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -36,14 +37,14 @@ type LongConnectionManager struct {
 
 type longConnectionEntry struct {
 	cancel   context.CancelFunc
-	runner   ProtocolEngine
+	runner   wacore.ProtocolEngine
 	snapshot *waappv1.LongConnectionState
 	revoked  bool
 }
 
 type longConnectionStopItem struct {
 	cancel context.CancelFunc
-	runner ProtocolEngine
+	runner wacore.ProtocolEngine
 }
 
 func NewLongConnectionManager(server *Server) *LongConnectionManager {
@@ -133,7 +134,7 @@ func (m *LongConnectionManager) Snapshots(req *waappv1.GetLongConnectionStatusRe
 	return out
 }
 
-func (m *LongConnectionManager) Runner(loginState *waappv1.LoginState) ProtocolEngine {
+func (m *LongConnectionManager) Runner(loginState *waappv1.LoginState) wacore.ProtocolEngine {
 	if m == nil || loginState == nil {
 		return nil
 	}
@@ -146,7 +147,7 @@ func (m *LongConnectionManager) Runner(loginState *waappv1.LoginState) ProtocolE
 	return entry.runner
 }
 
-func (m *LongConnectionManager) ActiveRunner(loginState *waappv1.LoginState) ProtocolEngine {
+func (m *LongConnectionManager) ActiveRunner(loginState *waappv1.LoginState) wacore.ProtocolEngine {
 	if m == nil || loginState == nil {
 		return nil
 	}
@@ -178,7 +179,7 @@ func (m *LongConnectionManager) MessageSessionID(loginState *waappv1.LoginState)
 	return entry.snapshot.GetMessageSessionId()
 }
 
-func (m *LongConnectionManager) setRunner(key string, runner ProtocolEngine) {
+func (m *LongConnectionManager) setRunner(key string, runner wacore.ProtocolEngine) {
 	m.mu.Lock()
 	defer m.mu.Unlock()
 	if entry := m.entries[key]; entry != nil {
@@ -488,7 +489,7 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, loginState *waappv
 	}
 }
 
-func closeLongConnectionRunner(runner ProtocolEngine) {
+func closeLongConnectionRunner(runner wacore.ProtocolEngine) {
 	if closer, ok := runner.(interface{ Close() error }); ok {
 		_ = closer.Close()
 	}
@@ -550,7 +551,7 @@ func (m *LongConnectionManager) openSession(ctx context.Context, loginState *waa
 	return resp.GetSession(), nil
 }
 
-func (m *LongConnectionManager) decryptPendingMessages(ctx context.Context, session *waappv1.MessageSession, runner ProtocolEngine) {
+func (m *LongConnectionManager) decryptPendingMessages(ctx context.Context, session *waappv1.MessageSession, runner wacore.ProtocolEngine) {
 	messages, err := m.server.store.ListPendingEncryptedInboundMessages(ctx, session.GetWaAccountId(), session.GetClientProfileId(), longConnectionDecryptLimit)
 	if err != nil {
 		log.Printf("WA long connection pending decrypt load failed: %v", sanitizeLogError(err))
@@ -563,7 +564,7 @@ func (m *LongConnectionManager) decryptPendingMessages(ctx context.Context, sess
 	m.decryptReceivedMessages(ctx, session, messages, runner)
 }
 
-func (m *LongConnectionManager) decryptReceivedMessages(ctx context.Context, session *waappv1.MessageSession, messages []*waappv1.InboundMessage, runner ProtocolEngine) {
+func (m *LongConnectionManager) decryptReceivedMessages(ctx context.Context, session *waappv1.MessageSession, messages []*waappv1.InboundMessage, runner wacore.ProtocolEngine) {
 	for _, msg := range messages {
 		if msg.GetEncryptionState() == waappv1.MessageEncryptionState_MESSAGE_ENCRYPTION_STATE_PLAINTEXT && !strings.HasPrefix(msg.GetPayloadRef(), "plaintext:") {
 			continue
@@ -712,7 +713,7 @@ func (s *serverCore) markLoginTransferredOut(ctx context.Context, loginState *wa
 	s.revokeLongConnection(registeredIdentityID, cause)
 }
 
-func (s *serverCore) longConnectionRunner(ctx context.Context, loginState *waappv1.LoginState, session *waappv1.MessageSession) (ProtocolEngine, error) {
+func (s *serverCore) longConnectionRunner(ctx context.Context, loginState *waappv1.LoginState, session *waappv1.MessageSession) (wacore.ProtocolEngine, error) {
 	engine, ok := s.runner.(*NativeEngine)
 	if !ok {
 		return s.runner, nil
@@ -722,11 +723,11 @@ func (s *serverCore) longConnectionRunner(ctx context.Context, loginState *waapp
 	return newLongConnectionNativeEngine(engine, longConnectionNativeEngineOptions{Input: input}), nil
 }
 
-func longConnectionEngineInput(session *waappv1.MessageSession) EngineMessageInput {
+func longConnectionEngineInput(session *waappv1.MessageSession) wacore.EngineMessageInput {
 	if session == nil {
-		return EngineMessageInput{}
+		return wacore.EngineMessageInput{}
 	}
-	return EngineMessageInput{
+	return wacore.EngineMessageInput{
 		WAAccountID:          session.GetWaAccountId(),
 		ClientProfileID:      session.GetClientProfileId(),
 		RegisteredIdentityID: session.GetRegisteredIdentityId(),

@@ -9,6 +9,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -50,7 +51,7 @@ func (s *accountSettingsHandler) SetTwoFactorAuthSettings(ctx context.Context, r
 	if err != nil {
 		return &waappv1.SetTwoFactorAuthSettingsResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	op, err := s.applyAccountSettings(ctx, req.GetContext(), req.GetSelector(), waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_TWO_FACTOR_AUTH_SETTINGS, func(input EngineAccountSettingsInput) EngineAccountSettingsInput {
+	op, err := s.applyAccountSettings(ctx, req.GetContext(), req.GetSelector(), waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_TWO_FACTOR_AUTH_SETTINGS, func(input wacore.EngineAccountSettingsInput) wacore.EngineAccountSettingsInput {
 		input.Pin = pin
 		return input
 	})
@@ -79,7 +80,7 @@ func (s *accountSettingsHandler) SetAccountEmail(ctx context.Context, req *waapp
 	if err != nil {
 		return &waappv1.SetAccountEmailResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	op, result, err := s.applyAccountSettingsResult(ctx, req.GetContext(), req.GetSelector(), waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_EMAIL_SET, func(input EngineAccountSettingsInput) EngineAccountSettingsInput {
+	op, result, err := s.applyAccountSettingsResult(ctx, req.GetContext(), req.GetSelector(), waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_EMAIL_SET, func(input wacore.EngineAccountSettingsInput) wacore.EngineAccountSettingsInput {
 		input.EmailAddress = emailAddress
 		input.GoogleIDToken = googleIDToken
 		return input
@@ -105,7 +106,7 @@ func (s *accountSettingsHandler) RequestAccountEmailOtp(ctx context.Context, req
 	if err := shared.ValidateContext(req.GetContext()); err != nil {
 		return &waappv1.RequestAccountEmailOtpResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	op, err := s.applyAccountSettings(ctx, req.GetContext(), req.GetSelector(), waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_EMAIL_OTP_REQUEST, func(input EngineAccountSettingsInput) EngineAccountSettingsInput {
+	op, err := s.applyAccountSettings(ctx, req.GetContext(), req.GetSelector(), waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_EMAIL_OTP_REQUEST, func(input wacore.EngineAccountSettingsInput) wacore.EngineAccountSettingsInput {
 		input.LocaleLanguage = accountSettingsLocale(req.GetLocaleLanguage(), "en")
 		input.LocaleCountry = accountSettingsLocale(req.GetLocaleCountry(), "US")
 		return input
@@ -128,7 +129,7 @@ func (s *accountSettingsHandler) VerifyAccountEmailOtp(ctx context.Context, req 
 	if err != nil {
 		return &waappv1.VerifyAccountEmailOtpResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	op, err := s.applyAccountSettings(ctx, req.GetContext(), req.GetSelector(), waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_EMAIL_OTP_VERIFY, func(input EngineAccountSettingsInput) EngineAccountSettingsInput {
+	op, err := s.applyAccountSettings(ctx, req.GetContext(), req.GetSelector(), waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_EMAIL_OTP_VERIFY, func(input wacore.EngineAccountSettingsInput) wacore.EngineAccountSettingsInput {
 		input.Code = code
 		return input
 	})
@@ -153,7 +154,7 @@ func (s *accountSettingsHandler) SetAccountProfileName(ctx context.Context, req 
 	if err != nil {
 		return &waappv1.SetAccountProfileNameResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	op, err := s.applyAccountSettings(ctx, req.GetContext(), req.GetSelector(), waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_PROFILE_NAME_SET, func(input EngineAccountSettingsInput) EngineAccountSettingsInput {
+	op, err := s.applyAccountSettings(ctx, req.GetContext(), req.GetSelector(), waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_PROFILE_NAME_SET, func(input wacore.EngineAccountSettingsInput) wacore.EngineAccountSettingsInput {
 		input.DisplayName = displayName
 		return input
 	})
@@ -177,7 +178,7 @@ func (s *accountSettingsHandler) SetAccountProfilePicture(ctx context.Context, r
 		return &waappv1.SetAccountProfilePictureResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	contentType, _ := profilePictureContentType(image, req.GetContentType())
-	op, result, err := s.applyAccountSettingsResult(ctx, req.GetContext(), req.GetSelector(), waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_PROFILE_PICTURE_SET, func(input EngineAccountSettingsInput) EngineAccountSettingsInput {
+	op, result, err := s.applyAccountSettingsResult(ctx, req.GetContext(), req.GetSelector(), waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_PROFILE_PICTURE_SET, func(input wacore.EngineAccountSettingsInput) wacore.EngineAccountSettingsInput {
 		input.ProfilePicture = image
 		return input
 	})
@@ -204,19 +205,19 @@ func (s *accountSettingsHandler) RemoveAccountProfilePicture(ctx context.Context
 	return &waappv1.RemoveAccountProfilePictureResponse{Operation: op, Error: op.GetError()}, nil
 }
 
-func (s *serverCore) applyAccountSettings(ctx context.Context, requestContext *waappv1.RequestContext, selector *waappv1.AccountLoginSelector, kind waappv1.AccountSettingsOperationKind, enrich func(EngineAccountSettingsInput) EngineAccountSettingsInput) (*waappv1.AccountSettingsOperation, error) {
+func (s *serverCore) applyAccountSettings(ctx context.Context, requestContext *waappv1.RequestContext, selector *waappv1.AccountLoginSelector, kind waappv1.AccountSettingsOperationKind, enrich func(wacore.EngineAccountSettingsInput) wacore.EngineAccountSettingsInput) (*waappv1.AccountSettingsOperation, error) {
 	op, _, err := s.applyAccountSettingsResult(ctx, requestContext, selector, kind, enrich)
 	return op, err
 }
 
-func (s *serverCore) applyAccountSettingsResult(ctx context.Context, requestContext *waappv1.RequestContext, selector *waappv1.AccountLoginSelector, kind waappv1.AccountSettingsOperationKind, enrich func(EngineAccountSettingsInput) EngineAccountSettingsInput) (*waappv1.AccountSettingsOperation, EngineAccountSettingsResult, error) {
+func (s *serverCore) applyAccountSettingsResult(ctx context.Context, requestContext *waappv1.RequestContext, selector *waappv1.AccountLoginSelector, kind waappv1.AccountSettingsOperationKind, enrich func(wacore.EngineAccountSettingsInput) wacore.EngineAccountSettingsInput) (*waappv1.AccountSettingsOperation, wacore.EngineAccountSettingsResult, error) {
 	operationCtx, cancel := accountSettingsOperationContext(ctx)
 	defer cancel()
 	loginState, err := s.accountSettingsLoginState(operationCtx, selector)
 	if err != nil {
-		return nil, EngineAccountSettingsResult{}, err
+		return nil, wacore.EngineAccountSettingsResult{}, err
 	}
-	input := EngineAccountSettingsInput{
+	input := wacore.EngineAccountSettingsInput{
 		WAAccountID:          loginState.GetWaAccountId(),
 		ClientProfileID:      loginState.GetClientProfileId(),
 		RegisteredIdentityID: loginState.GetRegisteredIdentityId(),
@@ -229,7 +230,7 @@ func (s *serverCore) applyAccountSettingsResult(ctx context.Context, requestCont
 	}
 	runner, release, err := s.accountSettingsRunner(operationCtx, requestContext, loginState, kind)
 	if err != nil {
-		return nil, EngineAccountSettingsResult{}, err
+		return nil, wacore.EngineAccountSettingsResult{}, err
 	}
 	defer release()
 	result := runner.ApplyAccountSettings(operationCtx, input)
@@ -263,7 +264,7 @@ func (s *serverCore) refreshTwoFactorAuthStatus(ctx context.Context, requestCont
 		return nil, nil, err
 	}
 	defer release()
-	result := runner.ApplyAccountSettings(operationCtx, EngineAccountSettingsInput{
+	result := runner.ApplyAccountSettings(operationCtx, wacore.EngineAccountSettingsInput{
 		WAAccountID:          loginState.GetWaAccountId(),
 		ClientProfileID:      loginState.GetClientProfileId(),
 		RegisteredIdentityID: loginState.GetRegisteredIdentityId(),
@@ -409,7 +410,7 @@ func accountSettingsOperationContext(ctx context.Context) (context.Context, cont
 	return context.WithTimeout(ctx, defaultAccountSettingsOperationTimeout)
 }
 
-func (s *serverCore) accountSettingsRunner(ctx context.Context, requestContext *waappv1.RequestContext, loginState *waappv1.LoginState, kind waappv1.AccountSettingsOperationKind) (ProtocolEngine, func(), error) {
+func (s *serverCore) accountSettingsRunner(ctx context.Context, requestContext *waappv1.RequestContext, loginState *waappv1.LoginState, kind waappv1.AccountSettingsOperationKind) (wacore.ProtocolEngine, func(), error) {
 	if s.longConnections != nil {
 		if runner := s.longConnections.Runner(loginState); runner != nil {
 			return runner, func() {}, nil
@@ -462,7 +463,7 @@ func requireActiveLoginState(load func() (*waappv1.LoginState, error)) (*waappv1
 	return loginState, nil
 }
 
-func accountSettingsStatus(kind waappv1.AccountSettingsOperationKind, result EngineAccountSettingsResult) waappv1.AccountSettingsOperationStatus {
+func accountSettingsStatus(kind waappv1.AccountSettingsOperationKind, result wacore.EngineAccountSettingsResult) waappv1.AccountSettingsOperationStatus {
 	if result.Status != waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_UNSPECIFIED {
 		return result.Status
 	}

@@ -9,6 +9,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 )
 
 const numberProbeMaxAttempts = 3
@@ -81,7 +82,7 @@ func (s *serverCore) probeNumberSMSAttempt(ctx context.Context, payload map[stri
 		"fingerprint_persistence": "RANDOM_NOT_COMMITTED",
 		"fingerprint":             fingerprintSummary(phoneProfileToProto(phone, state.Profile)),
 	}
-	probeResult, _ := probeEngine.probeAccountWithState(ctx, EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone}, state)
+	probeResult, _ := probeEngine.probeAccountWithState(ctx, wacore.EngineRegistrationInput{AppVersion: defaultWAAppVersion, Phone: phone}, state)
 	account := probeResultMap(probeResult)
 	sms := smsProbeMap(account)
 	result := buildNumberProbeResult(payload, proxy, fingerprint, account, sms)
@@ -308,7 +309,7 @@ func numberProbeProxyFailure(payload map[string]any, err error) map[string]any {
 	}
 }
 
-func retryableNumberProbeAttempt(proxy map[string]any, result EngineProbeResult) bool {
+func retryableNumberProbeAttempt(proxy map[string]any, result wacore.EngineProbeResult) bool {
 	if textField(proxy, "proxy_mode") != "US_ROTATING_DYNAMIC_IP" {
 		return false
 	}
@@ -465,7 +466,7 @@ func statusIn(value string, expected ...string) bool {
 	return false
 }
 
-func probeResultMap(result EngineProbeResult) map[string]any {
+func probeResultMap(result wacore.EngineProbeResult) map[string]any {
 	out := map[string]any{
 		"success":           result.Status == waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REACHABLE,
 		"status":            result.Status.String(),
@@ -524,7 +525,7 @@ func objectListField(data map[string]any, key string) []map[string]any {
 	return out
 }
 
-func methodStatusMaps(statuses []VerificationMethodStatus) []map[string]any {
+func methodStatusMaps(statuses []wacore.VerificationMethodStatus) []map[string]any {
 	out := make([]map[string]any, 0, len(statuses))
 	for _, status := range statuses {
 		method := status.Code

@@ -12,6 +12,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"github.com/byte-v-forge/wa-app/internal/waapp/waproto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -144,7 +145,7 @@ func (e *engineCore) CloseIdleConnections() {
 	e.http.CloseIdleConnections()
 }
 
-func (e *registrationService) PrepareClientProfile(ctx context.Context, input EngineProfileInput) error {
+func (e *registrationService) PrepareClientProfile(ctx context.Context, input wacore.EngineProfileInput) error {
 	_ = ctx
 	state, err := newNativeState(input.Phone)
 	if err != nil {
@@ -157,34 +158,34 @@ func (e *registrationService) PrepareClientProfile(ctx context.Context, input En
 // 无任何可解析的应用层结论)时的最大尝试次数。exist 是幂等检查,重试安全。
 const existProbeTransientAttempts = 3
 
-func (e *registrationService) ProbeAccount(ctx context.Context, input EngineRegistrationInput) EngineProbeResult {
+func (e *registrationService) ProbeAccount(ctx context.Context, input wacore.EngineRegistrationInput) wacore.EngineProbeResult {
 	state, err := e.newState(input.Phone)
 	if err != nil {
-		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}
+		return wacore.EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}
 	}
 	result, _ := e.probeAccountWithState(ctx, input, state)
 	return result
 }
 
-func (e *registrationService) probeAccountWithState(ctx context.Context, input EngineRegistrationInput, state nativeState) (EngineProbeResult, nativeState) {
+func (e *registrationService) probeAccountWithState(ctx context.Context, input wacore.EngineRegistrationInput, state nativeState) (wacore.EngineProbeResult, nativeState) {
 	if err := ensureNativeSoftwareAttestation(&state, e.clock.Now()); err != nil {
-		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}, state
+		return wacore.EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}, state
 	}
 	params, rawKeys := e.existParams(input.Phone, state)
 	if err := e.applyRuntimeWamsys(ctx, waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_EXIST, input.Phone, state, input.AppVersion, input.IntegrityMode, params, rawKeys); err != nil {
-		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}, state
+		return wacore.EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}, state
 	}
 	logNativeRegistrationMapShape("exist", input.Phone, input.DeliveryMethod, params, rawKeys)
 	plain := renderNativePlain(params, rawKeys)
 	client, err := e.httpForProxy()
 	if err != nil {
-		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}, state
+		return wacore.EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}, state
 	}
 	// /v2/exist 幂等;纯传输层抖动(代理 EOF/重置/超时,响应无任何可解析的应用层结论)
 	// 时重试若干次,避免单次代理失败被判成 probe_failed —— 那会让前端对同一号码"通道
 	// 忽有忽无"。拿到成功响应、真正的应用层结论(含协议拒绝)或 ctx 取消即停。
 	var data map[string]any
-	var result EngineProbeResult
+	var result wacore.EngineProbeResult
 	for attempt := 1; attempt <= existProbeTransientAttempts; attempt++ {
 		data, _, err = client.postWASafe(ctx, defaultWAExistURL, plain, nativeUserAgentForState(state, input.AppVersion), state.Attestation)
 		result = parseExistProbeResult(data)
@@ -203,7 +204,7 @@ func (e *registrationService) probeAccountWithState(ctx context.Context, input E
 	return result, state
 }
 
-func parsedExistApplicationOutcome(result EngineProbeResult) bool {
+func parsedExistApplicationOutcome(result wacore.EngineProbeResult) bool {
 	return result.Status != waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_UNKNOWN ||
 		result.AccountFlow != accountProbeFlowUnknown ||
 		result.RawStatus != "" ||
@@ -211,30 +212,30 @@ func parsedExistApplicationOutcome(result EngineProbeResult) bool {
 		len(result.MethodStatuses) > 0
 }
 
-func (e *registrationService) RequestVerificationCode(ctx context.Context, input EngineRegistrationInput) EngineCodeResult {
+func (e *registrationService) RequestVerificationCode(ctx context.Context, input wacore.EngineRegistrationInput) wacore.EngineCodeResult {
 	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
-		return EngineCodeResult{Status: waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED, Err: err}
+		return wacore.EngineCodeResult{Status: waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED, Err: err}
 	}
 	result, updated := e.requestVerificationCodeWithState(ctx, input, state)
 	_ = e.saveState(ctx, input.ClientProfileID, updated)
 	return result
 }
 
-func (e *registrationService) requestVerificationCodeWithState(ctx context.Context, input EngineRegistrationInput, state nativeState) (EngineCodeResult, nativeState) {
+func (e *registrationService) requestVerificationCodeWithState(ctx context.Context, input wacore.EngineRegistrationInput, state nativeState) (wacore.EngineCodeResult, nativeState) {
 	if err := ensureNativeSoftwareAttestation(&state, e.clock.Now()); err != nil {
-		return EngineCodeResult{Status: waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED, Err: err}, state
+		return wacore.EngineCodeResult{Status: waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED, Err: err}, state
 	}
 	state.nextGenerateCodeAttempt()
 	params, err := e.codeRequestOrderedParams(ctx, input.Phone, input.DeliveryMethod, state, input.AuthCodeContext, input.AppVersion, input.IntegrityMode)
 	if err != nil {
-		return EngineCodeResult{Status: waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED, Err: err}, state
+		return wacore.EngineCodeResult{Status: waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED, Err: err}, state
 	}
 	logNativeRegistrationOrderedShape("code", input.Phone, input.DeliveryMethod, params)
 	plain := params.render()
 	client, err := e.httpForProxy()
 	if err != nil {
-		return EngineCodeResult{Status: waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED, Err: err}, state
+		return wacore.EngineCodeResult{Status: waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED, Err: err}, state
 	}
 	data, enc, err := client.postWASafe(ctx, defaultWACodeURL, plain, nativeUserAgentForState(state, input.AppVersion), state.Attestation)
 	state.LastCodeParams = params.toMap()
@@ -251,7 +252,7 @@ func (e *registrationService) requestVerificationCodeWithState(ctx context.Conte
 		if verificationCodeRateLimited(data) {
 			return verificationCodeRejectedResult(data, input.DeliveryMethod, now, retryAfter, "verification request is cooling down"), state
 		}
-		return EngineCodeResult{
+		return wacore.EngineCodeResult{
 			Status:         waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED,
 			RetryAfter:     retryAfter,
 			MethodStatuses: verificationCodeMethodStatuses(data, input.DeliveryMethod),
@@ -267,7 +268,7 @@ func (e *registrationService) requestVerificationCodeWithState(ctx context.Conte
 	} else if verificationCodeRateLimited(data) {
 		return verificationCodeRejectedResult(data, input.DeliveryMethod, now, retryAfter, "verification request is cooling down"), state
 	} else if s != "" {
-		return EngineCodeResult{
+		return wacore.EngineCodeResult{
 			Status:         waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED,
 			RetryAfter:     retryAfter,
 			MethodStatuses: verificationCodeMethodStatuses(data, input.DeliveryMethod),
@@ -303,46 +304,46 @@ func (e *registrationService) prepareAccountTransferChallenge(phone *waappv1.Pho
 	return state.AccountTransfer.challenge("", now)
 }
 
-func (e *registrationService) RefreshAccountTransferChallenge(ctx context.Context, input EngineAccountTransferChallengeInput) EngineAccountTransferChallengeResult {
+func (e *registrationService) RefreshAccountTransferChallenge(ctx context.Context, input wacore.EngineAccountTransferChallengeInput) wacore.EngineAccountTransferChallengeResult {
 	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
-		return EngineAccountTransferChallengeResult{Err: err}
+		return wacore.EngineAccountTransferChallengeResult{Err: err}
 	}
 	if state.AccountTransfer.empty() {
-		return EngineAccountTransferChallengeResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_EXPIRED, "account transfer challenge is not available", false)}
+		return wacore.EngineAccountTransferChallengeResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_EXPIRED, "account transfer challenge is not available", false)}
 	}
 	challenge, err := state.AccountTransfer.challenge(input.VerificationRequestID, e.clock.Now())
 	if err != nil {
-		return EngineAccountTransferChallengeResult{Err: err}
+		return wacore.EngineAccountTransferChallengeResult{Err: err}
 	}
 	_ = e.saveState(ctx, input.ClientProfileID, state)
-	return EngineAccountTransferChallengeResult{Challenge: challenge}
+	return wacore.EngineAccountTransferChallengeResult{Challenge: challenge}
 }
 
-func (e *registrationService) SubmitVerificationCode(ctx context.Context, input EngineSubmitInput) EngineRegisterResult {
+func (e *registrationService) SubmitVerificationCode(ctx context.Context, input wacore.EngineSubmitInput) wacore.EngineRegisterResult {
 	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
-		return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: err}
+		return wacore.EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: err}
 	}
 	if err := ensureNativeSoftwareAttestation(&state, e.clock.Now()); err != nil {
-		return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: err}
+		return wacore.EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: err}
 	}
 	code := strings.TrimSpace(input.Code)
 	if input.DeliveryMethod == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_ACCOUNT_TRANSFER {
 		code, _, err = state.AccountTransfer.currentCode(e.clock.Now())
 		if err != nil {
-			return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: err}
+			return wacore.EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: err}
 		}
 	}
 	if code == "" {
-		return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "verification code is required", false)}
+		return wacore.EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "verification code is required", false)}
 	}
 	params, rawKeys := e.registerParams(input.Phone, input.DeliveryMethod, code, state, input.AuthCodeContext)
 	logNativeRegistrationMapShape("register", input.Phone, input.DeliveryMethod, params, rawKeys)
 	plain := renderNativePlain(params, rawKeys)
 	client, err := e.httpForProxy()
 	if err != nil {
-		return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: err}
+		return wacore.EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: err}
 	}
 	data, enc, err := postRegisterWithRetry(ctx, client, plain, nativeUserAgentForState(state, input.AppVersion), state.Attestation)
 	state.LastRegister = sanitizeResponse(data)
@@ -354,18 +355,18 @@ func (e *registrationService) SubmitVerificationCode(ctx context.Context, input 
 	}
 	if err != nil {
 		_ = e.saveState(ctx, input.ClientProfileID, state)
-		return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: classifyHTTPError(data, err)}
+		return wacore.EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: classifyHTTPError(data, err)}
 	}
 	if status := responseStatus(data); status != "ok" && status != "registered" {
 		if input.DeliveryMethod == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_ACCOUNT_TRANSFER && !accountTransferRegisterTerminalFailure(data) {
 			_ = e.saveState(ctx, input.ClientProfileID, state)
-			return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_SUBMITTED, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, "account transfer confirmation is pending", true)}
+			return wacore.EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_SUBMITTED, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, "account transfer confirmation is pending", true)}
 		}
 		if input.DeliveryMethod == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_ACCOUNT_TRANSFER {
 			state.AccountTransfer = nativeAccountTransferState{}
 		}
 		_ = e.saveState(ctx, input.ClientProfileID, state)
-		return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: waProtocolError(data, "registration was rejected")}
+		return wacore.EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: waProtocolError(data, "registration was rejected")}
 	}
 	login := shared.FirstNonEmpty(jsonString(data["login"]), jsonString(data["jid"]), jsonString(data["registration_jid"]), state.CC+state.Phone)
 	lid := shared.FirstNonEmpty(jsonString(data["lid"]), login)
@@ -377,7 +378,7 @@ func (e *registrationService) SubmitVerificationCode(ctx context.Context, input 
 	}
 	_ = e.saveState(ctx, input.ClientProfileID, state)
 	completedAt := e.clock.Now()
-	return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REGISTERED, RegisteredID: "waid_" + shared.StableID(login), ServiceAccountID: lid, ServiceLoginID: login, CompletedAt: completedAt}
+	return wacore.EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REGISTERED, RegisteredID: "waid_" + shared.StableID(login), ServiceAccountID: lid, ServiceLoginID: login, CompletedAt: completedAt}
 }
 
 func postRegisterWithRetry(ctx context.Context, client *nativeHTTPClient, plain string, userAgent string, attestation nativeSoftwareAttestation) (map[string]any, string, error) {
@@ -437,14 +438,14 @@ func retryableRegisterHTTPFailure(data map[string]any, err error) bool {
 	return false
 }
 
-func (e *registrationService) CheckLoginState(ctx context.Context, input EngineLoginCheckInput) EngineLoginCheckResult {
+func (e *registrationService) CheckLoginState(ctx context.Context, input wacore.EngineLoginCheckInput) wacore.EngineLoginCheckResult {
 	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
-		return EngineLoginCheckResult{Status: waappv1.LoginStateCheckStatus_LOGIN_STATE_CHECK_STATUS_INVALID, Err: err}
+		return wacore.EngineLoginCheckResult{Status: waappv1.LoginStateCheckStatus_LOGIN_STATE_CHECK_STATUS_INVALID, Err: err}
 	}
 	proxyURL, err := e.proxyURL()
 	if err != nil {
-		return EngineLoginCheckResult{Status: waappv1.LoginStateCheckStatus_LOGIN_STATE_CHECK_STATUS_UNSPECIFIED, Err: err}
+		return wacore.EngineLoginCheckResult{Status: waappv1.LoginStateCheckStatus_LOGIN_STATE_CHECK_STATUS_UNSPECIFIED, Err: err}
 	}
 	timeout := defaultChatdReadWindow
 	if input.RemoteTimeout > 0 {
@@ -458,9 +459,9 @@ func (e *registrationService) CheckLoginState(ctx context.Context, input EngineL
 	if err != nil {
 		status := loginCheckStatusForError(err)
 		message := chatdFailureMessage("login state remote check failed", err)
-		return EngineLoginCheckResult{Status: status, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, message, status == waappv1.LoginStateCheckStatus_LOGIN_STATE_CHECK_STATUS_UNREACHABLE)}
+		return wacore.EngineLoginCheckResult{Status: status, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, message, status == waappv1.LoginStateCheckStatus_LOGIN_STATE_CHECK_STATUS_UNREACHABLE)}
 	}
-	return EngineLoginCheckResult{Status: waappv1.LoginStateCheckStatus_LOGIN_STATE_CHECK_STATUS_ACTIVE}
+	return wacore.EngineLoginCheckResult{Status: waappv1.LoginStateCheckStatus_LOGIN_STATE_CHECK_STATUS_ACTIVE}
 }
 
 func loginCheckStatusForError(err error) waappv1.LoginStateCheckStatus {
@@ -476,10 +477,10 @@ func loginCheckStatusForError(err error) waappv1.LoginStateCheckStatus {
 	return waappv1.LoginStateCheckStatus_LOGIN_STATE_CHECK_STATUS_INVALID
 }
 
-func (e *messagingService) ReceiveMessageBatch(ctx context.Context, input EngineMessageInput) EngineMessageBatchResult {
+func (e *messagingService) ReceiveMessageBatch(ctx context.Context, input wacore.EngineMessageInput) wacore.EngineMessageBatchResult {
 	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
-		return EngineMessageBatchResult{Err: err}
+		return wacore.EngineMessageBatchResult{Err: err}
 	}
 	state.ensureMaps()
 	if state.ChatStatic.Private == "" || state.ChatStatic.Public == "" {
@@ -488,21 +489,21 @@ func (e *messagingService) ReceiveMessageBatch(ctx context.Context, input Engine
 	}
 	proxyURL, err := e.proxyURL()
 	if err != nil {
-		return EngineMessageBatchResult{Err: err}
+		return wacore.EngineMessageBatchResult{Err: err}
 	}
 	client := newChatdClient(chatdConfigForState(proxyURL, state, 0))
 	now := e.clock.Now()
 	messages, payloads, otps, update, err := client.receiveBatch(ctx, state, input, input.AppVersion, now)
 	if err != nil {
-		return EngineMessageBatchResult{Err: chatdReceiveError(err)}
+		return wacore.EngineMessageBatchResult{Err: chatdReceiveError(err)}
 	}
 	if applyChatdReceiveState(&state, input, payloads, update) {
 		_ = e.saveState(ctx, input.ClientProfileID, state)
 	}
-	return EngineMessageBatchResult{Messages: messages, Contacts: contactsFromContactHints(input.WAAccountID, nil, update.ContactHints, now), OTPMessages: otps, AccountLogout: accountLogoutFromUpdate(update.AccountLogout)}
+	return wacore.EngineMessageBatchResult{Messages: messages, Contacts: contactsFromContactHints(input.WAAccountID, nil, update.ContactHints, now), OTPMessages: otps, AccountLogout: accountLogoutFromUpdate(update.AccountLogout)}
 }
 
-func applyChatdReceiveState(state *nativeState, input EngineMessageInput, payloads []chatdEncPayload, update chatdSessionUpdate) bool {
+func applyChatdReceiveState(state *nativeState, input wacore.EngineMessageInput, payloads []chatdEncPayload, update chatdSessionUpdate) bool {
 	if state == nil {
 		return false
 	}
@@ -728,7 +729,7 @@ func chatdNodeTokenFailureReason(text string, fallback string) string {
 	return fallback + " " + match[2]
 }
 
-func (e *messagingService) DecryptMessage(ctx context.Context, input EngineDecryptInput) EngineDecryptResult {
+func (e *messagingService) DecryptMessage(ctx context.Context, input wacore.EngineDecryptInput) wacore.EngineDecryptResult {
 	_ = ctx
 	if strings.HasPrefix(input.PayloadRef, "plaintext:") {
 		plain := strings.TrimPrefix(input.PayloadRef, "plaintext:")
@@ -738,21 +739,21 @@ func (e *messagingService) DecryptMessage(ctx context.Context, input EngineDecry
 			text.Value = plain
 		}
 		msg := &waappv1.DecryptedMessage{DecryptedMessageId: decryptedID, MessageId: input.MessageID, Status: waappv1.DecryptionStatus_DECRYPTION_STATUS_DECRYPTED, PlaintextRef: "inline:" + decryptedID, PlaintextText: text, DecryptedAt: timestamppb.New(e.clock.Now())}
-		return EngineDecryptResult{DecryptedMessage: msg, Candidates: extractCandidates(input.MessageID, decryptedID, plain, input.IncludePlaintextText, e.clock.Now(), e.ids)}
+		return wacore.EngineDecryptResult{DecryptedMessage: msg, Candidates: extractCandidates(input.MessageID, decryptedID, plain, input.IncludePlaintextText, e.clock.Now(), e.ids)}
 	}
 	if strings.HasPrefix(input.PayloadRef, "native-enc:") {
 		state, err := e.loadState(ctx, input.ClientProfileID)
 		if err != nil {
-			return EngineDecryptResult{Err: err}
+			return wacore.EngineDecryptResult{Err: err}
 		}
 		payload, ok := state.MessagePayloads[input.PayloadRef]
 		if !ok {
-			return EngineDecryptResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "encrypted message payload ref not found", false)}
+			return wacore.EngineDecryptResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "encrypted message payload ref not found", false)}
 		}
 		commit := input.SessionCommitPolicy == waappv1.SessionCommitPolicy_SESSION_COMMIT_POLICY_COMMIT_LEARNED_STATE
 		output, err := decryptNativeSignalPayload(&state, payload, commit)
 		if err != nil {
-			return EngineDecryptResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_DECRYPTION_FAILED, "native Signal message decryption failed", true)}
+			return wacore.EngineDecryptResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_DECRYPTION_FAILED, "native Signal message decryption failed", true)}
 		}
 		if commit {
 			_ = applyNativeAppStateKeys(&state, output.plaintext)
@@ -768,9 +769,9 @@ func (e *messagingService) DecryptMessage(ctx context.Context, input EngineDecry
 		contactHints := nativeContactHints(output.plaintext)
 		contactHints = append(contactHints, nativeAppStateContactHints(&state, output.plaintext)...)
 		contactHints = append(contactHints, contactHintsFromNativePayloadMetadata(payload)...)
-		return EngineDecryptResult{DecryptedMessage: msg, Candidates: extractCandidates(input.MessageID, decryptedID, plain, input.IncludePlaintextText, e.clock.Now(), e.ids), ContactHints: dedupeWAContactHints(contactHints)}
+		return wacore.EngineDecryptResult{DecryptedMessage: msg, Candidates: extractCandidates(input.MessageID, decryptedID, plain, input.IncludePlaintextText, e.clock.Now(), e.ids), ContactHints: dedupeWAContactHints(contactHints)}
 	}
-	return EngineDecryptResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "payload ref scheme is not supported by native decryptor", false)}
+	return wacore.EngineDecryptResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "payload ref scheme is not supported by native decryptor", false)}
 }
 
 func nativePlaintextText(raw []byte) string {
@@ -886,8 +887,8 @@ func sanitizeResponse(data map[string]any) map[string]any {
 	return out
 }
 
-func verificationCodeResult(status waappv1.VerificationRequestStatus, data map[string]any, method waappv1.VerificationDeliveryMethod, now time.Time, retryAfter time.Duration) EngineCodeResult {
-	return EngineCodeResult{
+func verificationCodeResult(status waappv1.VerificationRequestStatus, data map[string]any, method waappv1.VerificationDeliveryMethod, now time.Time, retryAfter time.Duration) wacore.EngineCodeResult {
+	return wacore.EngineCodeResult{
 		Status:             status,
 		ExpectedCodeLength: int32(jsonNumber(data["length"])),
 		ExpiresAt:          now.Add(10 * time.Minute),
@@ -898,8 +899,8 @@ func verificationCodeResult(status waappv1.VerificationRequestStatus, data map[s
 	}
 }
 
-func verificationCodeRejectedResult(data map[string]any, method waappv1.VerificationDeliveryMethod, now time.Time, retryAfter time.Duration, fallback string) EngineCodeResult {
-	return EngineCodeResult{
+func verificationCodeRejectedResult(data map[string]any, method waappv1.VerificationDeliveryMethod, now time.Time, retryAfter time.Duration, fallback string) wacore.EngineCodeResult {
+	return wacore.EngineCodeResult{
 		Status:             waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED,
 		ExpectedCodeLength: int32(jsonNumber(data["length"])),
 		ExpiresAt:          now.Add(10 * time.Minute),

@@ -8,6 +8,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -63,7 +64,7 @@ func oldRegistrationExpiresAt(value string) time.Time {
 	return time.Unix(stamp, 0).UTC()
 }
 
-func oldRegistrationOTPMessage(input EngineMessageInput, node chatdNode, otp chatdOldRegistrationOTP, now time.Time) *waappv1.OtpMessage {
+func oldRegistrationOTPMessage(input wacore.EngineMessageInput, node chatdNode, otp chatdOldRegistrationOTP, now time.Time) *waappv1.OtpMessage {
 	if strings.TrimSpace(input.WAAccountID) == "" || strings.TrimSpace(otp.code) == "" || otp.expiresAt.IsZero() {
 		return nil
 	}
