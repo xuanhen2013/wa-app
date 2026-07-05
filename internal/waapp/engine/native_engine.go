@@ -20,8 +20,8 @@ import (
 )
 
 const (
-	DefaultWAAppVersion     = "2.26.24.77"
-	defaultWAAppVersionCode = 262407730
+	DefaultWAAppVersion     = "2.26.26.72"
+	defaultWAAppVersionCode = 262607220
 	defaultWAABPropURL      = "https://y9yrsygcg6.execute-api.us-east-1.amazonaws.com/s/s?_=/v2/reg_onboard_abprop&"
 	defaultWAExistURL       = "https://y9yrsygcg6.execute-api.us-east-1.amazonaws.com/s/s?_=/v2/exist&"
 	defaultWACodeURL        = "https://y9yrsygcg6.execute-api.us-east-1.amazonaws.com/s/s?_=/v2/code&"
@@ -173,12 +173,12 @@ func (e *registrationService) ProbeAccountWithState(ctx context.Context, input w
 	if err := ensureNativeSoftwareAttestation(&state, e.clock.Now()); err != nil {
 		return wacore.EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}, state
 	}
-	params, rawKeys := e.existParams(input.Phone, state)
-	if err := e.applyRuntimeWamsys(ctx, waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_EXIST, input.Phone, state, input.AppVersion, input.IntegrityMode, params, rawKeys); err != nil {
+	built, err := e.existOrderedParamsWithWamsys(ctx, input.Phone, state, nil, true, input.AppVersion, input.IntegrityMode)
+	if err != nil {
 		return wacore.EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}, state
 	}
-	logNativeRegistrationMapShape("exist", input.Phone, input.DeliveryMethod, params, rawKeys)
-	plain := renderNativePlain(params, rawKeys)
+	logNativeRegistrationOrderedShape("exist", input.Phone, input.DeliveryMethod, built)
+	plain := built.render()
 	client, err := e.httpForProxy()
 	if err != nil {
 		return wacore.EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}, state
@@ -340,9 +340,12 @@ func (e *registrationService) SubmitVerificationCode(ctx context.Context, input 
 	if code == "" {
 		return wacore.EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "verification code is required", false)}
 	}
-	params, rawKeys := e.registerParams(input.Phone, input.DeliveryMethod, code, state, input.AuthCodeContext)
-	logNativeRegistrationMapShape("register", input.Phone, input.DeliveryMethod, params, rawKeys)
-	plain := renderNativePlain(params, rawKeys)
+	params, err := e.registerOrderedParams(ctx, input.Phone, input.DeliveryMethod, code, state, input.AuthCodeContext, input.AppVersion, input.IntegrityMode)
+	if err != nil {
+		return wacore.EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: err}
+	}
+	logNativeRegistrationOrderedShape("register", input.Phone, input.DeliveryMethod, params)
+	plain := params.render()
 	client, err := e.httpForProxy()
 	if err != nil {
 		return wacore.EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: err}
@@ -802,57 +805,6 @@ func omitEmptyNativeOperatorField(key string, value string) bool {
 		return true
 	default:
 		return false
-	}
-}
-
-func (e *engineCore) registerParams(phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, code string, state NativeState, authCodeContext string) (map[string]string, map[string]struct{}) {
-	methodName := shared.FirstNonEmpty(state.LastCodeParams["method"], RegistrationMethodName(method, "sms"))
-	lg, lc := registrationLocale(phone)
-	params := map[string]string{
-		"cc":                shared.PhoneCC(phone),
-		"in":                shared.PhoneNational(phone),
-		"method":            methodName,
-		"lg":                shared.FirstNonEmpty(state.LastCodeParams["lg"], lg),
-		"lc":                shared.FirstNonEmpty(state.LastCodeParams["lc"], lc),
-		"fdid":              shared.FirstNonEmpty(state.LastCodeParams["fdid"], state.Profile.FDID),
-		"expid":             shared.FirstNonEmpty(state.LastCodeParams["expid"], state.Profile.ExpID),
-		"access_session_id": shared.FirstNonEmpty(state.LastCodeParams["access_session_id"], state.Profile.AccessSessionID),
-		"id":                nativeRegistrationRequestID(state),
-		"backup_token":      shared.FirstNonEmpty(state.LastCodeParams["backup_token"], state.Profile.BackupToken),
-		"code":              code,
-		"authkey":           shared.FirstNonEmpty(state.LastCodeParams["authkey"], state.AuthKey),
-		"e_ident":           shared.FirstNonEmpty(state.LastCodeParams["e_ident"], state.KeyBundle.IdentityPublic),
-		"e_keytype":         shared.FirstNonEmpty(state.LastCodeParams["e_keytype"], state.KeyBundle.KeyType),
-		"e_regid":           shared.FirstNonEmpty(state.LastCodeParams["e_regid"], state.KeyBundle.RegID),
-		"e_skey_id":         shared.FirstNonEmpty(state.LastCodeParams["e_skey_id"], state.KeyBundle.SignedKeyID),
-		"e_skey_val":        shared.FirstNonEmpty(state.LastCodeParams["e_skey_val"], state.KeyBundle.SignedKeyValue),
-		"e_skey_sig":        shared.FirstNonEmpty(state.LastCodeParams["e_skey_sig"], state.KeyBundle.SignedKeySig),
-	}
-	if nativeRegistrationMethodUsesToken(methodName) {
-		if token := e.registrationToken(phone, state); token != "" {
-			params["token"] = token
-		}
-	}
-	if nativeRegistrationMethodUsesAuthContext(methodName) {
-		if contextValue := shared.FirstNonEmpty(authCodeContext, state.LastCodeParams["context"]); contextValue != "" {
-			params["context"] = contextValue
-		}
-	}
-	if methodName != "acc_tr" {
-		applyRegisterCodeResultParams(params, state)
-	}
-	raw := map[string]struct{}{"id": {}, "backup_token": {}}
-	applyNativeRawParamMap(params, raw, registerDeviceMap(methodName, state), true)
-	return params, raw
-}
-
-func applyRegisterCodeResultParams(params map[string]string, state NativeState) {
-	for _, key := range []string{"auth_response", "context", "advertising_id", "login", "type"} {
-		value := jsonString(state.LastCodeResult[key])
-		if value == "" {
-			continue
-		}
-		params[key] = value
 	}
 }
 

@@ -238,45 +238,6 @@ func nativeStableWamsysBootID(state NativeState) string {
 	}, "-")
 }
 
-func (e *engineCore) applyRuntimeWamsys(
-	ctx context.Context,
-	kind waappv1.RegistrationRequestKind,
-	phone *waappv1.PhoneTarget,
-	state NativeState,
-	appVersion string,
-	integrityMode wacore.IntegrityMode,
-	params map[string]string,
-	rawKeys map[string]struct{},
-) error {
-	capture, err := e.wamsysProvider().RegistrationMaterial(ctx, wamsysMaterialInput{Kind: kind, Phone: phone, State: state, AppVersion: appVersion, IntegrityMode: integrityMode, Now: e.clock.Now()})
-	if err != nil {
-		return err
-	}
-	excluded := map[string]struct{}{}
-	if !nativeShouldSendRegistrationGPIA(state) {
-		excluded["gpia"] = struct{}{}
-	}
-	applyOpaqueWamsysMapParams(params, rawKeys, capture, excluded)
-	return nil
-}
-
-func applyOpaqueWamsysMapParams(params map[string]string, rawKeys map[string]struct{}, capture *waappv1.WamsysCapture, excluded map[string]struct{}) {
-	if capture == nil {
-		return
-	}
-	for _, item := range capture.GetMapParams() {
-		key := item.GetKey()
-		if !isOpaqueWamsysMapKey(key) {
-			continue
-		}
-		if _, skip := excluded[key]; skip {
-			continue
-		}
-		params[key] = pctBytes(item.GetValue())
-		rawKeys[key] = struct{}{}
-	}
-}
-
 func applyOrderedWamsysKey(params *orderedParams, capture *waappv1.WamsysCapture, key string) {
 	if params == nil || capture == nil || !isOpaqueWamsysMapKey(key) {
 		return

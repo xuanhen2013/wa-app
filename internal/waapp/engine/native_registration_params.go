@@ -40,32 +40,68 @@ func registrationDeviceCountryISO(phone *waappv1.PhoneTarget) string {
 	return "US"
 }
 
-func (e *engineCore) existParams(phone *waappv1.PhoneTarget, state NativeState) (map[string]string, map[string]struct{}) {
+// existOrderedParamsWithWamsys 装配 /v2/exist 有序请求，设备段字段集与顺序对齐
+// app-release.apk(2.26.26.72)X/F6m.A0i(exist 路径，已 Frida 实机核验)。与 /v2/code 差异：
+// exist 不发 reason/hasav/mcc/mnc/sim_mcc/sim_mnc/education/prefer/push_code/new_acc_uuid
+// （误发运营商码会让 exist 偏离官方 shape、服务端判 incorrect），改为
+// offline_ab/read_phone_permission_granted/sim_state/device_name/backup_token_error/
+// language_selector_*；device_ram 排在 gpia 前，network_radio_type..rc、SIM signal、
+// tos_version 排在 gpia/db/recaptcha 之后，最后 WAMSYS native map putAll。
+func (e *engineCore) existOrderedParamsWithWamsys(ctx context.Context, phone *waappv1.PhoneTarget, state NativeState, wamsysCapture *waappv1.WamsysCapture, includeWamsys bool, appVersion string, integrityMode wacore.IntegrityMode) (orderedParams, error) {
+	fields := NativeDeviceMapFields(state)
 	lg, lc := registrationLocale(phone)
-	params := map[string]string{
-		"cc":                shared.PhoneCC(phone),
-		"in":                shared.PhoneNational(phone),
-		"lg":                lg,
-		"lc":                lc,
-		"fdid":              state.Profile.FDID,
-		"expid":             state.Profile.ExpID,
-		"access_session_id": state.Profile.AccessSessionID,
-		"id":                nativeRegistrationRequestID(state),
-		"backup_token":      state.Profile.BackupToken,
-		"authkey":           state.AuthKey,
-		"e_ident":           state.KeyBundle.IdentityPublic,
-		"e_keytype":         state.KeyBundle.KeyType,
-		"e_regid":           state.KeyBundle.RegID,
-		"e_skey_id":         state.KeyBundle.SignedKeyID,
-		"e_skey_val":        state.KeyBundle.SignedKeyValue,
-		"e_skey_sig":        state.KeyBundle.SignedKeySig,
+	params := orderedParams{}
+	params.set("cc", shared.PhoneCC(phone), false)
+	params.set("in", shared.PhoneNational(phone), false)
+	params.set("lg", lg, false)
+	params.set("lc", lc, false)
+	params.set("fdid", state.Profile.FDID, false)
+	params.set("expid", state.Profile.ExpID, false)
+	if state.Profile.AccessSessionID != "" {
+		params.set("access_session_id", state.Profile.AccessSessionID, false)
 	}
+	params.set("id", nativeRegistrationRequestID(state), true)
+	params.set("backup_token", state.Profile.BackupToken, true)
+	applyNativeE2EParams(&params, state)
+	// A0i device map：token 起头，其后设备/整体信号段。
 	if token := e.registrationToken(phone, state); token != "" {
-		params["token"] = token
+		params.set("token", token, false)
 	}
-	raw := map[string]struct{}{"id": {}, "backup_token": {}}
-	applyNativeRawParamMap(params, raw, existDeviceMap(state), true)
-	return params, raw
+	addRawParam(&params, "mistyped", "7")
+	addRawParam(&params, "offline_ab", `{"exposure":[],"exp_hash":[],"metrics":{}}`)
+	addRawParam(&params, "client_metrics", `{"attempts":1,"app_campaign_download_source":"unknown|unknown","was_activated_from_stub":false}`)
+	addRawParam(&params, "read_phone_permission_granted", "0")
+	addRawParam(&params, "sim_state", "1")
+	addOptionalRawParam(&params, "network_operator_name", fields["network_operator_name"])
+	addOptionalRawParam(&params, "sim_operator_name", fields["sim_operator_name"])
+	addRawParam(&params, "device_name", nativeDeviceDisplayName(state))
+	addOptionalRawParam(&params, "backup_token_error", fields["backup_token_error"])
+	addOptionalRawParam(&params, "feo2_query_status", fields["feo2_query_status"])
+	addRawParam(&params, "is_foa_fdid_app_installed", "false")
+	addOptionalRawParam(&params, "device_ram", fields["device_ram"])
+	addRawParam(&params, "language_selector_time_spent", "0")
+	addRawParam(&params, "language_selector_clicked_count", "0")
+	capture, err := e.registrationCapture(ctx, waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_EXIST, phone, state, wamsysCapture, includeWamsys, appVersion, integrityMode)
+	if err != nil {
+		return nil, err
+	}
+	if nativeShouldSendRegistrationGPIA(state) {
+		applyOrderedWamsysKey(&params, capture, "gpia")
+	}
+	addOptionalRawParam(&params, "db", fields["db"])
+	addOptionalRawParam(&params, "recaptcha", fields["recaptcha"])
+	addOptionalRawParam(&params, "network_radio_type", fields["network_radio_type"])
+	addOptionalRawParam(&params, "simnum", fields["simnum"])
+	addOptionalRawParam(&params, "hasinrc", fields["hasinrc"])
+	addOptionalRawParam(&params, "pid", fields["pid"])
+	addOptionalRawParam(&params, "rc", fields["rc"])
+	addOptionalRawParam(&params, "sim_type", fields["sim_type"])
+	addOptionalRawParam(&params, "airplane_mode_type", fields["airplane_mode_type"])
+	addOptionalRawParam(&params, "cellular_strength", fields["cellular_strength"])
+	addOptionalRawParam(&params, "roaming_type", fields["roaming_type"])
+	addOptionalRawParam(&params, "tos_version", fields["tos_version"])
+	applyOrderedWamsysExcept(&params, capture, map[string]struct{}{"gpia": {}})
+	return params, nil
 }
 
 func (e *engineCore) registrationToken(phone *waappv1.PhoneTarget, state NativeState) string {
@@ -73,6 +109,17 @@ func (e *engineCore) registrationToken(phone *waappv1.PhoneTarget, state NativeS
 		return token
 	}
 	return state.LastCodeParams["token"]
+}
+
+// registrationCapture fetches the WAMSYS integrity material for a registration
+// request kind. Shared by the /v2/exist, /v2/code and /v2/register ordered
+// builders so the provider call lives in one place; returns nil when the caller
+// opts out of the WAMSYS map.
+func (e *engineCore) registrationCapture(ctx context.Context, kind waappv1.RegistrationRequestKind, phone *waappv1.PhoneTarget, state NativeState, wamsysCapture *waappv1.WamsysCapture, includeWamsys bool, appVersion string, integrityMode wacore.IntegrityMode) (*waappv1.WamsysCapture, error) {
+	if !includeWamsys {
+		return nil, nil
+	}
+	return e.wamsysProvider().RegistrationMaterial(ctx, wamsysMaterialInput{Capture: wamsysCapture, Kind: kind, Phone: phone, State: state, AppVersion: appVersion, IntegrityMode: integrityMode, Now: e.clock.Now()})
 }
 
 func (e *engineCore) codeRequestOrderedParams(ctx context.Context, phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, state NativeState, authCodeContext string, appVersion string, integrityMode wacore.IntegrityMode) (orderedParams, error) {
@@ -110,25 +157,154 @@ func (e *engineCore) codeRequestOrderedParamsWithWamsys(ctx context.Context, pho
 	}
 	applyNativeE2EParams(&params, state)
 	applyNativeCodeRequestMapParams(&params, fields, methodName, attempts, nativeCodeRequestReason(state))
-	var capture *waappv1.WamsysCapture
-	if includeWamsys {
-		var err error
-		capture, err = e.wamsysProvider().RegistrationMaterial(ctx, wamsysMaterialInput{Capture: wamsysCapture, Kind: waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_CODE, Phone: phone, State: state, AppVersion: appVersion, IntegrityMode: integrityMode, Now: e.clock.Now()})
-		if err != nil {
-			return nil, err
-		}
+	// A0W/A0O: old_phone_number(可选) 后接 device_ram(必出),排在 GPIA/WAMSYS opaque 段之前。
+	addOptionalRawParam(&params, "old_phone_number", fields["old_phone_number"])
+	addOptionalRawParam(&params, "device_ram", fields["device_ram"])
+	capture, err := e.registrationCapture(ctx, waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_CODE, phone, state, wamsysCapture, includeWamsys, appVersion, integrityMode)
+	if err != nil {
+		return nil, err
 	}
+	// A0T: gpia 位于 device_ram 与 db/recaptcha/install 追加段之间。
 	if nativeShouldSendRegistrationGPIA(state) {
 		applyOrderedWamsysKey(&params, capture, "gpia")
 	}
+	applyNativeCodeRequestTailParams(&params, fields)
+	// A0Q: WAMSYS native map (_ga,_gi,_gp,_ge,aid,_gg,_gs) putAll,最后追加 feo2_query_status。
 	applyOrderedWamsysExcept(&params, capture, map[string]struct{}{"gpia": {}})
 	addOptionalRawParam(&params, "feo2_query_status", fields["feo2_query_status"])
-	addOptionalRawParam(&params, "code_entrypoint", fields["code_entrypoint"])
 	return params, nil
 }
 
-func nativeRegistrationMethodUsesToken(methodName string) bool {
-	return true
+// applyNativeCodeRequestTailParams 追加 /v2/code additionalParams 中 gpia 之后、WAMSYS native
+// map 之前的段,顺序对齐 app-release.apk(2.26.26.72)X/F6m 的
+// RequestCodeRepository$requestCode$2 调用链 A0N -> A0p -> A0U -> A0S -> A0V -> A0R -> A0L:
+// db(AB gated) -> recaptcha -> fid -> preloads_app_manager_id -> preloads_attribution ->
+// tos_version -> entrypoint -> cred_token。除 db/recaptcha 有运行态默认值外,其余为安装态可选字段,
+// 仅在 profile/runtime 已有值时按序发送,不硬造。
+func applyNativeCodeRequestTailParams(params *orderedParams, fields map[string]string) {
+	addOptionalRawParam(params, "db", fields["db"])
+	addOptionalRawParam(params, "recaptcha", fields["recaptcha"])
+	addOptionalRawParam(params, "fid", fields["fid"])
+	addOptionalRawParam(params, "preloads_app_manager_id", fields["preloads_app_manager_id"])
+	addOptionalRawParam(params, "preloads_attribution", fields["preloads_attribution"])
+	addOptionalRawParam(params, "tos_version", fields["tos_version"])
+	addOptionalRawParam(params, "entrypoint", fields["entrypoint"])
+	addOptionalRawParam(params, "cred_token", fields["cred_token"])
+}
+
+func (e *engineCore) registerOrderedParams(ctx context.Context, phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, code string, state NativeState, authCodeContext string, appVersion string, integrityMode wacore.IntegrityMode) (orderedParams, error) {
+	return e.registerOrderedParamsWithWamsys(ctx, phone, method, code, state, authCodeContext, nil, true, appVersion, integrityMode)
+}
+
+// registerOrderedParamsWithWamsys 装配 /v2/register(verify)有序请求体，顺序对齐
+// app-release.apk(2.26.26.72)X/F6m.A0G + VerifyCodeRepository$verify$2 调用链：
+// bridge base(KotlinRegistrationBridge.A06/A0Q/A0R) -> code -> E2E -> A0G additionalParams ->
+// A0W old_phone_number -> A0O device_ram -> A0T gpia -> A0N db -> A0p recaptcha -> A0U fid ->
+// A0S preloads -> A0V tos_version -> A0L cred_token -> A0R entrypoint -> A0Q WAMSYS native map。
+// 与 /v2/code 差异：base 段无 reason/hasav/education/prefer/push_code/new_acc_uuid，改为
+// entered + network_operator_name/sim_operator_name；tail 段 cred_token 在 entrypoint 之前；无 feo2。
+// context/advertising_id/login/type/auth_response 若在上一次 /v2/code 响应里出现则回填并覆盖。
+func (e *engineCore) registerOrderedParamsWithWamsys(ctx context.Context, phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, code string, state NativeState, authCodeContext string, wamsysCapture *waappv1.WamsysCapture, includeWamsys bool, appVersion string, integrityMode wacore.IntegrityMode) (orderedParams, error) {
+	methodName := shared.FirstNonEmpty(state.LastCodeParams["method"], RegistrationMethodName(method, "sms"))
+	fields := NativeDeviceMapFields(state)
+	lg, lc := registrationLocale(phone)
+	params := orderedParams{}
+	params.set("cc", shared.PhoneCC(phone), false)
+	params.set("in", shared.PhoneNational(phone), false)
+	params.set("lg", shared.FirstNonEmpty(state.LastCodeParams["lg"], lg), false)
+	params.set("lc", shared.FirstNonEmpty(state.LastCodeParams["lc"], lc), false)
+	params.set("fdid", shared.FirstNonEmpty(state.LastCodeParams["fdid"], state.Profile.FDID), false)
+	params.set("expid", shared.FirstNonEmpty(state.LastCodeParams["expid"], state.Profile.ExpID), false)
+	if value := shared.FirstNonEmpty(state.LastCodeParams["access_session_id"], state.Profile.AccessSessionID); value != "" {
+		params.set("access_session_id", value, false)
+	}
+	params.set("id", nativeRegistrationRequestID(state), true)
+	params.set("backup_token", shared.FirstNonEmpty(state.LastCodeParams["backup_token"], state.Profile.BackupToken), true)
+	if token := e.registrationToken(phone, state); token != "" {
+		params.set("token", token, false)
+	}
+	params.set("method", methodName, false)
+	if nativeRegistrationMethodUsesAuthContext(methodName) {
+		if contextValue := shared.FirstNonEmpty(nativeRegisterResultField(state, "context"), authCodeContext, state.LastCodeParams["context"]); contextValue != "" {
+			params.set("context", contextValue, false)
+		}
+	}
+	if advertisingID := shared.FirstNonEmpty(nativeRegisterResultField(state, "advertising_id"), nativeAdvertisingID(state)); advertisingID != "" {
+		params.set("advertising_id", advertisingID, false)
+	}
+	setNonEmptyFormParam(&params, "login", nativeRegisterResultField(state, "login"))
+	setNonEmptyFormParam(&params, "type", nativeRegisterResultField(state, "type"))
+	setNonEmptyFormParam(&params, "auth_response", nativeRegisterResultField(state, "auth_response"))
+	params.set("code", code, false)
+	applyNativeE2EParams(&params, state)
+	applyNativeRegisterRequestMapParams(&params, fields, methodName)
+	// A0W/A0O: old_phone_number(可选) 后接 device_ram(必出),排在 GPIA/WAMSYS opaque 段之前。
+	addOptionalRawParam(&params, "old_phone_number", fields["old_phone_number"])
+	addOptionalRawParam(&params, "device_ram", fields["device_ram"])
+	capture, err := e.registrationCapture(ctx, waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_REGISTER, phone, state, wamsysCapture, includeWamsys, appVersion, integrityMode)
+	if err != nil {
+		return nil, err
+	}
+	// A0T: gpia 位于 device_ram 与 db/recaptcha/install 追加段之间。
+	if nativeShouldSendRegistrationGPIA(state) {
+		applyOrderedWamsysKey(&params, capture, "gpia")
+	}
+	applyNativeRegisterRequestTailParams(&params, fields)
+	// A0Q: WAMSYS native map (_ga,_gi,_gp,_ge,aid,_gg,_gs) putAll。register 无 feo2_query_status。
+	applyOrderedWamsysExcept(&params, capture, map[string]struct{}{"gpia": {}})
+	return params, nil
+}
+
+func setNonEmptyFormParam(params *orderedParams, key string, value string) {
+	if strings.TrimSpace(value) == "" {
+		return
+	}
+	params.set(key, value, false)
+}
+
+func nativeRegisterResultField(state NativeState, key string) string {
+	if len(state.LastCodeResult) == 0 {
+		return ""
+	}
+	return jsonString(state.LastCodeResult[key])
+}
+
+// applyNativeRegisterRequestMapParams 装配 /v2/register additionalParams base 段，顺序对齐
+// app-release.apk(2.26.26.72)X/F6m.A0G：mistyped,client_metrics,entered,mcc,mnc,sim_mcc,
+// sim_mnc(A0I),network_operator_name,sim_operator_name,network_radio_type,simnum,rc2,hasinrc,
+// pid,rc(A0M/A0X),SIM signal(A0P)。
+func applyNativeRegisterRequestMapParams(params *orderedParams, fields map[string]string, method string) {
+	addOptionalRawParam(params, "mistyped", fields["mistyped"])
+	addRawParam(params, "client_metrics", nativeRegisterClientMetrics(method))
+	addRawParam(params, "entered", nativeCodeEntryMethod(method))
+	addOptionalRawParam(params, "mcc", fields["mcc"])
+	addOptionalRawParam(params, "mnc", fields["mnc"])
+	addOptionalRawParam(params, "sim_mcc", fields["sim_mcc"])
+	addOptionalRawParam(params, "sim_mnc", fields["sim_mnc"])
+	addOptionalRawParam(params, "network_operator_name", fields["network_operator_name"])
+	addOptionalRawParam(params, "sim_operator_name", fields["sim_operator_name"])
+	addOptionalRawParam(params, "network_radio_type", fields["network_radio_type"])
+	addOptionalRawParam(params, "simnum", fields["simnum"])
+	addOptionalRawParam(params, "rc2", fields["rc2"])
+	addOptionalRawParam(params, "hasinrc", fields["hasinrc"])
+	addOptionalRawParam(params, "pid", fields["pid"])
+	addOptionalRawParam(params, "rc", fields["rc"])
+	applyNativeCodeRequestSIMSignalParams(params, fields)
+}
+
+// applyNativeRegisterRequestTailParams 追加 /v2/register 中 gpia 之后、WAMSYS native map 之前段，
+// 顺序对齐 VerifyCodeRepository$verify$2 调用链 A0N -> A0p -> A0U -> A0S -> A0V -> A0L -> A0R:
+// db -> recaptcha -> fid -> preloads_app_manager_id -> preloads_attribution -> tos_version ->
+// cred_token -> entrypoint。注意 register 的 cred_token 在 entrypoint 之前(与 /v2/code 相反)。
+func applyNativeRegisterRequestTailParams(params *orderedParams, fields map[string]string) {
+	addOptionalRawParam(params, "db", fields["db"])
+	addOptionalRawParam(params, "recaptcha", fields["recaptcha"])
+	addOptionalRawParam(params, "fid", fields["fid"])
+	addOptionalRawParam(params, "preloads_app_manager_id", fields["preloads_app_manager_id"])
+	addOptionalRawParam(params, "preloads_attribution", fields["preloads_attribution"])
+	addOptionalRawParam(params, "tos_version", fields["tos_version"])
+	addOptionalRawParam(params, "cred_token", fields["cred_token"])
+	addOptionalRawParam(params, "entrypoint", fields["entrypoint"])
 }
 
 func nativeRegistrationMethodUsesAuthContext(methodName string) bool {
@@ -145,11 +321,14 @@ func applyNativeE2EParams(params *orderedParams, state NativeState) {
 	params.set("e_skey_sig", state.KeyBundle.SignedKeySig, false)
 }
 
-// applyNativeCodeRequestMapParams 装配 /v2/code 的设备 Map，字段集与顺序对齐 APK
-// KotlinRegistrationBridge 经 IAo.A0E/A0H/A0L/A0O/A0W 装配的 code 路径 Map。
-// 注意：mcc/mnc/sim_mcc/sim_mnc、rc2/rc、airplane_mode_on 等均属 code 路径；
-// device_ram/old_phone_number/db/recaptcha/fid/preloads_*/tos_version/entrypoint/cred_token
-// 是 exist 路径字段，不在 /v2/code，发送会让请求偏离官方端 shape 触发 no_routes。
+// applyNativeCodeRequestMapParams 装配 /v2/code additionalParams 的 base 段，字段集与顺序
+// 对齐 app-release.apk(2.26.26.72)X/F6m.A0F：mistyped,reason,hasav,client_metrics,
+// mcc,mnc,sim_mcc,sim_mnc(A0I),education_screen_displayed,prefer_sms_over_flash,
+// network_radio_type,simnum,rc2,hasinrc,pid,rc(A0M/A0X),SIM signal(A0P),push_code,new_acc_uuid。
+// 注意：old_phone_number/device_ram/db/recaptcha/fid/preloads_*/tos_version/entrypoint/cred_token
+// 同属 code 路径的 opaque/install 追加段(A0W/A0O/A0N/A0p/A0U/A0S/A0V/A0R/A0L)，由
+// codeRequestOrderedParamsWithWamsys 在此 base 段之后按序追加；它们不是 exist 专有字段。
+// (exist 路径 X/F6m.A0i 另有自己的字段集，且不发 mcc/mnc/sim_mcc/sim_mnc。)
 func applyNativeCodeRequestMapParams(params *orderedParams, fields map[string]string, method string, attempts int, reason string) {
 	addOptionalRawParam(params, "mistyped", fields["mistyped"])
 	addRawParam(params, "reason", reason)
@@ -235,25 +414,6 @@ func RegistrationMethodName(method waappv1.VerificationDeliveryMethod, fallback 
 	}
 }
 
-func applyNativeRawParamMap(params map[string]string, raw map[string]struct{}, values map[string]string, omitEmptyOperator bool) {
-	for key, value := range values {
-		if isOpaqueWamsysMapKey(key) {
-			continue
-		}
-		if omitEmptyOperator && omitEmptyNativeOperatorField(key, value) {
-			continue
-		}
-		if key == "token" {
-			if value != "" {
-				params[key] = value
-			}
-			continue
-		}
-		params[key] = pctBytes([]byte(value))
-		raw[key] = struct{}{}
-	}
-}
-
 func codeDeviceMap(method string, state NativeState) map[string]string {
 	fields := NativeDeviceMapFields(state)
 	out := map[string]string{
@@ -276,7 +436,9 @@ func codeDeviceMap(method string, state NativeState) map[string]string {
 	addNonEmptyNativeCodeField(out, fields, "hasav")
 	for _, key := range []string{
 		"sim_type", "airplane_mode_on", "airplane_mode_type", "cellular_strength", "roaming_type",
-		"push_code", "new_acc_uuid", "code_entrypoint",
+		"push_code", "new_acc_uuid", "old_phone_number", "device_ram",
+		"db", "recaptcha", "fid", "preloads_app_manager_id", "preloads_attribution",
+		"tos_version", "entrypoint", "cred_token",
 	} {
 		addNonEmptyNativeCodeField(out, fields, key)
 	}
@@ -497,12 +659,14 @@ const defaultRegistrationTokenSigningCertHex = "" +
 	"3804030500032f00302c021400a602a7477acf841077237be090df436582ca2f0214350ce0268d07e71e55774ab4eacd" +
 	"4d071cd1efad"
 
-// defaultRegistrationTokenClassesDexMD5Hex 是本 APK(2.26.24.77 / versionCode 262407730)
+// defaultRegistrationTokenClassesDexMD5Hex 是本 APK(2.26.26.72 / versionCode 262607220)
 // classes.dex 的 MD5 —— 注册 token HMAC message 的第 2 段。**随 APK 版本变化**:每次升级 APK
 // 都要用新 classes.dex 重算,否则服务端按 versionCode 校验 token 失败,/v2/code 返回 bad_token。
-const defaultRegistrationTokenClassesDexMD5Hex = "f9d51293993c4312324f87d3cf8bb931"
+// 取自官方原版 APK(whatsapp.com/android,sha256 8ab8127c...);签名证书(Brian Acton 822B DSA)
+// 与 HMAC key(about_logo hdpi-v4 + PBKDF2)已离线复算确认版本稳定,升级只需更新此 dex MD5 与版本号。
+const defaultRegistrationTokenClassesDexMD5Hex = "96de303520e564c508daeb4699b3b9aa"
 
-// deriveDefaultRegistrationToken 复刻 APK 2.26.24.77 注册 token 生成(LX/HxB.A01):
+// deriveDefaultRegistrationToken 复刻 APK 2.26.26.72 注册 token 生成(LX/I2N.A01):
 //
 //	base64_std( HMAC-SHA1(key, certDER || MD5(classes.dex) || national) )
 //
@@ -526,37 +690,6 @@ func deriveDefaultRegistrationToken(phone string) string {
 	_, _ = mac.Write(classesDexMD5)
 	_, _ = mac.Write([]byte(phone))
 	return base64.StdEncoding.EncodeToString(mac.Sum(nil))
-}
-
-// existDeviceMap 装配 /v2/exist 设备 Map,字段集对齐 APK 的 IAo.A0h(exist 路径)。
-// 关键:exist 不发 mcc/mnc/sim_mcc/sim_mnc —— 产出这 4 个的 IAo.A0H 仅被 code(A0E)
-// 与 verify(A0F)调用,A0h 全链不调(已 smali 核验);exist 用 sim_state /
-// network_operator_name / sim_operator_name / device_name 表征网络态。误发运营商码
-// (且默认 000)会让 exist 请求偏离官方端 shape,服务端判 incorrect、检测失准。
-func existDeviceMap(state NativeState) map[string]string {
-	fields := NativeDeviceMapFields(state)
-	return map[string]string{
-		"mistyped":                        "7",
-		"offline_ab":                      `{"exposure":[],"exp_hash":[],"metrics":{}}`,
-		"client_metrics":                  `{"attempts":1,"app_campaign_download_source":"unknown|unknown","was_activated_from_stub":false}`,
-		"read_phone_permission_granted":   "0",
-		"sim_state":                       "1",
-		"network_operator_name":           fields["network_operator_name"],
-		"sim_operator_name":               fields["sim_operator_name"],
-		"device_name":                     nativeDeviceDisplayName(state),
-		"feo2_query_status":               fields["feo2_query_status"],
-		"is_foa_fdid_app_installed":       "false",
-		"device_ram":                      fields["device_ram"],
-		"language_selector_time_spent":    "0",
-		"language_selector_clicked_count": "0",
-		"db":                              fields["db"],
-		"recaptcha":                       fields["recaptcha"],
-		"network_radio_type":              fields["network_radio_type"],
-		"simnum":                          fields["simnum"],
-		"hasinrc":                         fields["hasinrc"],
-		"pid":                             fields["pid"],
-		"rc":                              fields["rc"],
-	}
 }
 
 func parseExistProbeResult(data map[string]any) wacore.EngineProbeResult {

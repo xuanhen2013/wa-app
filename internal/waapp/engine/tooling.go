@@ -94,24 +94,21 @@ func (e *toolingService) BuildRegistrationRequest(ctx context.Context, req *waap
 	locale := shared.FirstNonEmpty(req.GetLocale(), "US")
 	switch kind {
 	case waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_EXIST:
-		if hasState {
-			base, raw := e.existParams(phone, state)
-			params.merge(base, raw)
-		} else {
-			params.set("cc", shared.PhoneCC(phone), false)
-			params.set("in", shared.PhoneNational(phone), false)
-			params.set("lg", language, false)
-			params.set("lc", locale, false)
-			applyNativeProfileParams(&params, rawKeys, state.Profile, false, true)
-			applyNativeRawMapParams(&params, rawKeys, existDeviceMap(state), true)
+		built, err := e.existOrderedParamsWithWamsys(ctx, phone, state, req.GetWamsysCapture(), req.GetIncludeWamsysMap(), DefaultWAAppVersion, wacore.IntegrityModeErrorCode)
+		if err != nil {
+			return nil, err
 		}
+		params = built
 	case waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_REGISTER:
 		if strings.TrimSpace(req.GetVerificationCode()) == "" {
 			return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "verification_code is required", false)
 		}
 		if hasState {
-			base, raw := e.registerParams(phone, method, req.GetVerificationCode(), state, "")
-			params.merge(base, raw)
+			built, err := e.registerOrderedParamsWithWamsys(ctx, phone, method, req.GetVerificationCode(), state, "", req.GetWamsysCapture(), req.GetIncludeWamsysMap(), DefaultWAAppVersion, wacore.IntegrityModeErrorCode)
+			if err != nil {
+				return nil, err
+			}
+			params = built
 		} else {
 			params.set("cc", shared.PhoneCC(phone), false)
 			params.set("in", shared.PhoneNational(phone), false)
@@ -237,13 +234,6 @@ func (p *orderedParams) remove(key string) {
 			*p = append((*p)[:i], (*p)[i+1:]...)
 			return
 		}
-	}
-}
-
-func (p *orderedParams) merge(values map[string]string, raw map[string]struct{}) {
-	for _, key := range stableParamOrder(values) {
-		_, isRaw := raw[key]
-		p.set(key, values[key], isRaw)
 	}
 }
 

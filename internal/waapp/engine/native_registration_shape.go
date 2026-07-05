@@ -32,18 +32,6 @@ func logNativeRegistrationOrderedShape(kind string, phone *waappv1.PhoneTarget, 
 	logNativeRegistrationWamsysGAShape(kind, phoneHash, method, params)
 }
 
-func logNativeRegistrationMapShape(kind string, phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, params map[string]string, rawKeys map[string]struct{}) {
-	if len(params) == 0 {
-		return
-	}
-	ordered := make(orderedParams, 0, len(params))
-	for _, key := range stableParamOrder(params) {
-		_, raw := rawKeys[key]
-		ordered = append(ordered, orderedParam{key: key, val: params[key], raw: raw})
-	}
-	logNativeRegistrationOrderedShape(kind, phone, method, ordered)
-}
-
 func registrationShapeFields(params orderedParams) string {
 	parts := make([]string, 0, len(params))
 	for _, param := range params {

@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"math/big"
 	"regexp"
-	"sort"
 	"strconv"
 	"strings"
 	"time"
@@ -490,58 +489,6 @@ func pctBytes(raw []byte) string {
 
 func quoteForm(value string) string {
 	return pctBytes([]byte(value))
-}
-
-func renderNativePlain(params map[string]string, rawKeys map[string]struct{}) string {
-	keys := stableParamOrder(params)
-	parts := make([]string, 0, len(keys))
-	for _, key := range keys {
-		value := params[key]
-		encodedValue := quoteForm(value)
-		if _, ok := rawKeys[key]; ok {
-			encodedValue = value
-		}
-		parts = append(parts, quoteForm(key)+"="+encodedValue)
-	}
-	return strings.Join(parts, "&")
-}
-
-func stableParamOrder(params map[string]string) []string {
-	preferred := []string{
-		"cc", "in", "lg", "lc", "fdid", "expid", "access_session_id",
-		"id", "backup_token", "code", "auth_response", "token", "method", "context",
-		"clicked_education_link", "manage_call_permission", "call_log_permission", "client_start_message",
-		"advertising_id", "login", "type", "authkey", "e_ident", "e_keytype", "e_regid",
-		"e_skey_id", "e_skey_val", "e_skey_sig",
-		"mistyped", "reason", "hasav", "offline_ab", "client_metrics", "entered",
-		"read_phone_permission_granted", "sim_state", "network_operator_name",
-		"sim_operator_name", "device_name", "backup_token_error", "mcc", "mnc",
-		"sim_mcc", "sim_mnc", "education_screen_displayed", "prefer_sms_over_flash",
-		"network_radio_type", "simnum", "hasinrc", "pid", "rc",
-		"sim_type", "airplane_mode_type", "cellular_strength", "roaming_type",
-		"push_code", "new_acc_uuid", "old_phone_number", "device_ram", "gpia",
-		"db", "recaptcha", "fid", "preloads_app_manager_id", "preloads_attribution",
-		"tos_version", "entrypoint", "cred_token", "_ga", "_gi", "_gp", "_ge", "aid", "_gg",
-		"feo2_query_status", "is_foa_fdid_app_installed", "language_selector_time_spent",
-		"language_selector_clicked_count",
-	}
-	seen := map[string]struct{}{}
-	out := []string{}
-	for _, key := range preferred {
-		if _, ok := params[key]; ok {
-			out = append(out, key)
-			seen[key] = struct{}{}
-		}
-	}
-	rest := make([]string, 0)
-	for key := range params {
-		if _, ok := seen[key]; !ok {
-			rest = append(rest, key)
-		}
-	}
-	sort.Strings(rest)
-	out = append(out, rest...)
-	return out
 }
 
 func nativeUserAgent(appVersion string) string {
