@@ -34,15 +34,6 @@ var tokenLogoCandidates = []string{
 	"res/drawable-xxhdpi-v4/about_logo.png",
 }
 
-type ProtocolTooling interface {
-	GeneratePhoneFingerprintProfile(context.Context, *waappv1.GeneratePhoneFingerprintProfileRequest) (*waappv1.PhoneFingerprintProfile, error)
-	ImportWamsysCapture(context.Context, *waappv1.ImportWamsysCaptureRequest) (*waappv1.WamsysCapture, error)
-	BuildRegistrationRequest(context.Context, *waappv1.BuildRegistrationRequestRequest) (*waappv1.BuildRegistrationRequestResponse, error)
-	EncryptWASafeEnvelope(context.Context, *waappv1.EncryptWASafeEnvelopeRequest) (*waappv1.EncryptWASafeEnvelopeResponse, error)
-	DeriveRegistrationToken(context.Context, *waappv1.DeriveRegistrationTokenRequest) (*waappv1.DeriveRegistrationTokenResponse, error)
-	DeriveAuthKey(context.Context, *waappv1.DeriveAuthKeyRequest) (*waappv1.DeriveAuthKeyResponse, error)
-}
-
 func (s *toolingHandler) GeneratePhoneFingerprintProfile(ctx context.Context, req *waappv1.GeneratePhoneFingerprintProfileRequest) (*waappv1.GeneratePhoneFingerprintProfileResponse, error) {
 	if err := shared.ValidateContext(req.GetContext()); err != nil {
 		return &waappv1.GeneratePhoneFingerprintProfileResponse{Error: shared.ToProtoError(err)}, nil
@@ -131,8 +122,8 @@ func (s *toolingHandler) DeriveAuthKey(ctx context.Context, req *waappv1.DeriveA
 	return resp, nil
 }
 
-func (s *serverCore) tooling() (ProtocolTooling, error) {
-	tooling, ok := s.runner.(ProtocolTooling)
+func (s *serverCore) tooling() (wacore.ProtocolTooling, error) {
+	tooling, ok := s.runner.(wacore.ProtocolTooling)
 	if !ok {
 		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "protocol tooling is not available", false)
 	}
