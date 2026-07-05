@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/runtime"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/store"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
@@ -17,7 +18,7 @@ import (
 // for shared behaviour so no one handler becomes a god object.
 type serverCore struct {
 	store   store.Store
-	runtime RuntimeState
+	runtime runtime.RuntimeState
 	runner  wacore.ProtocolEngine
 	clock   shared.Clock
 	ids     shared.IDGenerator
@@ -95,7 +96,7 @@ func newServerFacade(core *serverCore) *Server {
 	return server
 }
 
-func NewServer(store store.Store, runtime RuntimeState, runner wacore.ProtocolEngine, clock shared.Clock, ids shared.IDGenerator) *Server {
+func NewServer(store store.Store, runtime runtime.RuntimeState, runner wacore.ProtocolEngine, clock shared.Clock, ids shared.IDGenerator) *Server {
 	if clock == nil {
 		clock = shared.SystemClock{}
 	}

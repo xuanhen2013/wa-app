@@ -1,10 +1,13 @@
-package app
+package runtime
 
 import (
 	"context"
 	"time"
 )
 
+// RuntimeState is the ephemeral coordination port: request idempotency,
+// transient state, leases and message-session liveness. Backed by Redis when
+// configured, otherwise by the no-config SQLite fallback.
 type RuntimeState interface {
 	Close() error
 	ClaimRequest(context.Context, string, time.Duration) (bool, error)
@@ -17,15 +20,3 @@ type RuntimeState interface {
 	OpenSessionLease(context.Context, string, time.Duration) error
 	CloseSessionLease(context.Context, string) error
 }
-
-const (
-	accountProbeFlowUnknown           = "unknown"
-	accountProbeFlowProbeFailed       = "probe_failed"
-	accountProbeFlowRegistered        = "registered"
-	accountProbeFlowNotRegistered     = "not_registered"
-	accountProbeFlowBlocked           = "blocked"
-	accountProbeFlowInvalidNumber     = "invalid_number"
-	accountProbeFlowRateLimited       = "rate_limited"
-	accountProbeFlowConsentRequired   = "consent_required"
-	accountProbeFlowChallengeRequired = "challenge_required"
-)

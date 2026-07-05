@@ -12,6 +12,7 @@ import (
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/app"
 	"github.com/byte-v-forge/wa-app/internal/config"
+	"github.com/byte-v-forge/wa-app/internal/waapp/runtime"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/store"
 	"golang.org/x/sync/errgroup"
@@ -129,10 +130,10 @@ func newDurableStore(ctx context.Context, cfg config.Config, dataDir string) (st
 	return store.NewSQLiteStore(ctx, dataDir)
 }
 
-func newRuntimeState(ctx context.Context, cfg config.Config, dataDir string) (app.RuntimeState, error) {
+func newRuntimeState(ctx context.Context, cfg config.Config, dataDir string) (runtime.RuntimeState, error) {
 	if strings.TrimSpace(cfg.RedisURL) != "" {
-		return app.NewRedisRuntime(ctx, cfg.RedisURL)
+		return runtime.NewRedisRuntime(ctx, cfg.RedisURL)
 	}
 	log.Printf("WA_APP_REDIS_URL is not configured; wa-app uses sqlite runtime state in %s", dataDir)
-	return app.NewSQLiteRuntime(ctx, dataDir)
+	return runtime.NewSQLiteRuntime(ctx, dataDir)
 }
