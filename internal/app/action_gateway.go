@@ -436,11 +436,17 @@ func (g *actionGateway) refreshAccountTransferChallenge(ctx context.Context, pay
 	if resp.GetError() != nil {
 		return actionErrorFromProto(resp.GetError()), nil
 	}
-	return map[string]any{
-		"success":                    true,
-		"registration_phase":         "ACCOUNT_TRANSFER_WAITING",
-		"account_transfer_challenge": protoMap(resp.GetAccountTransferChallenge()),
+	return accountTransferChallengeDTO{
+		Success:                  true,
+		RegistrationPhase:        "ACCOUNT_TRANSFER_WAITING",
+		AccountTransferChallenge: protoMap(resp.GetAccountTransferChallenge()),
 	}, nil
+}
+
+type accountTransferChallengeDTO struct {
+	Success                  bool           `json:"success"`
+	RegistrationPhase        string         `json:"registration_phase"`
+	AccountTransferChallenge map[string]any `json:"account_transfer_challenge"`
 }
 
 func (g *actionGateway) pollAccountTransferRegistration(ctx context.Context, payload map[string]any) (map[string]any, error) {
@@ -560,10 +566,29 @@ func (g *actionGateway) persistLoginState(ctx context.Context, payload map[strin
 		return actionError(err), nil
 	}
 	ok := loginState.GetStatus() == waappv1.LoginStateStatus_LOGIN_STATE_STATUS_ACTIVE
-	return map[string]any{"success": ok, "status": loginState.GetStatus().String(), "login_state": protoMap(loginState)}, nil
+	return loginStateResultDTO{Success: ok, Status: loginState.GetStatus().String(), LoginState: protoMap(loginState)}, nil
 }
 
-func (g *actionGateway) checkLoginState(ctx context.Context, payload map[string]any) (map[string]any, error) {
+type loginStateResultDTO struct {
+	Success    bool           `json:"success"`
+	Status     string         `json:"status"`
+	LoginState map[string]any `json:"login_state"`
+}
+
+// checkLoginStateResultDTO carries the base result plus an optional error
+// envelope. ErrorMessage is a *string so it is present-even-when-empty exactly
+// when there is an error, and absent otherwise (matching the previous
+// conditionally-added map keys).
+type checkLoginStateResultDTO struct {
+	Success      bool           `json:"success"`
+	Status       string         `json:"status"`
+	LoginState   map[string]any `json:"login_state"`
+	Check        map[string]any `json:"check"`
+	Error        map[string]any `json:"error,omitempty"`
+	ErrorMessage *string        `json:"error_message,omitempty"`
+}
+
+func (g *actionGateway) checkLoginState(ctx context.Context, payload map[string]any) (any, error) {
 	runner, err := g.nativeEngineForPayload(payload)
 	if err != nil {
 		return nil, err
@@ -585,17 +610,18 @@ func (g *actionGateway) checkLoginState(ctx context.Context, payload map[string]
 	}
 	check := resp.GetCheck()
 	ok := resp.GetError() == nil && check.GetStatus() == waappv1.LoginStateCheckStatus_LOGIN_STATE_CHECK_STATUS_ACTIVE && resp.GetLoginState().GetStatus() == waappv1.LoginStateStatus_LOGIN_STATE_STATUS_ACTIVE
-	out := map[string]any{
-		"success":     ok,
-		"status":      check.GetStatus().String(),
-		"login_state": protoMap(resp.GetLoginState()),
-		"check":       protoMap(check),
+	result := checkLoginStateResultDTO{
+		Success:    ok,
+		Status:     check.GetStatus().String(),
+		LoginState: protoMap(resp.GetLoginState()),
+		Check:      protoMap(check),
 	}
 	if resp.GetError() != nil {
-		out["error"] = protoMap(resp.GetError())
-		out["error_message"] = resp.GetError().GetMessage()
+		result.Error = protoMap(resp.GetError())
+		msg := resp.GetError().GetMessage()
+		result.ErrorMessage = &msg
 	}
-	return out, nil
+	return result, nil
 }
 
 func (g *actionGateway) commitNativeState(ctx context.Context, phone *waappv1.PhoneTarget, state engine.NativeState) (*waappv1.WAAccount, *waappv1.ClientProfile, *waappv1.ProtocolProfile, error) {

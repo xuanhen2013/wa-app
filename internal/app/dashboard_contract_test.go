@@ -87,3 +87,31 @@ func TestActionErrorDTOContract_EmptyMessage(t *testing.T) {
 		actionErrorDTO{Success: false, Error: map[string]any{}, ErrorMessage: ""},
 		`{"success":false,"error":{},"error_message":""}`)
 }
+
+func TestAccountTransferChallengeDTOContract(t *testing.T) {
+	assertJSONContract(t, "accountTransferChallengeDTO",
+		accountTransferChallengeDTO{Success: true, RegistrationPhase: "ACCOUNT_TRANSFER_WAITING", AccountTransferChallenge: map[string]any{"id": "atc_1"}},
+		`{"success":true,"registration_phase":"ACCOUNT_TRANSFER_WAITING","account_transfer_challenge":{"id":"atc_1"}}`)
+}
+
+func TestLoginStateResultDTOContract(t *testing.T) {
+	assertJSONContract(t, "loginStateResultDTO",
+		loginStateResultDTO{Success: false, Status: "LOGIN_STATE_STATUS_REVOKED", LoginState: map[string]any{"status": "REVOKED"}},
+		`{"success":false,"status":"LOGIN_STATE_STATUS_REVOKED","login_state":{"status":"REVOKED"}}`)
+}
+
+func TestCheckLoginStateResultDTOContract_NoError(t *testing.T) {
+	assertJSONContract(t, "checkLoginStateResultDTO(no error)",
+		checkLoginStateResultDTO{Success: true, Status: "LOGIN_STATE_CHECK_STATUS_ACTIVE", LoginState: map[string]any{"a": "b"}, Check: map[string]any{"c": "d"}},
+		`{"success":true,"status":"LOGIN_STATE_CHECK_STATUS_ACTIVE","login_state":{"a":"b"},"check":{"c":"d"}}`)
+}
+
+// The error envelope must appear exactly when there is an error — and its
+// message key stays present even when the message is empty (*string vs the
+// omitempty-string trap).
+func TestCheckLoginStateResultDTOContract_ErrorEmptyMessage(t *testing.T) {
+	empty := ""
+	assertJSONContract(t, "checkLoginStateResultDTO(error, empty message)",
+		checkLoginStateResultDTO{Success: false, Status: "X", LoginState: map[string]any{}, Check: map[string]any{}, Error: map[string]any{"code": "C"}, ErrorMessage: &empty},
+		`{"success":false,"status":"X","login_state":{},"check":{},"error":{"code":"C"},"error_message":""}`)
+}
