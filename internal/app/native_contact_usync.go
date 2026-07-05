@@ -11,6 +11,7 @@ import (
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 )
 
 const (
@@ -468,7 +469,7 @@ func contactFromContactUsyncUser(accountID string, userNode chatdNode, now time.
 	if business || verifiedName != "" {
 		contact.Kind = waappv1.WAContactKind_WA_CONTACT_KIND_BUSINESS
 	}
-	normalizeWAContactNames(contact)
+	wamodel.NormalizeWAContactNames(contact)
 	return contact
 }
 
@@ -797,7 +798,7 @@ func contactFromBusinessNode(accountID string, node chatdNode, now time.Time, re
 	contact.VerifiedName = verifiedName
 	contact.ProfilePictureId = contactProfilePictureID(node)
 	contact.Kind = waappv1.WAContactKind_WA_CONTACT_KIND_BUSINESS
-	normalizeWAContactNames(contact)
+	wamodel.NormalizeWAContactNames(contact)
 	return contact
 }
 
@@ -926,7 +927,7 @@ func contactUsyncHasDisplayIdentity(contact *waappv1.WAContact) bool {
 	if contact == nil {
 		return false
 	}
-	if resolvedWAContactName(contact.GetWaName(), contact.GetNumber()) != "" || resolvedWAContactName(contact.GetVerifiedName(), contact.GetNumber()) != "" {
+	if wamodel.ResolvedWAContactName(contact.GetWaName(), contact.GetNumber()) != "" || wamodel.ResolvedWAContactName(contact.GetVerifiedName(), contact.GetNumber()) != "" {
 		return true
 	}
 	return !contactDisplayNeedsResolution(contact)
@@ -941,7 +942,7 @@ func contactDisplayNeedsResolution(contact *waappv1.WAContact) bool {
 		return false
 	}
 	name := strings.TrimSpace(contact.GetDisplayName())
-	return contactNameNeedsResolution(name, contact.GetNumber())
+	return wamodel.ContactNameNeedsResolution(name, contact.GetNumber())
 }
 
 func contactUsyncDisplayIdentityCount(contacts []*waappv1.WAContact) int {
@@ -960,7 +961,7 @@ func betterWAContactDisplayName(contact *waappv1.WAContact, candidate string) st
 		return contact.GetDisplayName()
 	}
 	current := contact.GetDisplayName()
-	if contactNameNeedsResolution(current, contact.GetNumber()) || contactDisplayNeedsResolution(contact) {
+	if wamodel.ContactNameNeedsResolution(current, contact.GetNumber()) || contactDisplayNeedsResolution(contact) {
 		return candidate
 	}
 	return current

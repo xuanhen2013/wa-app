@@ -7,6 +7,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -37,7 +38,7 @@ func (s *PostgresStore) ListAccountMessages(ctx context.Context, waAccountIDValu
 		return nil, "", err
 	}
 	items, nextCursor := shared.NewKeysetPage(items, limit, func(message *waappv1.AccountMessage) shared.KeysetCursor {
-		return shared.KeysetCursorValue(timeFromProto(message.GetReceivedAt()), message.GetAccountMessageId())
+		return shared.KeysetCursorValue(shared.TimeFromProto(message.GetReceivedAt()), message.GetAccountMessageId())
 	})
 	return items, nextCursor, nil
 }
@@ -70,7 +71,7 @@ WHERE ms.wa_account_id=$1
 }
 
 func scanAccountMessage(rows pgx.Rows, includeSensitiveText bool) (*waappv1.AccountMessage, error) {
-	var parts accountMessageParts
+	var parts wamodel.AccountMessageParts
 	var kind string
 	var encryptionState string
 	var ackStatus string
@@ -82,23 +83,23 @@ func scanAccountMessage(rows pgx.Rows, includeSensitiveText bool) (*waappv1.Acco
 	var deleteStatus string
 	var direction string
 	var source string
-	if err := rows.Scan(&parts.messageID, &parts.accountID, &parts.sessionID, &kind, &encryptionState, &ackStatus, &direction, &source, &parts.contactRef, &parts.senderRef, &parts.payloadRef, &readAt, &deleteStatus, &deletedAt, &parts.plaintext, &parts.redacted, &parts.secretRef, &errCode, &errMessage, &errRetryable, &parts.receivedAt); err != nil {
+	if err := rows.Scan(&parts.MessageID, &parts.AccountID, &parts.SessionID, &kind, &encryptionState, &ackStatus, &direction, &source, &parts.ContactRef, &parts.SenderRef, &parts.PayloadRef, &readAt, &deleteStatus, &deletedAt, &parts.Plaintext, &parts.Redacted, &parts.SecretRef, &errCode, &errMessage, &errRetryable, &parts.ReceivedAt); err != nil {
 		return nil, err
 	}
-	parts.kind = waappv1.InboundMessageKind(waappv1.InboundMessageKind_value[kind])
-	parts.encryptionState = waappv1.MessageEncryptionState(waappv1.MessageEncryptionState_value[encryptionState])
-	parts.ackStatus = waappv1.MessageAckStatus(waappv1.MessageAckStatus_value[ackStatus])
-	parts.direction = messageDirection(direction)
-	parts.source = messageSource(source)
+	parts.Kind = waappv1.InboundMessageKind(waappv1.InboundMessageKind_value[kind])
+	parts.EncryptionState = waappv1.MessageEncryptionState(waappv1.MessageEncryptionState_value[encryptionState])
+	parts.AckStatus = waappv1.MessageAckStatus(waappv1.MessageAckStatus_value[ackStatus])
+	parts.Direction = messageDirection(direction)
+	parts.Source = messageSource(source)
 	if readAt.Valid {
-		parts.readAt = readAt.Time.UTC()
+		parts.ReadAt = readAt.Time.UTC()
 	}
-	parts.deleteStatus = messageDeleteStatus(deleteStatus)
+	parts.DeleteStatus = messageDeleteStatus(deleteStatus)
 	if deletedAt.Valid {
-		parts.deletedAt = deletedAt.Time.UTC()
+		parts.DeletedAt = deletedAt.Time.UTC()
 	}
-	parts.lastError = protoError(errCode, errMessage, errRetryable)
-	return newAccountMessage(parts, includeSensitiveText), nil
+	parts.LastError = protoError(errCode, errMessage, errRetryable)
+	return wamodel.NewAccountMessage(parts, includeSensitiveText), nil
 }
 
 func (s *PostgresStore) ListUnreadInboundMessagesByContactRefs(ctx context.Context, waAccountIDValue string, contactRefs []string, limit int) ([]*waappv1.InboundMessage, error) {

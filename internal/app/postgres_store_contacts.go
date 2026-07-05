@@ -6,6 +6,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -16,12 +17,12 @@ func (s *PostgresStore) SaveWAContacts(ctx context.Context, contacts []*waappv1.
 	batch := &pgx.Batch{}
 	queued := 0
 	for _, contact := range contacts {
-		contact = normalizedWAContactForStorage(contact)
+		contact = wamodel.NormalizedWAContactForStorage(contact)
 		if contact == nil || contact.GetContactId() == "" || contact.GetWaAccountId() == "" {
 			continue
 		}
-		createdAt := timeFromProto(contact.GetAudit().GetCreatedAt())
-		updatedAt := timeFromProto(contact.GetAudit().GetUpdatedAt())
+		createdAt := shared.TimeFromProto(contact.GetAudit().GetCreatedAt())
+		updatedAt := shared.TimeFromProto(contact.GetAudit().GetUpdatedAt())
 		batch.Queue(`INSERT INTO wa_contacts (contact_id, wa_account_id, jid, number, display_name, wa_name, verified_name, profile_picture_id, kind, is_whatsapp_user, is_reachable, created_at, updated_at)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
 ON CONFLICT (contact_id) DO UPDATE SET
@@ -92,7 +93,7 @@ func (s *PostgresStore) ListWAContacts(ctx context.Context, waAccountIDValue str
 		return nil, "", err
 	}
 	items, nextCursor := shared.NewKeysetPage(items, limit, func(contact *waappv1.WAContact) shared.KeysetCursor {
-		return shared.KeysetCursorValue(timeFromProto(contact.GetAudit().GetUpdatedAt()), contact.GetContactId())
+		return shared.KeysetCursorValue(shared.TimeFromProto(contact.GetAudit().GetUpdatedAt()), contact.GetContactId())
 	})
 	return items, nextCursor, nil
 }

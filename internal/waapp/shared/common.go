@@ -90,6 +90,16 @@ func ProtoTimestamp(t time.Time) *timestamppb.Timestamp {
 	return timestamppb.New(t.UTC())
 }
 
+// TimeFromProto converts a protobuf timestamp to a UTC time, defaulting a nil
+// timestamp to the current time (used for storage audit columns that must be
+// non-null).
+func TimeFromProto(ts *timestamppb.Timestamp) time.Time {
+	if ts == nil {
+		return time.Now().UTC()
+	}
+	return ts.AsTime().UTC()
+}
+
 func FirstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {

@@ -7,6 +7,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 )
 
 func (s *SQLiteStore) SaveWAContacts(ctx context.Context, contacts []*waappv1.WAContact) error {
@@ -19,7 +20,7 @@ func (s *SQLiteStore) SaveWAContacts(ctx context.Context, contacts []*waappv1.WA
 	}
 	defer func() { _ = tx.Rollback() }()
 	for _, contact := range contacts {
-		contact = normalizedWAContactForStorage(contact)
+		contact = wamodel.NormalizedWAContactForStorage(contact)
 		if contact == nil || contact.GetContactId() == "" || contact.GetWaAccountId() == "" {
 			continue
 		}
@@ -41,7 +42,7 @@ ON CONFLICT(id) DO UPDATE SET
     WHEN COALESCE(NULLIF(json_extract(wa_sqlite_contacts.payload, '$.number'), ''), NULLIF(json_extract(excluded.payload, '$.number'), ''), '') <> ''
       AND COALESCE(json_extract(wa_sqlite_contacts.payload, '$.display_name'), '') = '+' || COALESCE(NULLIF(json_extract(wa_sqlite_contacts.payload, '$.number'), ''), NULLIF(json_extract(excluded.payload, '$.number'), ''), '') THEN excluded.payload
     ELSE wa_sqlite_contacts.payload
-  END`, contact.GetContactId(), contact.GetWaAccountId(), sqliteTimeValue(timeFromProto(contact.GetAudit().GetUpdatedAt())), payload); err != nil {
+  END`, contact.GetContactId(), contact.GetWaAccountId(), sqliteTimeValue(shared.TimeFromProto(contact.GetAudit().GetUpdatedAt())), payload); err != nil {
 			return err
 		}
 	}
@@ -111,7 +112,7 @@ func (s *SQLiteStore) ListWAContacts(ctx context.Context, waAccountIDValue strin
 		}
 	}
 	items, nextCursor := shared.NewKeysetPage(items, limit, func(contact *waappv1.WAContact) shared.KeysetCursor {
-		return shared.KeysetCursorValue(timeFromProto(contact.GetAudit().GetUpdatedAt()), contact.GetContactId())
+		return shared.KeysetCursorValue(shared.TimeFromProto(contact.GetAudit().GetUpdatedAt()), contact.GetContactId())
 	})
 	return items, nextCursor, nil
 }
@@ -240,7 +241,7 @@ LIMIT 1`, waAccountIDValue, waappv1.InboundMessageKind_INBOUND_MESSAGE_KIND_MESS
 		return "", err
 	}
 	text := decrypted.GetPlaintextText()
-	return contactMessagePreview(text.GetValue(), text.GetRedactedValue(), message.GetPayloadRef(), message.GetEncryptionState()), nil
+	return wamodel.ContactMessagePreview(text.GetValue(), text.GetRedactedValue(), message.GetPayloadRef(), message.GetEncryptionState()), nil
 }
 
 func sqliteContactRef(refs []string, index int) string {

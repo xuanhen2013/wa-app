@@ -88,11 +88,11 @@ func waAccountStatusStorageValue(account *waappv1.WAAccount) string {
 }
 
 func waAccountCreatedAt(account *waappv1.WAAccount) time.Time {
-	return timeFromProto(account.GetAudit().GetCreatedAt())
+	return shared.TimeFromProto(account.GetAudit().GetCreatedAt())
 }
 
 func waAccountUpdatedAt(account *waappv1.WAAccount) time.Time {
-	return timeFromProto(account.GetAudit().GetUpdatedAt())
+	return shared.TimeFromProto(account.GetAudit().GetUpdatedAt())
 }
 
 func requireWAAccountID(value string) (string, error) {

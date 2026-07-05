@@ -7,6 +7,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -533,7 +534,7 @@ func (r contactRow) toProto() *waappv1.WAContact {
 		MessageCount:     int32(r.messageCount),
 		UnreadCount:      int32(r.unreadCount),
 		LastMessageAt:    sqlTime(r.lastMessageAt),
-		LastMessagePreview: contactMessagePreview(
+		LastMessagePreview: wamodel.ContactMessagePreview(
 			r.lastPlaintext,
 			r.lastRedacted,
 			r.lastPayloadRef,

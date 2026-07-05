@@ -396,7 +396,7 @@ func accountSettingsCompletedAt(op *waappv1.AccountSettingsOperation, fallback t
 	if op == nil {
 		return fallback
 	}
-	completedAt := timeFromProto(op.GetCompletedAt())
+	completedAt := shared.TimeFromProto(op.GetCompletedAt())
 	if completedAt.IsZero() {
 		return fallback
 	}

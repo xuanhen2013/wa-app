@@ -6,6 +6,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 )
 
 func (s *SQLiteStore) ListAccountMessages(ctx context.Context, waAccountIDValue string, contactRefs []string, cursorValue string, limit int, includeSensitiveText bool) ([]*waappv1.AccountMessage, string, error) {
@@ -29,7 +30,7 @@ func (s *SQLiteStore) ListAccountMessages(ctx context.Context, waAccountIDValue 
 		if err != nil {
 			return nil, "", err
 		}
-		item := newAccountMessageFromInbound(waAccountIDValue, message, decrypted, includeSensitiveText)
+		item := wamodel.NewAccountMessageFromInbound(waAccountIDValue, message, decrypted, includeSensitiveText)
 		if item != nil {
 			items = append(items, item)
 		}
@@ -38,7 +39,7 @@ func (s *SQLiteStore) ListAccountMessages(ctx context.Context, waAccountIDValue 
 		return nil, "", err
 	}
 	items, nextCursor := shared.NewKeysetPage(items, limit, func(message *waappv1.AccountMessage) shared.KeysetCursor {
-		return shared.KeysetCursorValue(timeFromProto(message.GetReceivedAt()), message.GetAccountMessageId())
+		return shared.KeysetCursorValue(shared.TimeFromProto(message.GetReceivedAt()), message.GetAccountMessageId())
 	})
 	return items, nextCursor, nil
 }

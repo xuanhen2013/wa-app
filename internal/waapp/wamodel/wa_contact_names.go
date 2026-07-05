@@ -1,4 +1,4 @@
-package app
+package wamodel
 
 import (
 	"strings"
@@ -9,14 +9,14 @@ import (
 	"google.golang.org/protobuf/proto"
 )
 
-type waKnownContactAlias struct {
+type WAKnownContactAlias struct {
 	Name        string
 	JIDs        []string
 	Numbers     []string
 	BusinessIDs []string
 }
 
-var waKnownContactAliases = []waKnownContactAlias{
+var WAKnownContactAliases = []WAKnownContactAlias{
 	{
 		Name:        "OpenAI",
 		JIDs:        []string{"227775403311132@lid"},
@@ -25,23 +25,23 @@ var waKnownContactAliases = []waKnownContactAlias{
 	},
 }
 
-func normalizedWAContactForStorage(contact *waappv1.WAContact) *waappv1.WAContact {
+func NormalizedWAContactForStorage(contact *waappv1.WAContact) *waappv1.WAContact {
 	if contact == nil {
 		return nil
 	}
 	clone := proto.Clone(contact).(*waappv1.WAContact)
-	normalizeWAContactNames(clone)
+	NormalizeWAContactNames(clone)
 	return clone
 }
 
-func normalizeWAContactNames(contact *waappv1.WAContact) {
+func NormalizeWAContactNames(contact *waappv1.WAContact) {
 	if contact == nil {
 		return
 	}
-	alias := knownWAContactAliasName(contact)
-	contact.DisplayName = resolvedWAContactName(contact.GetDisplayName(), contact.GetNumber())
-	contact.WaName = resolvedWAContactName(contact.GetWaName(), contact.GetNumber())
-	contact.VerifiedName = resolvedWAContactName(contact.GetVerifiedName(), contact.GetNumber())
+	alias := KnownWAContactAliasName(contact)
+	contact.DisplayName = ResolvedWAContactName(contact.GetDisplayName(), contact.GetNumber())
+	contact.WaName = ResolvedWAContactName(contact.GetWaName(), contact.GetNumber())
+	contact.VerifiedName = ResolvedWAContactName(contact.GetVerifiedName(), contact.GetNumber())
 	if alias == "" {
 		return
 	}
@@ -52,19 +52,19 @@ func normalizeWAContactNames(contact *waappv1.WAContact) {
 	contact.Kind = waappv1.WAContactKind_WA_CONTACT_KIND_BUSINESS
 }
 
-func knownWAContactAliasName(contact *waappv1.WAContact) string {
+func KnownWAContactAliasName(contact *waappv1.WAContact) string {
 	if contact == nil {
 		return ""
 	}
 	jid := wacore.NormalizeWAJID(contact.GetJid())
 	number := shared.DigitsOnly(contact.GetNumber())
 	businessIDs := shared.UniqueNonEmptyStrings(shared.DigitsOnly(contact.GetDisplayName()), shared.DigitsOnly(contact.GetWaName()), shared.DigitsOnly(contact.GetVerifiedName()))
-	for _, alias := range waKnownContactAliases {
-		if stringInSlice(jid, alias.JIDs) || stringInSlice(number, alias.Numbers) {
+	for _, alias := range WAKnownContactAliases {
+		if StringInSlice(jid, alias.JIDs) || StringInSlice(number, alias.Numbers) {
 			return alias.Name
 		}
 		for _, businessID := range businessIDs {
-			if stringInSlice(businessID, alias.BusinessIDs) {
+			if StringInSlice(businessID, alias.BusinessIDs) {
 				return alias.Name
 			}
 		}
@@ -72,15 +72,15 @@ func knownWAContactAliasName(contact *waappv1.WAContact) string {
 	return ""
 }
 
-func resolvedWAContactName(value string, number string) string {
+func ResolvedWAContactName(value string, number string) string {
 	name := wacore.WAContactName(value)
-	if contactNameNeedsResolution(name, number) {
+	if ContactNameNeedsResolution(name, number) {
 		return ""
 	}
 	return name
 }
 
-func contactNameNeedsResolution(name string, number string) bool {
+func ContactNameNeedsResolution(name string, number string) bool {
 	name = strings.TrimSpace(name)
 	switch {
 	case name == "":
@@ -89,14 +89,14 @@ func contactNameNeedsResolution(name string, number string) bool {
 		return true
 	case strings.HasPrefix(name, "联系人 ") || strings.HasPrefix(name, "LID ") || strings.HasPrefix(name, "企业账号 "):
 		return true
-	case isNumericWAContactName(name):
+	case IsNumericWAContactName(name):
 		return true
 	}
 	number = shared.DigitsOnly(number)
 	return number != "" && (name == "+"+number || shared.DigitsOnly(name) == number)
 }
 
-func isNumericWAContactName(value string) bool {
+func IsNumericWAContactName(value string) bool {
 	value = strings.TrimPrefix(strings.TrimSpace(value), "+")
 	if len(value) < 6 {
 		return false
@@ -109,7 +109,7 @@ func isNumericWAContactName(value string) bool {
 	return true
 }
 
-func stringInSlice(value string, values []string) bool {
+func StringInSlice(value string, values []string) bool {
 	if value == "" {
 		return false
 	}

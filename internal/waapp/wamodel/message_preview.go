@@ -1,4 +1,4 @@
-package app
+package wamodel
 
 import (
 	"strings"
@@ -7,14 +7,14 @@ import (
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
-const contactMessagePreviewLimit = 96
+const ContactMessagePreviewLimit = 96
 
-func contactMessagePreview(plaintext string, redacted string, payloadRef string, state waappv1.MessageEncryptionState) string {
-	value := shared.FirstNonEmpty(accountMessageDisplayText(plaintext), accountMessageDisplayText(redacted), payloadTextSummary(payloadRef), messageStatePreview(state))
-	return truncatePreview(value, contactMessagePreviewLimit)
+func ContactMessagePreview(plaintext string, redacted string, payloadRef string, state waappv1.MessageEncryptionState) string {
+	value := shared.FirstNonEmpty(AccountMessageDisplayText(plaintext), AccountMessageDisplayText(redacted), PayloadTextSummary(payloadRef), MessageStatePreview(state))
+	return TruncatePreview(value, ContactMessagePreviewLimit)
 }
 
-func truncatePreview(value string, limit int) string {
+func TruncatePreview(value string, limit int) string {
 	value = strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
 	if value == "" || limit <= 0 {
 		return ""
@@ -26,7 +26,7 @@ func truncatePreview(value string, limit int) string {
 	return string(runes[:limit]) + "…"
 }
 
-func messageStatePreview(state waappv1.MessageEncryptionState) string {
+func MessageStatePreview(state waappv1.MessageEncryptionState) string {
 	switch state {
 	case waappv1.MessageEncryptionState_MESSAGE_ENCRYPTION_STATE_ENCRYPTED:
 		return "消息待解密"

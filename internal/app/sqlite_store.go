@@ -80,7 +80,7 @@ func (s *SQLiteStore) migrate(ctx context.Context) error {
 }
 
 func (s *SQLiteStore) SaveAppArtifact(ctx context.Context, artifact *waappv1.AppArtifact) error {
-	return s.upsertPayload(ctx, "wa_sqlite_artifacts", artifact.GetArtifactId(), sqliteTimeValue(timeFromProto(artifact.GetObservedAt())), artifact)
+	return s.upsertPayload(ctx, "wa_sqlite_artifacts", artifact.GetArtifactId(), sqliteTimeValue(shared.TimeFromProto(artifact.GetObservedAt())), artifact)
 }
 
 func (s *SQLiteStore) GetAppArtifact(ctx context.Context, artifactID string) (*waappv1.AppArtifact, error) {
@@ -89,7 +89,7 @@ func (s *SQLiteStore) GetAppArtifact(ctx context.Context, artifactID string) (*w
 }
 
 func (s *SQLiteStore) SaveProtocolProfile(ctx context.Context, profile *waappv1.ProtocolProfile) error {
-	return s.upsertPayload(ctx, "wa_sqlite_protocol_profiles", profile.GetProtocolProfileId(), sqliteTimeValue(timeFromProto(profile.GetAudit().GetUpdatedAt())), profile)
+	return s.upsertPayload(ctx, "wa_sqlite_protocol_profiles", profile.GetProtocolProfileId(), sqliteTimeValue(shared.TimeFromProto(profile.GetAudit().GetUpdatedAt())), profile)
 }
 
 func (s *SQLiteStore) GetProtocolProfile(ctx context.Context, id string) (*waappv1.ProtocolProfile, error) {
@@ -164,7 +164,7 @@ func (s *SQLiteStore) SaveClientProfile(ctx context.Context, profile *waappv1.Cl
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, `INSERT INTO wa_sqlite_client_profiles (id,wa_account_id,protocol_profile_id,status,updated_at,payload) VALUES (?,?,?,?,?,?)
-ON CONFLICT(id) DO UPDATE SET wa_account_id=excluded.wa_account_id, protocol_profile_id=excluded.protocol_profile_id, status=excluded.status, updated_at=excluded.updated_at, payload=excluded.payload`, profile.GetClientProfileId(), profile.GetWaAccountId(), profile.GetProtocolProfileId(), profile.GetStatus().String(), sqliteTimeValue(timeFromProto(profile.GetAudit().GetUpdatedAt())), payload)
+ON CONFLICT(id) DO UPDATE SET wa_account_id=excluded.wa_account_id, protocol_profile_id=excluded.protocol_profile_id, status=excluded.status, updated_at=excluded.updated_at, payload=excluded.payload`, profile.GetClientProfileId(), profile.GetWaAccountId(), profile.GetProtocolProfileId(), profile.GetStatus().String(), sqliteTimeValue(shared.TimeFromProto(profile.GetAudit().GetUpdatedAt())), payload)
 	return err
 }
 
@@ -194,7 +194,7 @@ func (s *SQLiteStore) ListClientProfiles(ctx context.Context, waAccountIDValue s
 		return nil, "", err
 	}
 	items, nextCursor := shared.NewKeysetPage(items, limit, func(profile *waappv1.ClientProfile) shared.KeysetCursor {
-		return shared.KeysetCursorValue(timeFromProto(profile.GetAudit().GetUpdatedAt()), profile.GetClientProfileId())
+		return shared.KeysetCursorValue(shared.TimeFromProto(profile.GetAudit().GetUpdatedAt()), profile.GetClientProfileId())
 	})
 	return items, nextCursor, nil
 }
@@ -220,7 +220,7 @@ func (s *SQLiteStore) SaveAccountProbe(ctx context.Context, probe *waappv1.Accou
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, `INSERT INTO wa_sqlite_account_probes (id,wa_account_id,client_profile_id,updated_at,payload) VALUES (?,?,?,?,?)
-ON CONFLICT(id) DO UPDATE SET wa_account_id=excluded.wa_account_id, client_profile_id=excluded.client_profile_id, updated_at=excluded.updated_at, payload=excluded.payload`, probe.GetAccountProbeId(), probe.GetWaAccountId(), probe.GetClientProfileId(), sqliteTimeValue(timeFromProto(probe.GetProbedAt())), payload)
+ON CONFLICT(id) DO UPDATE SET wa_account_id=excluded.wa_account_id, client_profile_id=excluded.client_profile_id, updated_at=excluded.updated_at, payload=excluded.payload`, probe.GetAccountProbeId(), probe.GetWaAccountId(), probe.GetClientProfileId(), sqliteTimeValue(shared.TimeFromProto(probe.GetProbedAt())), payload)
 	return err
 }
 
@@ -230,7 +230,7 @@ func (s *SQLiteStore) SaveVerificationRequest(ctx context.Context, record *waapp
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, `INSERT INTO wa_sqlite_verification_requests (id,wa_account_id,client_profile_id,requested_at,payload) VALUES (?,?,?,?,?)
-ON CONFLICT(id) DO UPDATE SET wa_account_id=excluded.wa_account_id, client_profile_id=excluded.client_profile_id, requested_at=excluded.requested_at, payload=excluded.payload`, record.GetVerificationRequestId(), record.GetWaAccountId(), record.GetClientProfileId(), sqliteTimeValue(timeFromProto(record.GetRequestedAt())), payload)
+ON CONFLICT(id) DO UPDATE SET wa_account_id=excluded.wa_account_id, client_profile_id=excluded.client_profile_id, requested_at=excluded.requested_at, payload=excluded.payload`, record.GetVerificationRequestId(), record.GetWaAccountId(), record.GetClientProfileId(), sqliteTimeValue(shared.TimeFromProto(record.GetRequestedAt())), payload)
 	return err
 }
 
@@ -245,7 +245,7 @@ func (s *SQLiteStore) SaveRegistration(ctx context.Context, record *waappv1.Regi
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, `INSERT INTO wa_sqlite_registrations (id,verification_request_id,wa_account_id,client_profile_id,submitted_at,payload) VALUES (?,?,?,?,?,?)
-ON CONFLICT(id) DO UPDATE SET verification_request_id=excluded.verification_request_id, wa_account_id=excluded.wa_account_id, client_profile_id=excluded.client_profile_id, submitted_at=excluded.submitted_at, payload=excluded.payload`, record.GetRegistrationId(), record.GetVerificationRequestId(), record.GetWaAccountId(), record.GetClientProfileId(), sqliteTimeValue(timeFromProto(record.GetSubmittedAt())), payload)
+ON CONFLICT(id) DO UPDATE SET verification_request_id=excluded.verification_request_id, wa_account_id=excluded.wa_account_id, client_profile_id=excluded.client_profile_id, submitted_at=excluded.submitted_at, payload=excluded.payload`, record.GetRegistrationId(), record.GetVerificationRequestId(), record.GetWaAccountId(), record.GetClientProfileId(), sqliteTimeValue(shared.TimeFromProto(record.GetSubmittedAt())), payload)
 	return err
 }
 
@@ -260,7 +260,7 @@ func (s *SQLiteStore) SaveLoginState(ctx context.Context, state *waappv1.LoginSt
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, `INSERT INTO wa_sqlite_login_states (id,registration_id,wa_account_id,client_profile_id,registered_identity_id,status,updated_at,payload) VALUES (?,?,?,?,?,?,?,?)
-ON CONFLICT(id) DO UPDATE SET registration_id=excluded.registration_id, wa_account_id=excluded.wa_account_id, client_profile_id=excluded.client_profile_id, registered_identity_id=excluded.registered_identity_id, status=excluded.status, updated_at=excluded.updated_at, payload=excluded.payload`, state.GetLoginStateId(), state.GetRegistrationId(), state.GetWaAccountId(), state.GetClientProfileId(), state.GetRegisteredIdentityId(), state.GetStatus().String(), sqliteTimeValue(timeFromProto(state.GetAudit().GetUpdatedAt())), payload)
+ON CONFLICT(id) DO UPDATE SET registration_id=excluded.registration_id, wa_account_id=excluded.wa_account_id, client_profile_id=excluded.client_profile_id, registered_identity_id=excluded.registered_identity_id, status=excluded.status, updated_at=excluded.updated_at, payload=excluded.payload`, state.GetLoginStateId(), state.GetRegistrationId(), state.GetWaAccountId(), state.GetClientProfileId(), state.GetRegisteredIdentityId(), state.GetStatus().String(), sqliteTimeValue(shared.TimeFromProto(state.GetAudit().GetUpdatedAt())), payload)
 	return err
 }
 
@@ -315,7 +315,7 @@ func (s *SQLiteStore) SaveMessageSession(ctx context.Context, session *waappv1.M
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, `INSERT INTO wa_sqlite_message_sessions (id,wa_account_id,client_profile_id,registered_identity_id,protocol_profile_id,status,updated_at,payload) VALUES (?,?,?,?,?,?,?,?)
-ON CONFLICT(id) DO UPDATE SET status=excluded.status, updated_at=excluded.updated_at, payload=excluded.payload`, session.GetMessageSessionId(), session.GetWaAccountId(), session.GetClientProfileId(), session.GetRegisteredIdentityId(), session.GetProtocolProfileId(), session.GetStatus().String(), sqliteTimeValue(timeFromProto(firstProtoTime(session.GetLastSeenAt(), session.GetOpenedAt(), session.GetClosedAt()))), payload)
+ON CONFLICT(id) DO UPDATE SET status=excluded.status, updated_at=excluded.updated_at, payload=excluded.payload`, session.GetMessageSessionId(), session.GetWaAccountId(), session.GetClientProfileId(), session.GetRegisteredIdentityId(), session.GetProtocolProfileId(), session.GetStatus().String(), sqliteTimeValue(shared.TimeFromProto(firstProtoTime(session.GetLastSeenAt(), session.GetOpenedAt(), session.GetClosedAt()))), payload)
 	return err
 }
 
@@ -378,7 +378,7 @@ func (s *SQLiteStore) SaveInboundMessages(ctx context.Context, messages []*waapp
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO wa_sqlite_inbound_messages (id,message_session_id,encryption_state,received_at,payload) VALUES (?,?,?,?,?)
-ON CONFLICT(id) DO UPDATE SET encryption_state=excluded.encryption_state, payload=excluded.payload`, msg.GetMessageId(), msg.GetMessageSessionId(), msg.GetEncryptionState().String(), sqliteTimeValue(timeFromProto(msg.GetReceivedAt())), payload); err != nil {
+ON CONFLICT(id) DO UPDATE SET encryption_state=excluded.encryption_state, payload=excluded.payload`, msg.GetMessageId(), msg.GetMessageSessionId(), msg.GetEncryptionState().String(), sqliteTimeValue(shared.TimeFromProto(msg.GetReceivedAt())), payload); err != nil {
 			return err
 		}
 	}
@@ -442,7 +442,7 @@ func (s *SQLiteStore) SaveDecryptedMessage(ctx context.Context, msg *waappv1.Dec
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, `INSERT INTO wa_sqlite_decrypted_messages (id,message_id,decrypted_at,payload) VALUES (?,?,?,?)
-ON CONFLICT(id) DO UPDATE SET message_id=excluded.message_id, decrypted_at=excluded.decrypted_at, payload=excluded.payload`, msg.GetDecryptedMessageId(), msg.GetMessageId(), sqliteTimeValue(timeFromProto(msg.GetDecryptedAt())), payload)
+ON CONFLICT(id) DO UPDATE SET message_id=excluded.message_id, decrypted_at=excluded.decrypted_at, payload=excluded.payload`, msg.GetDecryptedMessageId(), msg.GetMessageId(), sqliteTimeValue(shared.TimeFromProto(msg.GetDecryptedAt())), payload)
 	return err
 }
 
@@ -466,7 +466,7 @@ func (s *SQLiteStore) SaveCandidates(ctx context.Context, candidates []*waappv1.
 			return err
 		}
 		if _, err := tx.ExecContext(ctx, `INSERT INTO wa_sqlite_candidates (id,message_id,decrypted_message_id,extracted_at,payload) VALUES (?,?,?,?,?)
-ON CONFLICT(id) DO UPDATE SET decrypted_message_id=excluded.decrypted_message_id, extracted_at=excluded.extracted_at, payload=excluded.payload`, candidate.GetCandidateId(), candidate.GetMessageId(), candidate.GetDecryptedMessageId(), sqliteTimeValue(timeFromProto(candidate.GetExtractedAt())), payload); err != nil {
+ON CONFLICT(id) DO UPDATE SET decrypted_message_id=excluded.decrypted_message_id, extracted_at=excluded.extracted_at, payload=excluded.payload`, candidate.GetCandidateId(), candidate.GetMessageId(), candidate.GetDecryptedMessageId(), sqliteTimeValue(shared.TimeFromProto(candidate.GetExtractedAt())), payload); err != nil {
 			return err
 		}
 	}
@@ -500,7 +500,7 @@ func (s *SQLiteStore) SaveOTPMessage(ctx context.Context, msg *waappv1.OtpMessag
 		return err
 	}
 	_, err = s.db.ExecContext(ctx, `INSERT INTO wa_sqlite_otp_messages (id,wa_account_id,received_at,payload) VALUES (?,?,?,?)
-ON CONFLICT(id) DO UPDATE SET wa_account_id=excluded.wa_account_id, received_at=excluded.received_at, payload=excluded.payload`, stored.GetOtpMessageId(), stored.GetWaAccountId(), sqliteTimeValue(timeFromProto(stored.GetReceivedAt())), payload)
+ON CONFLICT(id) DO UPDATE SET wa_account_id=excluded.wa_account_id, received_at=excluded.received_at, payload=excluded.payload`, stored.GetOtpMessageId(), stored.GetWaAccountId(), sqliteTimeValue(shared.TimeFromProto(stored.GetReceivedAt())), payload)
 	return err
 }
 
@@ -536,7 +536,7 @@ WHERE o.wa_account_id=? AND NOT EXISTS (
 		}
 	}
 	items, nextCursor := shared.NewKeysetPage(items, limit, func(msg *waappv1.OtpMessage) shared.KeysetCursor {
-		return shared.KeysetCursorValue(timeFromProto(msg.GetReceivedAt()), msg.GetOtpMessageId())
+		return shared.KeysetCursorValue(shared.TimeFromProto(msg.GetReceivedAt()), msg.GetOtpMessageId())
 	})
 	return items, nextCursor, nil
 }

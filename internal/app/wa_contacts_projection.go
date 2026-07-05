@@ -10,6 +10,7 @@ import (
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -30,13 +31,13 @@ func contactsFromInboundMessages(accountID string, messages []*waappv1.InboundMe
 		if msg.GetKind() != waappv1.InboundMessageKind_INBOUND_MESSAGE_KIND_MESSAGE {
 			continue
 		}
-		contactRef := contactRefForMessage(msg.GetContactRef(), msg.GetSenderRef())
-		contact := contactFromRef(accountID, contactRef, timeFromProto(msg.GetReceivedAt()), now)
+		contactRef := wamodel.ContactRefForMessage(msg.GetContactRef(), msg.GetSenderRef())
+		contact := contactFromRef(accountID, contactRef, shared.TimeFromProto(msg.GetReceivedAt()), now)
 		if contact == nil {
 			continue
 		}
 		current := contacts[contact.GetJid()]
-		if current == nil || timeFromProto(contact.GetAudit().GetUpdatedAt()).After(timeFromProto(current.GetAudit().GetUpdatedAt())) {
+		if current == nil || shared.TimeFromProto(contact.GetAudit().GetUpdatedAt()).After(shared.TimeFromProto(current.GetAudit().GetUpdatedAt())) {
 			contacts[contact.GetJid()] = contact
 		}
 	}
@@ -74,7 +75,7 @@ func contactFromDecryptedMessage(accountID string, msg *waappv1.InboundMessage, 
 	if msg == nil || msg.GetKind() != waappv1.InboundMessageKind_INBOUND_MESSAGE_KIND_MESSAGE {
 		return nil
 	}
-	contact := contactFromRef(accountID, contactRefForMessage(msg.GetContactRef(), msg.GetSenderRef()), timeFromProto(msg.GetReceivedAt()), now)
+	contact := contactFromRef(accountID, wamodel.ContactRefForMessage(msg.GetContactRef(), msg.GetSenderRef()), shared.TimeFromProto(msg.GetReceivedAt()), now)
 	if contact == nil {
 		return nil
 	}
@@ -95,7 +96,7 @@ func contactsFromContactHints(accountID string, msg *waappv1.InboundMessage, hin
 	}
 	seenAt := now
 	if msg != nil {
-		if receivedAt := timeFromProto(msg.GetReceivedAt()); !receivedAt.IsZero() {
+		if receivedAt := shared.TimeFromProto(msg.GetReceivedAt()); !receivedAt.IsZero() {
 			seenAt = receivedAt
 		}
 	}
@@ -126,7 +127,7 @@ func contactFromContactHint(accountID string, hint wacore.WAContactHint, seenAt 
 	if hint.VerifiedName != "" {
 		contact.Kind = waappv1.WAContactKind_WA_CONTACT_KIND_BUSINESS
 	}
-	normalizeWAContactNames(contact)
+	wamodel.NormalizeWAContactNames(contact)
 	return contact
 }
 
@@ -186,7 +187,7 @@ func storedWAContactDisplayName(value string, number string) string {
 	if value == "" {
 		return ""
 	}
-	if contactNameNeedsResolution(value, number) {
+	if wamodel.ContactNameNeedsResolution(value, number) {
 		return ""
 	}
 	return value
@@ -196,7 +197,7 @@ func enrichWAContactFallback(contact *waappv1.WAContact) {
 	if contact == nil {
 		return
 	}
-	normalizeWAContactNames(contact)
+	wamodel.NormalizeWAContactNames(contact)
 	contact.DisplayName = storedWAContactDisplayName(contact.GetDisplayName(), contact.GetNumber())
 	if contact.GetDisplayName() != "" {
 		return
