@@ -96,7 +96,7 @@ func (e *messagingService) sendTextMessageOnSession(ctx context.Context, session
 		return result
 	}
 	applyChatdSessionUpdateState(state, session.update())
-	if err := e.saveState(ctx, input.ClientProfileID, *state); err != nil {
+	if err := e.SaveState(ctx, input.ClientProfileID, *state); err != nil {
 		result.Err = err
 		return result
 	}
@@ -119,7 +119,7 @@ func (e *messagingService) applyTextMessageSendUpdate(ctx context.Context, clien
 	if !applyChatdReceiveState(state, input, payloads, update) {
 		return nil
 	}
-	return e.saveState(ctx, clientProfileID, *state)
+	return e.SaveState(ctx, clientProfileID, *state)
 }
 
 func (e *LongConnectionNativeEngine) textMessageReceiveInput(input wacore.EngineTextMessageInput) wacore.EngineMessageInput {

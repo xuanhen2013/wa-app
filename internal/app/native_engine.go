@@ -153,7 +153,7 @@ func (e *registrationService) PrepareClientProfile(ctx context.Context, input wa
 	if err != nil {
 		return err
 	}
-	return e.saveState(ctx, input.ClientProfileID, state)
+	return e.SaveState(ctx, input.ClientProfileID, state)
 }
 
 // existProbeTransientAttempts 限定 /v2/exist 探测在纯传输层失败(代理/网络抖动,响应
@@ -220,7 +220,7 @@ func (e *registrationService) RequestVerificationCode(ctx context.Context, input
 		return wacore.EngineCodeResult{Status: waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED, Err: err}
 	}
 	result, updated := e.requestVerificationCodeWithState(ctx, input, state)
-	_ = e.saveState(ctx, input.ClientProfileID, updated)
+	_ = e.SaveState(ctx, input.ClientProfileID, updated)
 	return result
 }
 
@@ -318,7 +318,7 @@ func (e *registrationService) RefreshAccountTransferChallenge(ctx context.Contex
 	if err != nil {
 		return wacore.EngineAccountTransferChallengeResult{Err: err}
 	}
-	_ = e.saveState(ctx, input.ClientProfileID, state)
+	_ = e.SaveState(ctx, input.ClientProfileID, state)
 	return wacore.EngineAccountTransferChallengeResult{Challenge: challenge}
 }
 
@@ -356,18 +356,18 @@ func (e *registrationService) SubmitVerificationCode(ctx context.Context, input 
 		state.LastRegister["enc_sha256"] = encHash(enc)
 	}
 	if err != nil {
-		_ = e.saveState(ctx, input.ClientProfileID, state)
+		_ = e.SaveState(ctx, input.ClientProfileID, state)
 		return wacore.EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: classifyHTTPError(data, err)}
 	}
 	if status := responseStatus(data); status != "ok" && status != "registered" {
 		if input.DeliveryMethod == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_ACCOUNT_TRANSFER && !accountTransferRegisterTerminalFailure(data) {
-			_ = e.saveState(ctx, input.ClientProfileID, state)
+			_ = e.SaveState(ctx, input.ClientProfileID, state)
 			return wacore.EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_SUBMITTED, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, "account transfer confirmation is pending", true)}
 		}
 		if input.DeliveryMethod == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_ACCOUNT_TRANSFER {
 			state.AccountTransfer = nativeAccountTransferState{}
 		}
-		_ = e.saveState(ctx, input.ClientProfileID, state)
+		_ = e.SaveState(ctx, input.ClientProfileID, state)
 		return wacore.EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: waProtocolError(data, "registration was rejected")}
 	}
 	login := shared.FirstNonEmpty(jsonString(data["login"]), jsonString(data["jid"]), jsonString(data["registration_jid"]), state.CC+state.Phone)
@@ -378,7 +378,7 @@ func (e *registrationService) SubmitVerificationCode(ctx context.Context, input 
 	if input.DeliveryMethod == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_ACCOUNT_TRANSFER {
 		state.AccountTransfer = nativeAccountTransferState{}
 	}
-	_ = e.saveState(ctx, input.ClientProfileID, state)
+	_ = e.SaveState(ctx, input.ClientProfileID, state)
 	completedAt := e.clock.Now()
 	return wacore.EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REGISTERED, RegisteredID: "waid_" + shared.StableID(login), ServiceAccountID: lid, ServiceLoginID: login, CompletedAt: completedAt}
 }
@@ -456,7 +456,7 @@ func (e *registrationService) CheckLoginState(ctx context.Context, input wacore.
 	client := newChatdClient(chatdConfigForState(proxyURL, state, timeout))
 	update, err := client.checkLoginState(ctx, state, input, input.AppVersion)
 	if applyChatdSessionUpdateState(&state, update) {
-		_ = e.saveState(ctx, input.ClientProfileID, state)
+		_ = e.SaveState(ctx, input.ClientProfileID, state)
 	}
 	if err != nil {
 		status := loginCheckStatusForError(err)
@@ -487,7 +487,7 @@ func (e *messagingService) ReceiveMessageBatch(ctx context.Context, input wacore
 	state.ensureMaps()
 	if state.ChatStatic.Private == "" || state.ChatStatic.Public == "" {
 		state.ChatStatic = ensureChatStatic(state.ChatStatic)
-		_ = e.saveState(ctx, input.ClientProfileID, state)
+		_ = e.SaveState(ctx, input.ClientProfileID, state)
 	}
 	proxyURL, err := e.proxyURL()
 	if err != nil {
@@ -500,7 +500,7 @@ func (e *messagingService) ReceiveMessageBatch(ctx context.Context, input wacore
 		return wacore.EngineMessageBatchResult{Err: chatdReceiveError(err)}
 	}
 	if applyChatdReceiveState(&state, input, payloads, update) {
-		_ = e.saveState(ctx, input.ClientProfileID, state)
+		_ = e.SaveState(ctx, input.ClientProfileID, state)
 	}
 	return wacore.EngineMessageBatchResult{Messages: messages, Contacts: wamodel.ContactsFromContactHints(input.WAAccountID, nil, update.ContactHints, now), OTPMessages: otps, AccountLogout: accountLogoutFromUpdate(update.AccountLogout)}
 }
@@ -759,7 +759,7 @@ func (e *messagingService) DecryptMessage(ctx context.Context, input wacore.Engi
 		}
 		if commit {
 			_ = applyNativeAppStateKeys(&state, output.plaintext)
-			_ = e.saveState(ctx, input.ClientProfileID, state)
+			_ = e.SaveState(ctx, input.ClientProfileID, state)
 		}
 		decryptedID := e.ids.NewID("wadec_")
 		plain := nativePlaintextText(output.plaintext)
@@ -872,7 +872,7 @@ func (e *engineCore) newState(phone *waappv1.PhoneTarget) (NativeState, error) {
 	return newNativeState(phone)
 }
 
-func (e *engineCore) saveState(ctx context.Context, clientProfileID string, state NativeState) error {
+func (e *engineCore) SaveState(ctx context.Context, clientProfileID string, state NativeState) error {
 	data, err := MarshalNativeState(state)
 	if err != nil {
 		return err

@@ -21,7 +21,7 @@ func (e *accountSettingsService) ApplyAccountSettings(ctx context.Context, input
 	}
 	if state.ChatStatic.Private == "" || state.ChatStatic.Public == "" {
 		state.ChatStatic = ensureChatStatic(state.ChatStatic)
-		_ = e.saveState(ctx, input.ClientProfileID, state)
+		_ = e.SaveState(ctx, input.ClientProfileID, state)
 	}
 	proxyURL, err := e.proxyURL()
 	if err != nil {
@@ -40,7 +40,7 @@ func (e *accountSettingsService) applyAccountSettingsWithSender(ctx context.Cont
 	}
 	response, update, err := sender.sendIQ(ctx, state, input.RegisteredIdentityID, input.AppVersion, request, accountSettingsIQTimeoutMessage)
 	if applyChatdSessionUpdateState(&state, update) {
-		_ = e.saveState(ctx, input.ClientProfileID, state)
+		_ = e.SaveState(ctx, input.ClientProfileID, state)
 	}
 	if err != nil {
 		return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: accountSettingsRequestError(err)}
@@ -50,7 +50,7 @@ func (e *accountSettingsService) applyAccountSettingsWithSender(ctx context.Cont
 
 func (e *accountSettingsService) applyAccountProfileName(ctx context.Context, input wacore.EngineAccountSettingsInput, state NativeState, sender accountSettingsIQSender) wacore.EngineAccountSettingsResult {
 	state.PushName = input.DisplayName
-	if err := e.saveState(ctx, input.ClientProfileID, state); err != nil {
+	if err := e.SaveState(ctx, input.ClientProfileID, state); err != nil {
 		return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native account profile name could not be saved", true)}
 	}
 	timestampMS := e.clock.Now().UnixMilli()
@@ -69,19 +69,19 @@ func (e *accountSettingsService) applyAccountProfileName(ctx context.Context, in
 	changed := applyChatdSessionUpdateState(&state, update)
 	if err != nil {
 		if changed {
-			_ = e.saveState(ctx, input.ClientProfileID, state)
+			_ = e.SaveState(ctx, input.ClientProfileID, state)
 		}
 		return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_ACCEPTED}
 	}
 	if err := chatdIQError(response); err != nil {
 		if changed {
-			_ = e.saveState(ctx, input.ClientProfileID, state)
+			_ = e.SaveState(ctx, input.ClientProfileID, state)
 		}
 		return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_ACCEPTED}
 	}
 	state.ensureMaps()
 	state.AppState.Collections[waAppStatePushNameCollection] = collection
-	_ = e.saveState(ctx, input.ClientProfileID, state)
+	_ = e.SaveState(ctx, input.ClientProfileID, state)
 	return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_ACCEPTED}
 }
 

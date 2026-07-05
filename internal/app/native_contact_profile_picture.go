@@ -55,7 +55,7 @@ func (e *contactsService) resolveContactProfilePictureWithSender(ctx context.Con
 	state.ensureMaps()
 	if state.ChatStatic.Private == "" || state.ChatStatic.Public == "" {
 		state.ChatStatic = ensureChatStatic(state.ChatStatic)
-		if err := e.saveState(ctx, input.ClientProfileID, state); err != nil {
+		if err := e.SaveState(ctx, input.ClientProfileID, state); err != nil {
 			return wacore.EngineContactProfilePictureResult{Err: err}
 		}
 	}
@@ -76,7 +76,7 @@ func (e *contactsService) resolveContactProfilePictureWithSender(ctx context.Con
 	}
 	locations, update, err := e.contactProfilePictureLocationsFromProfileIQ(operationCtx, sender, state, input, jid)
 	if applyChatdSessionUpdateState(&state, update) {
-		_ = e.saveState(ctx, input.ClientProfileID, state)
+		_ = e.SaveState(ctx, input.ClientProfileID, state)
 	}
 	if err != nil && len(locations) == 0 {
 		return wacore.EngineContactProfilePictureResult{Err: err}

@@ -38,7 +38,7 @@ func (e *messagingService) SendReadReceipts(ctx context.Context, input wacore.En
 	}
 	defer session.Close()
 	if applyChatdSessionUpdateState(&state, session.update()) {
-		_ = e.saveState(ctx, input.ClientProfileID, state)
+		_ = e.SaveState(ctx, input.ClientProfileID, state)
 	}
 	sent := 0
 	for _, node := range buildReadReceiptNodes(messages) {

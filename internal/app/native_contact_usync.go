@@ -40,7 +40,7 @@ func (e *contactsService) resolveContactsWithSender(ctx context.Context, input w
 	state.ensureMaps()
 	if state.ChatStatic.Private == "" || state.ChatStatic.Public == "" {
 		state.ChatStatic = ensureChatStatic(state.ChatStatic)
-		if err := e.saveState(ctx, input.ClientProfileID, state); err != nil {
+		if err := e.SaveState(ctx, input.ClientProfileID, state); err != nil {
 			return wacore.EngineContactResolveResult{Queried: len(jids), Err: err}
 		}
 	}
@@ -71,7 +71,7 @@ func (e *contactsService) resolveContactsWithSender(ctx context.Context, input w
 			request := buildContactUsyncIQ(e.ids.NewID("waiq_"), e.ids.NewID("sync_sid_query_"), contactUsyncRefsFromJIDs(batch), variant)
 			response, update, err := sender.sendIQ(ctx, state, input.RegisteredIdentityID, input.AppVersion, request, "contact usync iq timed out")
 			if applyChatdSessionUpdateState(&state, update) {
-				_ = e.saveState(ctx, input.ClientProfileID, state)
+				_ = e.SaveState(ctx, input.ClientProfileID, state)
 			}
 			if err != nil {
 				lastErr = err
@@ -679,7 +679,7 @@ func (e *contactsService) resolveBusinessProfileContacts(ctx context.Context, se
 		for _, request := range buildBusinessProfileIQs(e.ids.NewID, ref) {
 			response, update, err := sender.sendIQ(ctx, state, input.RegisteredIdentityID, input.AppVersion, request, businessProfileTimeoutText)
 			if applyChatdSessionUpdateState(&state, update) {
-				_ = e.saveState(ctx, input.ClientProfileID, state)
+				_ = e.SaveState(ctx, input.ClientProfileID, state)
 			}
 			if err != nil {
 				continue

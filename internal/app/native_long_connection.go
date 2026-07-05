@@ -122,7 +122,7 @@ func (e *LongConnectionNativeEngine) ReceiveMessageBatch(ctx context.Context, in
 			return wacore.EngineMessageBatchResult{Err: err}
 		}
 		if applyChatdReceiveState(&state, input, payloads, update) {
-			if err := e.saveState(ctx, input.ClientProfileID, state); err != nil {
+			if err := e.SaveState(ctx, input.ClientProfileID, state); err != nil {
 				e.closeLocked()
 				return wacore.EngineMessageBatchResult{Err: err}
 			}
@@ -148,7 +148,7 @@ func (e *LongConnectionNativeEngine) ApplyAccountSettings(ctx context.Context, i
 	}
 	if state.ChatStatic.Private == "" || state.ChatStatic.Public == "" {
 		state.ChatStatic = ensureChatStatic(state.ChatStatic)
-		_ = e.saveState(ctx, input.ClientProfileID, state)
+		_ = e.SaveState(ctx, input.ClientProfileID, state)
 	}
 	return e.NativeEngine.applyAccountSettingsWithSender(ctx, input, state, e)
 }
@@ -418,7 +418,7 @@ func (e *LongConnectionNativeEngine) ensureSessionLocked(ctx context.Context, in
 	state.ensureMaps()
 	if state.ChatStatic.Private == "" || state.ChatStatic.Public == "" {
 		state.ChatStatic = ensureChatStatic(state.ChatStatic)
-		if err := e.saveState(ctx, input.ClientProfileID, state); err != nil {
+		if err := e.SaveState(ctx, input.ClientProfileID, state); err != nil {
 			return nil, err
 		}
 	}

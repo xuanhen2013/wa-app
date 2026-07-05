@@ -590,7 +590,7 @@ func (s *serverCore) commitNativeState(ctx context.Context, phone *waappv1.Phone
 	}
 	state.CC = shared.FirstNonEmpty(state.CC, shared.PhoneCC(phone))
 	state.Phone = shared.FirstNonEmpty(state.Phone, shared.PhoneNational(phone))
-	if err := engine.saveState(ctx, profile.GetClientProfileId(), state); err != nil {
+	if err := engine.SaveState(ctx, profile.GetClientProfileId(), state); err != nil {
 		profile.Status = waappv1.ClientProfileStatus_CLIENT_PROFILE_STATUS_REJECTED
 		profile.LastError = shared.ToProtoError(err)
 		_ = s.store.SaveClientProfile(ctx, profile)
@@ -607,7 +607,7 @@ func (s *serverCore) commitNativeState(ctx context.Context, phone *waappv1.Phone
 }
 
 type nativeStateSaver interface {
-	saveState(context.Context, string, NativeState) error
+	SaveState(context.Context, string, NativeState) error
 }
 
 func (s *serverCore) ensureDefaultProtocolProfile(ctx context.Context) (*waappv1.ProtocolProfile, error) {
