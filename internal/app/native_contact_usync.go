@@ -47,7 +47,7 @@ func (e *contactsService) resolveContactsWithSender(ctx context.Context, input w
 	allContacts := contactsFromNativeStateMessagePayloads(input.WAAccountID, state, jids, e.clock.Now())
 	jids = unresolvedContactResolveJIDs(jids, allContacts)
 	if len(jids) == 0 {
-		allContacts = dedupeWAContacts(allContacts)
+		allContacts = wamodel.DedupeWAContacts(allContacts)
 		return wacore.EngineContactResolveResult{Contacts: allContacts, Queried: inputQueriedCount(input.JIDs), Resolved: contactUsyncIdentityCount(allContacts)}
 	}
 	if sender == nil {
@@ -81,7 +81,7 @@ func (e *contactsService) resolveContactsWithSender(ctx context.Context, input w
 			logContactUsyncShape(variant.Name, response)
 			contacts := contactsFromContactUsyncIQ(input.WAAccountID, response, e.clock.Now(), batch)
 			batchContacts = append(batchContacts, contacts...)
-			if hadPictureQuery && contactUsyncDisplayIdentityCount(dedupeWAContacts(batchContacts)) >= len(batch) {
+			if hadPictureQuery && contactUsyncDisplayIdentityCount(wamodel.DedupeWAContacts(batchContacts)) >= len(batch) {
 				break
 			}
 		}
@@ -93,9 +93,9 @@ func (e *contactsService) resolveContactsWithSender(ctx context.Context, input w
 		}
 		allContacts = append(allContacts, batchContacts...)
 	}
-	allContacts = dedupeWAContacts(allContacts)
+	allContacts = wamodel.DedupeWAContacts(allContacts)
 	if profileContacts := e.resolveBusinessProfileContacts(ctx, sender, state, input, allContacts); len(profileContacts) > 0 {
-		allContacts = dedupeWAContacts(append(allContacts, profileContacts...))
+		allContacts = wamodel.DedupeWAContacts(append(allContacts, profileContacts...))
 	}
 	return wacore.EngineContactResolveResult{Contacts: allContacts, Queried: inputQueriedCount(input.JIDs), Resolved: contactUsyncIdentityCount(allContacts)}
 }
@@ -127,7 +127,7 @@ func contactsFromNativeStateMessagePayloads(accountID string, state nativeState,
 			}
 		}
 	}
-	return contactsFromContactHints(accountID, nil, hints, now)
+	return wamodel.ContactsFromContactHints(accountID, nil, hints, now)
 }
 
 func unresolvedContactResolveJIDs(jids []string, contacts []*waappv1.WAContact) []string {
@@ -409,7 +409,7 @@ func contactsFromContactUsyncIQForRefs(accountID string, response chatdNode, now
 			contacts = append(contacts, contactsFromContactUsyncList(accountID, listNode, now, refs)...)
 		}
 	}
-	return dedupeWAContacts(contacts)
+	return wamodel.DedupeWAContacts(contacts)
 }
 
 func contactsFromContactUsyncList(accountID string, listNode chatdNode, now time.Time, refs []contactUsyncRef) []*waappv1.WAContact {
@@ -456,11 +456,11 @@ func contactFromContactUsyncUser(accountID string, userNode chatdNode, now time.
 	if lidJID == "" {
 		return nil
 	}
-	contact := contactFromRef(accountID, lidJID, now, now)
+	contact := wamodel.ContactFromRef(accountID, lidJID, now, now)
 	if contact == nil {
 		return nil
 	}
-	contact.Number = shared.FirstNonEmpty(contactNumberForJID(pnJID), contactUsyncPhoneNumber(userNode))
+	contact.Number = shared.FirstNonEmpty(wamodel.ContactNumberForJID(pnJID), contactUsyncPhoneNumber(userNode))
 	displayName, waName, verifiedName, business := contactUsyncNames(userNode)
 	contact.DisplayName = shared.FirstNonEmpty(displayName, verifiedName, waName, wamodel.FallbackWAContactDisplayName(contact.GetKind(), contact.GetJid(), contact.GetNumber()))
 	contact.WaName = waName
@@ -692,7 +692,7 @@ func (e *contactsService) resolveBusinessProfileContacts(ctx context.Context, se
 			}
 		}
 	}
-	return dedupeWAContacts(out)
+	return wamodel.DedupeWAContacts(out)
 }
 
 func businessProfileRefs(contacts []*waappv1.WAContact) []contactUsyncRef {
@@ -778,12 +778,12 @@ func contactFromBusinessNode(accountID string, node chatdNode, now time.Time, re
 	if lidJID == "" {
 		return nil
 	}
-	contact := contactFromRef(accountID, lidJID, now, now)
+	contact := wamodel.ContactFromRef(accountID, lidJID, now, now)
 	if contact == nil {
 		return nil
 	}
 	pnJID := shared.FirstNonEmpty(firstPNJIDInNode(node), normalizePNQueryJID(ref.QueryJID))
-	contact.Number = contactNumberForJID(pnJID)
+	contact.Number = wamodel.ContactNumberForJID(pnJID)
 	displayName := businessProfileNodeName(node)
 	verifiedName := businessVerifiedNodeName(node)
 	if node.Tag == "verified_name" {
@@ -867,41 +867,6 @@ func findChatdNode(node chatdNode, tag string) (chatdNode, bool) {
 	return chatdNode{}, false
 }
 
-func dedupeWAContacts(contacts []*waappv1.WAContact) []*waappv1.WAContact {
-	if len(contacts) == 0 {
-		return nil
-	}
-	merged := map[string]*waappv1.WAContact{}
-	order := []string{}
-	for _, contact := range contacts {
-		if contact == nil || contact.GetJid() == "" {
-			continue
-		}
-		key := contact.GetJid()
-		current := merged[key]
-		if current == nil {
-			merged[key] = contact
-			order = append(order, key)
-			continue
-		}
-		current.Number = shared.FirstNonEmpty(current.GetNumber(), contact.GetNumber())
-		current.DisplayName = betterWAContactDisplayName(current, contact.GetDisplayName())
-		current.WaName = shared.FirstNonEmpty(current.GetWaName(), contact.GetWaName())
-		current.VerifiedName = shared.FirstNonEmpty(current.GetVerifiedName(), contact.GetVerifiedName())
-		current.ProfilePictureId = shared.FirstNonEmpty(current.GetProfilePictureId(), contact.GetProfilePictureId())
-		if current.GetKind() == waappv1.WAContactKind_WA_CONTACT_KIND_USER && contact.GetKind() != waappv1.WAContactKind_WA_CONTACT_KIND_UNSPECIFIED {
-			current.Kind = contact.GetKind()
-		}
-		current.IsWhatsappUser = current.GetIsWhatsappUser() || contact.GetIsWhatsappUser()
-		current.IsReachable = current.GetIsReachable() || contact.GetIsReachable()
-	}
-	out := make([]*waappv1.WAContact, 0, len(order))
-	for _, key := range order {
-		out = append(out, merged[key])
-	}
-	return out
-}
-
 func contactUsyncIdentityCount(contacts []*waappv1.WAContact) int {
 	count := 0
 	for _, contact := range contacts {
@@ -930,19 +895,11 @@ func contactUsyncHasDisplayIdentity(contact *waappv1.WAContact) bool {
 	if wamodel.ResolvedWAContactName(contact.GetWaName(), contact.GetNumber()) != "" || wamodel.ResolvedWAContactName(contact.GetVerifiedName(), contact.GetNumber()) != "" {
 		return true
 	}
-	return !contactDisplayNeedsResolution(contact)
+	return !wamodel.ContactDisplayNeedsResolution(contact)
 }
 
 func contactNeedsDisplayResolution(contact *waappv1.WAContact) bool {
-	return contact != nil && strings.HasSuffix(contact.GetJid(), "@lid") && contactDisplayNeedsResolution(contact)
-}
-
-func contactDisplayNeedsResolution(contact *waappv1.WAContact) bool {
-	if contact == nil {
-		return false
-	}
-	name := strings.TrimSpace(contact.GetDisplayName())
-	return wamodel.ContactNameNeedsResolution(name, contact.GetNumber())
+	return contact != nil && strings.HasSuffix(contact.GetJid(), "@lid") && wamodel.ContactDisplayNeedsResolution(contact)
 }
 
 func contactUsyncDisplayIdentityCount(contacts []*waappv1.WAContact) int {
@@ -953,18 +910,6 @@ func contactUsyncDisplayIdentityCount(contacts []*waappv1.WAContact) int {
 		}
 	}
 	return count
-}
-
-func betterWAContactDisplayName(contact *waappv1.WAContact, candidate string) string {
-	candidate = wacore.WAContactName(candidate)
-	if candidate == "" {
-		return contact.GetDisplayName()
-	}
-	current := contact.GetDisplayName()
-	if wamodel.ContactNameNeedsResolution(current, contact.GetNumber()) || contactDisplayNeedsResolution(contact) {
-		return candidate
-	}
-	return current
 }
 
 func chunkStrings(values []string, size int) [][]string {

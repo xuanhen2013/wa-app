@@ -14,6 +14,7 @@ import (
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/store"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 	"github.com/byte-v-forge/wa-app/internal/waapp/waproto"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -501,7 +502,7 @@ func (e *messagingService) ReceiveMessageBatch(ctx context.Context, input wacore
 	if applyChatdReceiveState(&state, input, payloads, update) {
 		_ = e.saveState(ctx, input.ClientProfileID, state)
 	}
-	return wacore.EngineMessageBatchResult{Messages: messages, Contacts: contactsFromContactHints(input.WAAccountID, nil, update.ContactHints, now), OTPMessages: otps, AccountLogout: accountLogoutFromUpdate(update.AccountLogout)}
+	return wacore.EngineMessageBatchResult{Messages: messages, Contacts: wamodel.ContactsFromContactHints(input.WAAccountID, nil, update.ContactHints, now), OTPMessages: otps, AccountLogout: accountLogoutFromUpdate(update.AccountLogout)}
 }
 
 func applyChatdReceiveState(state *nativeState, input wacore.EngineMessageInput, payloads []chatdEncPayload, update chatdSessionUpdate) bool {

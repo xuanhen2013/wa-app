@@ -6,6 +6,7 @@ import (
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 )
 
 func (s *extractionHandler) DecryptMessage(ctx context.Context, req *waappv1.DecryptMessageRequest) (*waappv1.DecryptMessageResponse, error) {
@@ -34,10 +35,10 @@ func (s *serverCore) decryptMessage(ctx context.Context, req *waappv1.DecryptMes
 	if err := s.store.SaveDecryptedMessage(ctx, result.DecryptedMessage); err != nil {
 		return &waappv1.DecryptMessageResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	if contact := contactFromDecryptedMessage(session.GetWaAccountId(), msg, shared.FirstNonEmpty(result.DecryptedMessage.GetPlaintextText().GetValue(), result.DecryptedMessage.GetPlaintextText().GetRedactedValue()), s.clock.Now()); contact != nil {
+	if contact := wamodel.ContactFromDecryptedMessage(session.GetWaAccountId(), msg, shared.FirstNonEmpty(result.DecryptedMessage.GetPlaintextText().GetValue(), result.DecryptedMessage.GetPlaintextText().GetRedactedValue()), s.clock.Now()); contact != nil {
 		_ = s.store.SaveWAContacts(ctx, []*waappv1.WAContact{contact})
 	}
-	if contacts := contactsFromContactHints(session.GetWaAccountId(), msg, result.ContactHints, s.clock.Now()); len(contacts) > 0 {
+	if contacts := wamodel.ContactsFromContactHints(session.GetWaAccountId(), msg, result.ContactHints, s.clock.Now()); len(contacts) > 0 {
 		_ = s.store.SaveWAContacts(ctx, contacts)
 	}
 	if len(result.Candidates) > 0 {
