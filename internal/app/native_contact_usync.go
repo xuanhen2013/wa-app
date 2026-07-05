@@ -10,6 +10,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 )
 
 const (
@@ -104,7 +105,7 @@ func contactsFromNativeStateMessagePayloads(accountID string, state nativeState,
 	}
 	requested := map[string]struct{}{}
 	for _, jid := range jids {
-		jid = normalizeWAJID(jid)
+		jid = wacore.NormalizeWAJID(jid)
 		if strings.HasSuffix(jid, "@lid") {
 			requested[jid] = struct{}{}
 		}
@@ -112,15 +113,15 @@ func contactsFromNativeStateMessagePayloads(accountID string, state nativeState,
 	if len(requested) == 0 {
 		return nil
 	}
-	hints := []waContactHint{}
+	hints := []wacore.WAContactHint{}
 	for _, hint := range state.ContactHints {
-		if _, ok := requested[hint.normalized().LIDJID]; ok {
+		if _, ok := requested[hint.Normalized().LIDJID]; ok {
 			hints = append(hints, hint)
 		}
 	}
 	for _, payload := range state.MessagePayloads {
 		for _, hint := range contactHintsFromNativePayloadMetadata(payload) {
-			if _, ok := requested[hint.normalized().LIDJID]; ok {
+			if _, ok := requested[hint.Normalized().LIDJID]; ok {
 				hints = append(hints, hint)
 			}
 		}
@@ -378,7 +379,7 @@ func buildContactUsyncIQ(id string, sid string, refs []contactUsyncRef, variant 
 }
 
 func contactUsyncUserAttrs(jid string, addressing contactUsyncUserAddressing) map[string]string {
-	jid = normalizeWAJID(jid)
+	jid = wacore.NormalizeWAJID(jid)
 	switch addressing {
 	case contactUsyncUserLID:
 		return map[string]string{"jid": jid, "lid": jid, "addressing_mode": "lid"}
@@ -428,9 +429,9 @@ func contactsFromContactUsyncList(accountID string, listNode chatdNode, now time
 }
 
 func contactFromContactUsyncUser(accountID string, userNode chatdNode, now time.Time, fallbackLID string) *waappv1.WAContact {
-	jid := normalizeWAJID(userNode.Attrs["jid"])
+	jid := wacore.NormalizeWAJID(userNode.Attrs["jid"])
 	contactNode, _ := chatdChild(userNode, "contact")
-	pnJID := normalizeWAJID(shared.FirstNonEmpty(
+	pnJID := wacore.NormalizeWAJID(shared.FirstNonEmpty(
 		userNode.Attrs["pn_jid"],
 		userNode.Attrs["new_jid"],
 		contactNode.Attrs["pn_jid"],
@@ -445,10 +446,10 @@ func contactFromContactUsyncUser(accountID string, userNode chatdNode, now time.
 		pnJID = shared.FirstNonEmpty(pnJID, jid)
 	}
 	if lidNode, ok := chatdChild(userNode, "lid"); ok {
-		lidJID = shared.FirstNonEmpty(lidJID, normalizeWAJID(shared.FirstNonEmpty(lidNode.Attrs["val"], lidNode.Attrs["jid"], chatdNodeText(lidNode))))
+		lidJID = shared.FirstNonEmpty(lidJID, wacore.NormalizeWAJID(shared.FirstNonEmpty(lidNode.Attrs["val"], lidNode.Attrs["jid"], chatdNodeText(lidNode))))
 	}
 	if businessNode, ok := chatdChild(userNode, "business"); ok {
-		pnJID = shared.FirstNonEmpty(pnJID, normalizeWAJID(businessNode.Attrs["pn_jid"]), firstPNJIDInNode(businessNode))
+		pnJID = shared.FirstNonEmpty(pnJID, wacore.NormalizeWAJID(businessNode.Attrs["pn_jid"]), firstPNJIDInNode(businessNode))
 	}
 	lidJID = shared.FirstNonEmpty(lidJID, firstLIDJIDInNode(userNode), normalizeContactUsyncFallbackLID(fallbackLID))
 	if lidJID == "" {
@@ -472,7 +473,7 @@ func contactFromContactUsyncUser(accountID string, userNode chatdNode, now time.
 }
 
 func normalizeContactUsyncFallbackLID(jid string) string {
-	jid = normalizeWAJID(jid)
+	jid = wacore.NormalizeWAJID(jid)
 	if strings.HasSuffix(jid, "@lid") {
 		return jid
 	}
@@ -484,7 +485,7 @@ func contactUsyncNames(userNode chatdNode) (string, string, string, bool) {
 	usernameNode, hasUsername := chatdChild(userNode, "username")
 	businessNode, hasBusiness := chatdChild(userNode, "business")
 	businessProfileNode, hasBusinessProfile := findChatdNode(userNode, "business_profile")
-	displayName := waContactName(shared.FirstNonEmpty(
+	displayName := wacore.WAContactName(shared.FirstNonEmpty(
 		userNode.Attrs["display_name"],
 		userNode.Attrs["notify"],
 		contactNode.Attrs["display_name"],
@@ -494,9 +495,9 @@ func contactUsyncNames(userNode chatdNode) (string, string, string, bool) {
 	))
 	username := ""
 	if hasUsername {
-		username = waContactName(shared.FirstNonEmpty(firstUsernameInNode(usernameNode), chatdNodeText(usernameNode), usernameNode.Attrs["username"], usernameNode.Attrs["value"], usernameNode.Attrs["id"]))
+		username = wacore.WAContactName(shared.FirstNonEmpty(firstUsernameInNode(usernameNode), chatdNodeText(usernameNode), usernameNode.Attrs["username"], usernameNode.Attrs["value"], usernameNode.Attrs["id"]))
 	}
-	username = waContactName(shared.FirstNonEmpty(username, firstUsernameInNode(userNode), userNode.Attrs["username"], contactNode.Attrs["username"]))
+	username = wacore.WAContactName(shared.FirstNonEmpty(username, firstUsernameInNode(userNode), userNode.Attrs["username"], contactNode.Attrs["username"]))
 	verifiedName := ""
 	if hasBusiness {
 		if verifiedNode, ok := chatdChild(businessNode, "verified_name"); ok {
@@ -534,7 +535,7 @@ func firstUsernameInNode(node chatdNode) string {
 }
 
 func waContactUsername(value string) string {
-	value = waContactName(value)
+	value = wacore.WAContactName(value)
 	if value == "" || strings.Contains(value, "@") || strings.Contains(value, "://") {
 		return ""
 	}
@@ -542,7 +543,7 @@ func waContactUsername(value string) string {
 }
 
 func contactTextName(node chatdNode) string {
-	text := waContactName(chatdNodeText(node))
+	text := wacore.WAContactName(chatdNodeText(node))
 	switch strings.ToLower(text) {
 	case "", "in", "out", "invalid":
 		return ""
@@ -589,7 +590,7 @@ func jidFromChatdValue(key string, value string) string {
 	if value == "" {
 		return ""
 	}
-	jid := normalizeWAJID(value)
+	jid := wacore.NormalizeWAJID(value)
 	if strings.Contains(value, "@") {
 		return jid
 	}
@@ -627,13 +628,13 @@ func allowedLIDJIDAttr(tag string, key string) bool {
 
 func businessNodeName(node chatdNode) string {
 	for _, key := range []string{"verified_name", "business_name", "display_name", "name", "push_name", "title"} {
-		if value := waContactName(node.Attrs[key]); value != "" {
+		if value := wacore.WAContactName(node.Attrs[key]); value != "" {
 			return value
 		}
 	}
 	switch node.Tag {
 	case "verified_name", "business_name", "display_name", "name", "push_name", "title":
-		if value := waContactName(chatdNodeText(node)); value != "" {
+		if value := wacore.WAContactName(chatdNodeText(node)); value != "" {
 			return value
 		}
 	}
@@ -705,7 +706,7 @@ func businessProfileRefs(contacts []*waappv1.WAContact) []contactUsyncRef {
 			queries = append([]string{pnJID}, queries...)
 		}
 		for _, query := range queries {
-			query = normalizeWAJID(query)
+			query = wacore.NormalizeWAJID(query)
 			if query == "" {
 				continue
 			}
@@ -737,7 +738,7 @@ func buildBusinessProfileIQ(id string, jid string, version string) chatdNode {
 			Attrs: map[string]string{"v": version},
 			Content: []chatdNode{{
 				Tag:   "profile",
-				Attrs: map[string]string{"jid": normalizeWAJID(jid)},
+				Attrs: map[string]string{"jid": wacore.NormalizeWAJID(jid)},
 			}},
 		}},
 	}
@@ -749,7 +750,7 @@ func buildVerifiedNameIQ(id string, jid string) chatdNode {
 		Attrs: map[string]string{"xmlns": "w:biz", "id": id, "type": "get"},
 		Content: []chatdNode{{
 			Tag:   "verified_name",
-			Attrs: map[string]string{"jid": normalizeWAJID(jid)},
+			Attrs: map[string]string{"jid": wacore.NormalizeWAJID(jid)},
 		}},
 	}
 }
@@ -801,7 +802,7 @@ func contactFromBusinessNode(accountID string, node chatdNode, now time.Time, re
 }
 
 func normalizePNQueryJID(jid string) string {
-	jid = normalizeWAJID(jid)
+	jid = wacore.NormalizeWAJID(jid)
 	if strings.HasSuffix(jid, "@s.whatsapp.net") {
 		return jid
 	}
@@ -840,7 +841,7 @@ func normalizeContactUsyncJIDs(values []string) []string {
 	out := []string{}
 	seen := map[string]struct{}{}
 	for _, value := range values {
-		jid := normalizeWAJID(value)
+		jid := wacore.NormalizeWAJID(value)
 		if !strings.HasSuffix(jid, "@lid") {
 			continue
 		}
@@ -954,7 +955,7 @@ func contactUsyncDisplayIdentityCount(contacts []*waappv1.WAContact) int {
 }
 
 func betterWAContactDisplayName(contact *waappv1.WAContact, candidate string) string {
-	candidate = waContactName(candidate)
+	candidate = wacore.WAContactName(candidate)
 	if candidate == "" {
 		return contact.GetDisplayName()
 	}
@@ -1133,7 +1134,7 @@ func childTagCounts(node chatdNode) map[string]int {
 }
 
 func jidDomainClass(value string) string {
-	value = normalizeWAJID(value)
+	value = wacore.NormalizeWAJID(value)
 	switch {
 	case strings.HasSuffix(value, "@lid"):
 		return "@lid"

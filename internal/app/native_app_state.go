@@ -13,6 +13,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"github.com/byte-v-forge/wa-app/internal/waapp/waproto"
 	"golang.org/x/crypto/hkdf"
 	"google.golang.org/protobuf/encoding/protowire"
@@ -253,16 +254,16 @@ func mustDecodeNativeAppStateValue(value string) []byte {
 	return out
 }
 
-func nativeAppStateContactHints(state *nativeState, raw []byte) []waContactHint {
+func nativeAppStateContactHints(state *nativeState, raw []byte) []wacore.WAContactHint {
 	if len(raw) == 0 {
 		return nil
 	}
-	hints := []waContactHint{}
+	hints := []wacore.WAContactHint{}
 	collectNativeAppStateContactHints(state, raw, 0, &hints)
 	return dedupeWAContactHints(hints)
 }
 
-func collectNativeAppStateContactHints(state *nativeState, raw []byte, depth int, hints *[]waContactHint) {
+func collectNativeAppStateContactHints(state *nativeState, raw []byte, depth int, hints *[]wacore.WAContactHint) {
 	if depth > waAppStateProtoMaxDepth || len(raw) == 0 {
 		return
 	}
@@ -280,12 +281,12 @@ func collectNativeAppStateContactHints(state *nativeState, raw []byte, depth int
 	}
 }
 
-func waAppStateSnapshotContactHints(raw []byte) []waContactHint {
+func waAppStateSnapshotContactHints(raw []byte) []wacore.WAContactHint {
 	payloads := [][]byte{raw}
 	if snapshot, ok := waAppStateSnapshotEnvelopePayload(raw); ok {
 		payloads = append([][]byte{snapshot}, payloads...)
 	}
-	hints := []waContactHint{}
+	hints := []wacore.WAContactHint{}
 	for _, payload := range payloads {
 		fields, ok := waproto.ParseWAProtoFieldsWithLimit(payload, waAppStateProtoMaxFields)
 		if !ok {
@@ -340,7 +341,7 @@ func waAppStateSnapshotEnvelopePayload(raw []byte) ([]byte, bool) {
 	return payload, true
 }
 
-func waAppStateSnapshotRecordContactHints(raw []byte) []waContactHint {
+func waAppStateSnapshotRecordContactHints(raw []byte) []wacore.WAContactHint {
 	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, 16)
 	if !ok {
 		return nil
@@ -353,7 +354,7 @@ func waAppStateSnapshotRecordContactHints(raw []byte) []waContactHint {
 	return nil
 }
 
-func waAppStatePatchContactHints(state *nativeState, raw []byte) []waContactHint {
+func waAppStatePatchContactHints(state *nativeState, raw []byte) []wacore.WAContactHint {
 	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, waAppStateProtoMaxFields)
 	if !ok {
 		return nil
@@ -382,7 +383,7 @@ func waAppStatePatchContactHints(state *nativeState, raw []byte) []waContactHint
 	if len(patch.mutations) == 0 {
 		return nil
 	}
-	hints := []waContactHint{}
+	hints := []wacore.WAContactHint{}
 	for _, mutation := range patch.mutations {
 		if len(mutation.keyID) == 0 {
 			mutation.keyID = patch.keyID
@@ -485,7 +486,7 @@ func parseNativeAppStateRawKeyID(raw []byte) []byte {
 	return parseNativeAppStateKeyID(raw)
 }
 
-func nativeAppStateMutationContactHints(state *nativeState, collectionName string, mutation nativeAppStateMutation) []waContactHint {
+func nativeAppStateMutationContactHints(state *nativeState, collectionName string, mutation nativeAppStateMutation) []wacore.WAContactHint {
 	if hints := waSyncdIndexedContactHints(mutation.record.value); len(hints) > 0 {
 		return hints
 	}

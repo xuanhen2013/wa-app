@@ -14,6 +14,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 )
 
 const (
@@ -42,7 +43,7 @@ func (e *contactsService) ResolveContactProfilePicture(ctx context.Context, inpu
 }
 
 func (e *contactsService) resolveContactProfilePictureWithSender(ctx context.Context, input EngineContactProfilePictureInput, sender chatdIQSender) EngineContactProfilePictureResult {
-	jid := normalizeWAJID(input.ContactJID)
+	jid := wacore.NormalizeWAJID(input.ContactJID)
 	if input.WAAccountID == "" || input.ClientProfileID == "" || input.RegisteredIdentityID == "" || jid == "" {
 		return EngineContactProfilePictureResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "WA contact profile picture input is incomplete", false)}
 	}
@@ -161,13 +162,13 @@ func mergeContactProfilePictureUpdate(current chatdSessionUpdate, next chatdSess
 }
 
 func contactProfilePictureTargets(jid string, pnJID string) []string {
-	jid = normalizeWAJID(jid)
-	pnJID = normalizeWAJID(pnJID)
+	jid = wacore.NormalizeWAJID(jid)
+	pnJID = wacore.NormalizeWAJID(pnJID)
 	candidates := []string{pnJID, jid}
 	out := []string{}
 	seen := map[string]struct{}{}
 	for _, candidate := range candidates {
-		candidate = normalizeWAJID(candidate)
+		candidate = wacore.NormalizeWAJID(candidate)
 		if candidate == "" {
 			continue
 		}
@@ -203,7 +204,7 @@ func buildContactProfilePictureIQ(id string, jid string, pictureType string, pic
 	}
 	return chatdNode{
 		Tag:     "iq",
-		Attrs:   map[string]string{"xmlns": "w:profile:picture", "id": id, "to": "s.whatsapp.net", "type": "get", "target": normalizeWAJID(jid)},
+		Attrs:   map[string]string{"xmlns": "w:profile:picture", "id": id, "to": "s.whatsapp.net", "type": "get", "target": wacore.NormalizeWAJID(jid)},
 		Content: []chatdNode{picture},
 	}
 }
@@ -213,7 +214,7 @@ func contactProfilePictureNeedsURLQuery(jid string, pictureType string) bool {
 }
 
 func contactProfilePictureTargetNeedsURLQuery(jid string) bool {
-	jid = normalizeWAJID(jid)
+	jid = wacore.NormalizeWAJID(jid)
 	user := strings.SplitN(jid, "@", 2)[0]
 	user = strings.SplitN(user, ":", 2)[0]
 	value, ok := parsePositiveInt64(user)
@@ -269,7 +270,7 @@ func logWAContactProfilePictureDownloadFallback(err error) {
 }
 
 func contactProfilePictureTargetKind(jid string) string {
-	jid = normalizeWAJID(jid)
+	jid = wacore.NormalizeWAJID(jid)
 	switch {
 	case strings.HasSuffix(jid, "@lid"):
 		return "lid"

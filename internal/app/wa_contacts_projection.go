@@ -9,6 +9,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -47,7 +48,7 @@ func contactsFromInboundMessages(accountID string, messages []*waappv1.InboundMe
 }
 
 func contactFromRef(accountID string, ref string, seenAt time.Time, now time.Time) *waappv1.WAContact {
-	jid := normalizeWAJID(ref)
+	jid := wacore.NormalizeWAJID(ref)
 	if accountID == "" || jid == "" || jid == "unknown" {
 		return nil
 	}
@@ -88,7 +89,7 @@ func contactFromDecryptedMessage(accountID string, msg *waappv1.InboundMessage, 
 	return contact
 }
 
-func contactsFromContactHints(accountID string, msg *waappv1.InboundMessage, hints []waContactHint, now time.Time) []*waappv1.WAContact {
+func contactsFromContactHints(accountID string, msg *waappv1.InboundMessage, hints []wacore.WAContactHint, now time.Time) []*waappv1.WAContact {
 	if accountID == "" || len(hints) == 0 {
 		return nil
 	}
@@ -109,9 +110,9 @@ func contactsFromContactHints(accountID string, msg *waappv1.InboundMessage, hin
 	return dedupeWAContacts(contacts)
 }
 
-func contactFromContactHint(accountID string, hint waContactHint, seenAt time.Time, now time.Time) *waappv1.WAContact {
-	hint = hint.normalized()
-	if !hint.valid() {
+func contactFromContactHint(accountID string, hint wacore.WAContactHint, seenAt time.Time, now time.Time) *waappv1.WAContact {
+	hint = hint.Normalized()
+	if !hint.Valid() {
 		return nil
 	}
 	contact := contactFromRef(accountID, hint.LIDJID, seenAt, now)
@@ -127,21 +128,6 @@ func contactFromContactHint(accountID string, hint waContactHint, seenAt time.Ti
 	}
 	normalizeWAContactNames(contact)
 	return contact
-}
-
-func normalizeWAJID(ref string) string {
-	value := strings.TrimSpace(ref)
-	if value == "" || value == "s.whatsapp.net" {
-		return ""
-	}
-	if strings.Contains(value, "@") {
-		return value
-	}
-	digits := shared.DigitsOnly(value)
-	if digits != "" && digits == value {
-		return digits + "@s.whatsapp.net"
-	}
-	return value
 }
 
 func contactNumberForJID(jid string) string {
@@ -233,7 +219,7 @@ func inferWAContactDisplayName(text string, jid string) (string, bool) {
 		return "Facebook", true
 	case strings.Contains(value, "instagram.com") || strings.Contains(value, " instagram"):
 		return "Instagram", true
-	case strings.HasSuffix(normalizeWAJID(jid), "@lid") && looksLikeVerificationCodeOnlyMessage(text):
+	case strings.HasSuffix(wacore.NormalizeWAJID(jid), "@lid") && looksLikeVerificationCodeOnlyMessage(text):
 		return "验证码服务", true
 	default:
 		return "", false

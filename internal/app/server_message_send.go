@@ -7,6 +7,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -84,14 +85,14 @@ func (s *serverCore) textMessageContactJID(ctx context.Context, accountID string
 	}
 	contact, err := s.store.GetWAContactByRef(ctx, accountID, contactRef)
 	if err == nil && contact.GetWaAccountId() == accountID {
-		if jid := normalizeWAJID(contact.GetJid()); jid != "" {
+		if jid := wacore.NormalizeWAJID(contact.GetJid()); jid != "" {
 			return jid
 		}
 		if number := strings.TrimSpace(contact.GetNumber()); number != "" {
-			return normalizeWAJID(number)
+			return wacore.NormalizeWAJID(number)
 		}
 	}
-	return normalizeWAJID(contactRef)
+	return wacore.NormalizeWAJID(contactRef)
 }
 
 func (s *serverCore) textMessageRunner(ctx context.Context, requestContext *waappv1.RequestContext, loginState *waappv1.LoginState) (ProtocolEngine, func(), error) {

@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 )
 
 type chatdNode struct {
@@ -27,7 +28,7 @@ type chatdEncPayload struct {
 	SenderPN            string
 	NotifyName          string
 	ParticipantUsername string
-	ContactHints        []waContactHint
+	ContactHints        []wacore.WAContactHint
 	EncType             string
 	Path                string
 	Payload             []byte
@@ -596,7 +597,7 @@ type chatdMessageRefs struct {
 	SenderPN            string
 	NotifyName          string
 	ParticipantUsername string
-	ContactHints        []waContactHint
+	ContactHints        []wacore.WAContactHint
 }
 
 func routingInfoFromNode(node chatdNode) string {

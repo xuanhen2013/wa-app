@@ -5,6 +5,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -55,7 +56,7 @@ func knownWAContactAliasName(contact *waappv1.WAContact) string {
 	if contact == nil {
 		return ""
 	}
-	jid := normalizeWAJID(contact.GetJid())
+	jid := wacore.NormalizeWAJID(contact.GetJid())
 	number := shared.DigitsOnly(contact.GetNumber())
 	businessIDs := shared.UniqueNonEmptyStrings(shared.DigitsOnly(contact.GetDisplayName()), shared.DigitsOnly(contact.GetWaName()), shared.DigitsOnly(contact.GetVerifiedName()))
 	for _, alias := range waKnownContactAliases {
@@ -72,7 +73,7 @@ func knownWAContactAliasName(contact *waappv1.WAContact) string {
 }
 
 func resolvedWAContactName(value string, number string) string {
-	name := waContactName(value)
+	name := wacore.WAContactName(value)
 	if contactNameNeedsResolution(name, number) {
 		return ""
 	}

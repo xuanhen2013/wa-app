@@ -12,6 +12,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 )
 
 const defaultTextMessageSendTimeout = 20 * time.Second
@@ -131,7 +132,7 @@ func (e *longConnectionNativeEngine) textMessageReceiveInput(input EngineTextMes
 }
 
 func buildNativeTextMessageNode(state *nativeState, input EngineTextMessageInput, providerID string) (chatdNode, error) {
-	contactJID := normalizeWAJID(input.ContactJID)
+	contactJID := wacore.NormalizeWAJID(input.ContactJID)
 	text := strings.TrimSpace(input.Text)
 	if contactJID == "" {
 		return chatdNode{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "contact_ref is required", false)
@@ -172,7 +173,7 @@ func encryptNativeTextSignalMessage(state *nativeState, contactJID string, text 
 }
 
 func exactSignalSession(sessions map[string]nativeSignalSession, contactJID string) (string, nativeSignalSession, bool) {
-	for _, candidate := range shared.UniqueNonEmptyStrings(contactJID, normalizeWAJID(contactJID)) {
+	for _, candidate := range shared.UniqueNonEmptyStrings(contactJID, wacore.NormalizeWAJID(contactJID)) {
 		key := signalSenderKey(candidate)
 		if session, ok := sessions[key]; ok {
 			return key, session, true

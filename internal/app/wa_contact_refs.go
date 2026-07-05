@@ -5,6 +5,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 )
 
 func contactActionRefs(contactRef string, contact *waappv1.WAContact) []string {
@@ -33,5 +34,5 @@ func contactRefVariants(contactRef string) []string {
 	} else if strings.Contains(numberRef, "@") {
 		numberRef = contactRef
 	}
-	return shared.UniqueNonEmptyStrings(contactRef, numberRef, normalizeWAJID(numberRef))
+	return shared.UniqueNonEmptyStrings(contactRef, numberRef, wacore.NormalizeWAJID(numberRef))
 }

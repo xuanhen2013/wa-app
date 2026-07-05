@@ -5,6 +5,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 )
 
 const trustedContactTokenMaxAge = 182 * 24 * time.Hour
@@ -58,7 +60,7 @@ func privacyTokenUpdatesFromNotificationNode(node chatdNode) []nativePrivacyToke
 
 func trustedContactTokenJID(node chatdNode) string {
 	for _, value := range []string{node.Attrs["sender_lid"], node.Attrs["from"]} {
-		jid := normalizeWAJID(value)
+		jid := wacore.NormalizeWAJID(value)
 		if strings.HasSuffix(jid, "@lid") || strings.HasSuffix(jid, "@s.whatsapp.net") {
 			return jid
 		}
@@ -149,7 +151,7 @@ func trustedContactTokenForProfilePicture(state nativeState, jid string, now tim
 }
 
 func privacyTokenForJID(state nativeState, jid string, now time.Time) []byte {
-	jid = normalizeWAJID(jid)
+	jid = wacore.NormalizeWAJID(jid)
 	if jid == "" || len(state.PrivacyTokens) == 0 {
 		return nil
 	}

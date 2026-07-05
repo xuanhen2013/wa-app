@@ -17,6 +17,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 )
 
 const nativeStateSchema = "byte-v-forge-wa-app-native-state/v1"
@@ -45,7 +46,7 @@ type nativeState struct {
 	Attestation          nativeSoftwareAttestation       `json:"attestation,omitempty"`
 	Signal               nativeSignalState               `json:"signal"`
 	AppState             nativeAppState                  `json:"app_state,omitempty"`
-	ContactHints         []waContactHint                 `json:"contact_hints,omitempty"`
+	ContactHints         []wacore.WAContactHint          `json:"contact_hints,omitempty"`
 	MessagePayloads      map[string]nativeMessagePayload `json:"message_payloads,omitempty"`
 	MessagePlainRef      map[string]string               `json:"message_plain_ref,omitempty"`
 	PrivacyTokens        map[string]nativePrivacyToken   `json:"privacy_tokens,omitempty"`
@@ -143,16 +144,16 @@ type nativeSenderChain struct {
 }
 
 type nativeMessagePayload struct {
-	Contact             string          `json:"contact,omitempty"`
-	Sender              string          `json:"sender,omitempty"`
-	ContactPN           string          `json:"contact_pn,omitempty"`
-	SenderPN            string          `json:"sender_pn,omitempty"`
-	NotifyName          string          `json:"notify_name,omitempty"`
-	ParticipantUsername string          `json:"participant_username,omitempty"`
-	ContactHints        []waContactHint `json:"contact_hints,omitempty"`
-	EncType             string          `json:"enc_type,omitempty"`
-	Path                string          `json:"path,omitempty"`
-	Payload             string          `json:"payload"`
+	Contact             string                 `json:"contact,omitempty"`
+	Sender              string                 `json:"sender,omitempty"`
+	ContactPN           string                 `json:"contact_pn,omitempty"`
+	SenderPN            string                 `json:"sender_pn,omitempty"`
+	NotifyName          string                 `json:"notify_name,omitempty"`
+	ParticipantUsername string                 `json:"participant_username,omitempty"`
+	ContactHints        []wacore.WAContactHint `json:"contact_hints,omitempty"`
+	EncType             string                 `json:"enc_type,omitempty"`
+	Path                string                 `json:"path,omitempty"`
+	Payload             string                 `json:"payload"`
 }
 
 type nativePrivacyToken struct {

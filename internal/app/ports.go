@@ -5,6 +5,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 )
 
 // Store is the composite durable-persistence port. It is deliberately an
@@ -345,7 +346,7 @@ type EngineAccountLogout struct {
 type EngineDecryptResult struct {
 	DecryptedMessage *waappv1.DecryptedMessage
 	Candidates       []*waappv1.ExtractedCandidate
-	ContactHints     []waContactHint
+	ContactHints     []wacore.WAContactHint
 	Err              error
 }
 

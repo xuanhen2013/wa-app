@@ -16,6 +16,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -64,7 +65,7 @@ type chatdSessionUpdate struct {
 	RoutingInfo        string
 	Endpoint           chatdEndpoint
 	ServerStaticPublic string
-	ContactHints       []waContactHint
+	ContactHints       []wacore.WAContactHint
 	PrivacyTokens      []nativePrivacyTokenUpdate
 	AccountLogout      *chatdDeviceLogout
 }
