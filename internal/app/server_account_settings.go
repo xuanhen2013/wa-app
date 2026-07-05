@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/engine"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -177,7 +178,7 @@ func (s *accountSettingsHandler) SetAccountProfilePicture(ctx context.Context, r
 	if err != nil {
 		return &waappv1.SetAccountProfilePictureResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	contentType, _ := ProfilePictureContentType(image, req.GetContentType())
+	contentType, _ := engine.ProfilePictureContentType(image, req.GetContentType())
 	op, result, err := s.applyAccountSettingsResult(ctx, req.GetContext(), req.GetSelector(), waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_PROFILE_PICTURE_SET, func(input wacore.EngineAccountSettingsInput) wacore.EngineAccountSettingsInput {
 		input.ProfilePicture = image
 		return input
@@ -407,7 +408,7 @@ func accountSettingsOperationContext(ctx context.Context) (context.Context, cont
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return context.WithTimeout(ctx, DefaultAccountSettingsOperationTimeout)
+	return context.WithTimeout(ctx, engine.DefaultAccountSettingsOperationTimeout)
 }
 
 func (s *serverCore) accountSettingsRunner(ctx context.Context, requestContext *waappv1.RequestContext, loginState *waappv1.LoginState, kind waappv1.AccountSettingsOperationKind) (wacore.ProtocolEngine, func(), error) {
@@ -544,10 +545,10 @@ func requiredAccountProfilePicture(image []byte, contentType string) ([]byte, er
 	if len(image) == 0 {
 		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "image is required", false)
 	}
-	if len(image) > ProfilePictureDownloadMaxBytes {
+	if len(image) > engine.ProfilePictureDownloadMaxBytes {
 		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "WA profile picture is too large", false)
 	}
-	if _, err := ProfilePictureContentType(image, contentType); err != nil {
+	if _, err := engine.ProfilePictureContentType(image, contentType); err != nil {
 		return nil, err
 	}
 	return append([]byte(nil), image...), nil

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/engine"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
@@ -211,7 +212,7 @@ func (s *serverCore) sendReadReceipts(ctx context.Context, requestContext *waapp
 		RegisteredIdentityID: loginState.GetRegisteredIdentityId(),
 		AppVersion:           s.loginStateAppVersion(ctx, loginState),
 		Messages:             receipts,
-		RemoteTimeout:        DefaultMessageReadReceiptTimeout,
+		RemoteTimeout:        engine.DefaultMessageReadReceiptTimeout,
 	})
 	return result.Sent, result.Err
 }

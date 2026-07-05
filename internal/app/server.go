@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/engine"
 	"github.com/byte-v-forge/wa-app/internal/waapp/runtime"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/store"
@@ -116,19 +117,19 @@ func (s *serverCore) PlayIntegrityAPIConfigured() bool {
 	if s == nil {
 		return false
 	}
-	engine, ok := s.runner.(*NativeEngine)
+	engine, ok := s.runner.(*engine.NativeEngine)
 	return ok && engine.PlayIntegrityAPIConfigured()
 }
 
-func (s *serverCore) PlayIntegrityAPIStatus(ctx context.Context) PlayIntegrityAPIStatus {
+func (s *serverCore) PlayIntegrityAPIStatus(ctx context.Context) engine.PlayIntegrityAPIStatus {
 	if s == nil {
-		return PlayIntegrityAPIStatus{Configured: false, Available: false, RawValuesPrinted: false}
+		return engine.PlayIntegrityAPIStatus{Configured: false, Available: false, RawValuesPrinted: false}
 	}
-	engine, ok := s.runner.(*NativeEngine)
+	nativeEngine, ok := s.runner.(*engine.NativeEngine)
 	if !ok {
-		return PlayIntegrityAPIStatus{Configured: false, Available: false, RawValuesPrinted: false}
+		return engine.PlayIntegrityAPIStatus{Configured: false, Available: false, RawValuesPrinted: false}
 	}
-	return engine.PlayIntegrityAPIStatus(ctx)
+	return nativeEngine.PlayIntegrityAPIStatus(ctx)
 }
 
 func (s *serverCore) RunLongConnections(ctx context.Context) error {
@@ -165,7 +166,7 @@ func (s *discoveryHandler) RecordProtocolProfile(ctx context.Context, req *waapp
 		ProtocolProfileId: s.ids.NewID("waproto_"),
 		AppArtifactId:     req.GetAppArtifactId(),
 		DisplayName:       shared.FirstNonEmpty(req.GetDisplayName(), "WA protocol profile"),
-		AppVersion:        NativeAppVersion(req.GetAppVersion()),
+		AppVersion:        engine.NativeAppVersion(req.GetAppVersion()),
 		Status:            waappv1.ProtocolProfileStatus_PROTOCOL_PROFILE_STATUS_ACTIVE,
 		Capabilities:      req.GetCapabilities(),
 		RegistrationFlows: req.GetRegistrationFlows(),
@@ -351,21 +352,21 @@ func (s *profileHandler) RetireClientProfile(ctx context.Context, req *waappv1.R
 
 func protocolAppVersion(profile *waappv1.ProtocolProfile) string {
 	if profile == nil {
-		return DefaultWAAppVersion
+		return engine.DefaultWAAppVersion
 	}
-	return NativeAppVersion(profile.GetAppVersion())
+	return engine.NativeAppVersion(profile.GetAppVersion())
 }
 
 func (s *serverCore) clientProfileAppVersion(ctx context.Context, profile *waappv1.ClientProfile) string {
 	if s == nil || profile == nil {
-		return DefaultWAAppVersion
+		return engine.DefaultWAAppVersion
 	}
 	protocol, err := s.store.GetProtocolProfile(ctx, profile.GetProtocolProfileId())
 	if err != nil {
-		return DefaultWAAppVersion
+		return engine.DefaultWAAppVersion
 	}
-	if protocol.GetProtocolProfileId() == "waproto_native" && NativeAppVersion(protocol.GetAppVersion()) != DefaultWAAppVersion {
-		protocol.AppVersion = DefaultWAAppVersion
+	if protocol.GetProtocolProfileId() == "waproto_native" && engine.NativeAppVersion(protocol.GetAppVersion()) != engine.DefaultWAAppVersion {
+		protocol.AppVersion = engine.DefaultWAAppVersion
 		_ = s.store.SaveProtocolProfile(ctx, protocol)
 	}
 	return protocolAppVersion(protocol)
@@ -373,14 +374,14 @@ func (s *serverCore) clientProfileAppVersion(ctx context.Context, profile *waapp
 
 func (s *serverCore) protocolIDAppVersion(ctx context.Context, protocolProfileID string) string {
 	if s == nil || strings.TrimSpace(protocolProfileID) == "" {
-		return DefaultWAAppVersion
+		return engine.DefaultWAAppVersion
 	}
 	protocol, err := s.store.GetProtocolProfile(ctx, protocolProfileID)
 	if err != nil {
-		return DefaultWAAppVersion
+		return engine.DefaultWAAppVersion
 	}
-	if protocol.GetProtocolProfileId() == "waproto_native" && NativeAppVersion(protocol.GetAppVersion()) != DefaultWAAppVersion {
-		protocol.AppVersion = DefaultWAAppVersion
+	if protocol.GetProtocolProfileId() == "waproto_native" && engine.NativeAppVersion(protocol.GetAppVersion()) != engine.DefaultWAAppVersion {
+		protocol.AppVersion = engine.DefaultWAAppVersion
 		_ = s.store.SaveProtocolProfile(ctx, protocol)
 	}
 	return protocolAppVersion(protocol)
@@ -388,11 +389,11 @@ func (s *serverCore) protocolIDAppVersion(ctx context.Context, protocolProfileID
 
 func (s *serverCore) loginStateAppVersion(ctx context.Context, loginState *waappv1.LoginState) string {
 	if s == nil || loginState == nil {
-		return DefaultWAAppVersion
+		return engine.DefaultWAAppVersion
 	}
 	profile, err := s.store.GetClientProfile(ctx, loginState.GetClientProfileId())
 	if err != nil {
-		return DefaultWAAppVersion
+		return engine.DefaultWAAppVersion
 	}
 	return s.clientProfileAppVersion(ctx, profile)
 }

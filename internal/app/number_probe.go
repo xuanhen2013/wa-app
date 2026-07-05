@@ -8,6 +8,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/engine"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
@@ -27,7 +28,7 @@ func (s *serverCore) ProbeNumberSMS(ctx context.Context, payload map[string]any)
 		logNumberProbeResult(ctxData, phone, wacore.WAProxyRoute{}, result)
 		return result, nil
 	}
-	engine, ok := s.runner.(*NativeEngine)
+	engine, ok := s.runner.(*engine.NativeEngine)
 	if !ok {
 		err := shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "native engine is required", false)
 		result := numberProbeError(payload, err)
@@ -56,16 +57,16 @@ func (s *serverCore) ProbeNumberSMS(ctx context.Context, payload map[string]any)
 	return lastResult, nil
 }
 
-func (s *serverCore) probeNumberSMSAttempt(ctx context.Context, payload map[string]any, ctxData *waappv1.RequestContext, phone *waappv1.PhoneTarget, engine *NativeEngine, attempt int) (map[string]any, wacore.WAProxyRoute, bool, string) {
+func (s *serverCore) probeNumberSMSAttempt(ctx context.Context, payload map[string]any, ctxData *waappv1.RequestContext, phone *waappv1.PhoneTarget, nativeEngine *engine.NativeEngine, attempt int) (map[string]any, wacore.WAProxyRoute, bool, string) {
 	route, proxyURL, proxy := s.numberProbeProxy(payload)
-	probeEngine := engine
+	probeEngine := nativeEngine
 	defer func() {
 		if proxyURL != "" {
 			probeEngine.CloseIdleConnections()
 		}
 	}()
 	if proxyURL != "" {
-		proxied, err := engine.WithProxyURL(proxyURL)
+		proxied, err := nativeEngine.WithProxyURL(proxyURL)
 		if err != nil {
 			result := numberProbeError(payload, err)
 			annotateNumberProbeAttempt(result, attempt)
@@ -73,7 +74,7 @@ func (s *serverCore) probeNumberSMSAttempt(ctx context.Context, payload map[stri
 		}
 		probeEngine = proxied
 	}
-	state, err := probeEngine.newState(phone)
+	state, err := probeEngine.NewState(phone)
 	if err != nil {
 		result := numberProbeError(payload, err)
 		annotateNumberProbeAttempt(result, attempt)
@@ -81,9 +82,9 @@ func (s *serverCore) probeNumberSMSAttempt(ctx context.Context, payload map[stri
 	}
 	fingerprint := map[string]any{
 		"fingerprint_persistence": "RANDOM_NOT_COMMITTED",
-		"fingerprint":             fingerprintSummary(PhoneProfileToProto(phone, state.Profile)),
+		"fingerprint":             fingerprintSummary(engine.PhoneProfileToProto(phone, state.Profile)),
 	}
-	probeResult, _ := probeEngine.probeAccountWithState(ctx, wacore.EngineRegistrationInput{AppVersion: DefaultWAAppVersion, Phone: phone}, state)
+	probeResult, _ := probeEngine.ProbeAccountWithState(ctx, wacore.EngineRegistrationInput{AppVersion: engine.DefaultWAAppVersion, Phone: phone}, state)
 	account := probeResultMap(probeResult)
 	sms := smsProbeMap(account)
 	result := buildNumberProbeResult(payload, proxy, fingerprint, account, sms)
@@ -110,7 +111,7 @@ func buildNumberProbeResult(input map[string]any, proxy map[string]any, fingerpr
 	accountRawStatus := shared.FirstNonEmpty(shared.TextField(account, "raw_status"), shared.TextField(account, "rawStatus"), shared.TextField(account, "status_text"))
 	accountRawReason := shared.FirstNonEmpty(shared.TextField(account, "raw_reason"), shared.TextField(account, "reason"))
 	accountError := shared.FirstNonEmpty(shared.TextField(account, "error_message"), shared.TextField(shared.ObjectField(account, "error"), "message"))
-	accountFlow := shared.FirstNonEmpty(shared.TextField(account, "account_flow"), AccountProbeFlowUnknown)
+	accountFlow := shared.FirstNonEmpty(shared.TextField(account, "account_flow"), engine.AccountProbeFlowUnknown)
 	smsStatus := shared.FirstNonEmpty(shared.TextField(sms, "status"), shared.TextField(sms, "sms_status"), shared.TextField(sms, "route_status"), "UNKNOWN")
 	methodStatuses := objectListField(account, "method_statuses")
 	registered, registeredKnown := optionalBoolField(account, "registered")
@@ -118,20 +119,20 @@ func buildNumberProbeResult(input map[string]any, proxy map[string]any, fingerpr
 		registered = true
 		registeredKnown = true
 	}
-	blocked := accountFlow == AccountProbeFlowBlocked || boolField(account, "blocked") || statusIn(accountRawStatus, "blocked") || statusIn(accountRawReason, "blocked") || statusIn(accountStatus, "blocked")
-	accountReachable := statusIn(accountStatus, "reachable", "account_probe_status_reachable", "ok", "sent", "valid", "exists") || statusIn(accountRawStatus, "ok", "sent", "valid", "exists") || accountFlow == AccountProbeFlowRegistered || accountFlow == AccountProbeFlowNotRegistered
+	blocked := accountFlow == engine.AccountProbeFlowBlocked || boolField(account, "blocked") || statusIn(accountRawStatus, "blocked") || statusIn(accountRawReason, "blocked") || statusIn(accountStatus, "blocked")
+	accountReachable := statusIn(accountStatus, "reachable", "account_probe_status_reachable", "ok", "sent", "valid", "exists") || statusIn(accountRawStatus, "ok", "sent", "valid", "exists") || accountFlow == engine.AccountProbeFlowRegistered || accountFlow == engine.AccountProbeFlowNotRegistered
 	smsAvailable := boolField(sms, "can_send_sms") || boolField(sms, "sms_available") || statusIn(smsStatus, "available", "sms_available", "verification_request_status_sent", "sent", "waiting", "ok")
 	smsWaitSeconds := firstNumberValue(sms, "sms_wait_seconds", "wait_seconds", "retry_after_seconds", "cooldown_seconds", "remaining_seconds", "retry_after", "wait")
 	methodStatuses = numberProbeMethodStatuses(methodStatuses, smsAvailable, smsWaitSeconds)
 	smsWaitUntil := shared.FirstNonEmpty(shared.TextField(sms, "sms_wait_until"), shared.TextField(sms, "wait_until"), shared.TextField(sms, "retry_after_at"), shared.TextField(sms, "cooldown_until"))
 	proxyAccepted := boolField(proxy, "accepted")
-	if accountFlow == AccountProbeFlowUnknown {
+	if accountFlow == engine.AccountProbeFlowUnknown {
 		accountFlow = accountFlowFromRawReason(accountRawReason)
 	}
 	requestFailed := !proxyAccepted || accountProbeRequestFailed(accountFlow, accountStatus, accountRawStatus, accountRawReason, accountError)
 	requestSucceeded := !requestFailed
 	if requestFailed && !terminalAccountFlow(accountFlow) {
-		accountFlow = AccountProbeFlowProbeFailed
+		accountFlow = engine.AccountProbeFlowProbeFailed
 	}
 	canRegister := canRegisterValue(requestSucceeded, accountReachable, smsAvailable, blocked, accountFlow)
 	failureReason := ""
@@ -190,17 +191,17 @@ func numberProbeMethodStatuses(statuses []map[string]any, smsAvailable bool, sms
 func numberProbeInt64(value any) int64 {
 	switch typed := value.(type) {
 	case int:
-		return NormalizeWaitSeconds(int64(typed))
+		return engine.NormalizeWaitSeconds(int64(typed))
 	case int32:
-		return NormalizeWaitSeconds(int64(typed))
+		return engine.NormalizeWaitSeconds(int64(typed))
 	case int64:
-		return NormalizeWaitSeconds(typed)
+		return engine.NormalizeWaitSeconds(typed)
 	case float32:
-		return NormalizeWaitSeconds(int64(typed))
+		return engine.NormalizeWaitSeconds(int64(typed))
 	case float64:
-		return NormalizeWaitSeconds(int64(typed))
+		return engine.NormalizeWaitSeconds(int64(typed))
 	case string:
-		return NormalizeWaitSeconds(JsonInt64(typed))
+		return engine.NormalizeWaitSeconds(engine.JsonInt64(typed))
 	default:
 		return 0
 	}
@@ -209,20 +210,20 @@ func numberProbeInt64(value any) int64 {
 func accountFlowFromRawReason(reason string) string {
 	normalized := strings.ToLower(strings.TrimSpace(reason))
 	switch {
-	case ExistInvalidNumberReason(normalized):
-		return AccountProbeFlowInvalidNumber
-	case ExistRateLimitedReason(normalized):
-		return AccountProbeFlowRateLimited
+	case engine.ExistInvalidNumberReason(normalized):
+		return engine.AccountProbeFlowInvalidNumber
+	case engine.ExistRateLimitedReason(normalized):
+		return engine.AccountProbeFlowRateLimited
 	case normalized == "blocked":
-		return AccountProbeFlowBlocked
+		return engine.AccountProbeFlowBlocked
 	default:
-		return AccountProbeFlowUnknown
+		return engine.AccountProbeFlowUnknown
 	}
 }
 
 func terminalAccountFlow(flow string) bool {
 	switch flow {
-	case AccountProbeFlowInvalidNumber, AccountProbeFlowRateLimited, AccountProbeFlowBlocked:
+	case engine.AccountProbeFlowInvalidNumber, engine.AccountProbeFlowRateLimited, engine.AccountProbeFlowBlocked:
 		return true
 	default:
 		return false
@@ -233,7 +234,7 @@ func accountProbeRequestFailed(accountFlow string, accountStatus string, account
 	if strings.TrimSpace(accountError) != "" {
 		return true
 	}
-	if accountFlow == AccountProbeFlowRegistered {
+	if accountFlow == engine.AccountProbeFlowRegistered {
 		return false
 	}
 	status := strings.ToLower(strings.TrimSpace(accountStatus))
@@ -252,10 +253,10 @@ func numberProbeFailureReason(proxyAccepted bool, accountStatus string, accountR
 		return "account probe request failed: " + accountError
 	}
 	rawReason := strings.ToLower(strings.TrimSpace(accountRawReason))
-	if ExistInvalidNumberReason(rawReason) {
+	if engine.ExistInvalidNumberReason(rawReason) {
 		return "phone format is invalid: " + rawReason
 	}
-	if ExistRateLimitedReason(rawReason) {
+	if engine.ExistRateLimitedReason(rawReason) {
 		return "verification request is cooling down: " + rawReason
 	}
 	if accountStatus == "ACCOUNT_PROBE_STATUS_REJECTED" {
@@ -269,7 +270,7 @@ func canRegisterValue(requestSucceeded bool, accountReachable bool, smsAvailable
 		return false
 	}
 	switch accountFlow {
-	case AccountProbeFlowInvalidNumber, AccountProbeFlowRateLimited, AccountProbeFlowProbeFailed:
+	case engine.AccountProbeFlowInvalidNumber, engine.AccountProbeFlowRateLimited, engine.AccountProbeFlowProbeFailed:
 		return false
 	default:
 		return true
@@ -295,7 +296,7 @@ func numberProbeProxyFailure(payload map[string]any, err error) map[string]any {
 		"fingerprint_persistence": "NOT_CREATED",
 		"phone_status": map[string]any{
 			"account_status":    "UNKNOWN",
-			"account_flow":      AccountProbeFlowProbeFailed,
+			"account_flow":      engine.AccountProbeFlowProbeFailed,
 			"account_reachable": false,
 			"request_failed":    true,
 			"registered":        nil,
@@ -464,7 +465,7 @@ func probeResultMap(result wacore.EngineProbeResult) map[string]any {
 		"success":           result.Status == waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REACHABLE,
 		"status":            result.Status.String(),
 		"account_status":    result.Status.String(),
-		"account_flow":      shared.FirstNonEmpty(result.AccountFlow, AccountProbeFlowUnknown),
+		"account_flow":      shared.FirstNonEmpty(result.AccountFlow, engine.AccountProbeFlowUnknown),
 		"raw_status":        result.RawStatus,
 		"raw_reason":        result.RawReason,
 		"blocked":           result.Blocked,
@@ -541,7 +542,7 @@ func protoMethodStatusMaps(statuses []*waappv1.VerificationMethodStatus) []map[s
 		if status.GetDeliveryMethod() == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_UNSPECIFIED {
 			continue
 		}
-		method := RegistrationMethodName(status.GetDeliveryMethod(), "")
+		method := engine.RegistrationMethodName(status.GetDeliveryMethod(), "")
 		out = append(out, map[string]any{
 			"method":           method,
 			"delivery_method":  status.GetDeliveryMethod().String(),

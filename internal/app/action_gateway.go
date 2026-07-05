@@ -11,6 +11,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/engine"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
@@ -97,7 +98,7 @@ func (g *actionGateway) proxySettings(ctx context.Context, payload map[string]an
 }
 
 func (g *actionGateway) generateTransientFingerprint(ctx context.Context, payload map[string]any) (map[string]any, error) {
-	engine, err := g.nativeEngine()
+	nativeEngine, err := g.nativeEngine()
 	if err != nil {
 		return nil, err
 	}
@@ -105,11 +106,11 @@ func (g *actionGateway) generateTransientFingerprint(ctx context.Context, payloa
 	if phone.GetE164Number() == "" {
 		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "phone is required", false)
 	}
-	state, err := engine.newState(phone)
+	state, err := nativeEngine.NewState(phone)
 	if err != nil {
 		return nil, err
 	}
-	data, err := MarshalNativeState(state)
+	data, err := engine.MarshalNativeState(state)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +118,7 @@ func (g *actionGateway) generateTransientFingerprint(ctx context.Context, payloa
 	if err := g.server.runtime.SaveTransientState(ctx, ref, data, transientStateTTL); err != nil {
 		return nil, err
 	}
-	profile := PhoneProfileToProto(phone, state.Profile)
+	profile := engine.PhoneProfileToProto(phone, state.Profile)
 	return map[string]any{
 		"success":                   true,
 		"fingerprint_ref":           ref,
@@ -562,7 +563,7 @@ func (g *actionGateway) checkLoginState(ctx context.Context, payload map[string]
 	return out, nil
 }
 
-func (s *serverCore) commitNativeState(ctx context.Context, phone *waappv1.PhoneTarget, state NativeState) (*waappv1.WAAccount, *waappv1.ClientProfile, *waappv1.ProtocolProfile, error) {
+func (s *serverCore) commitNativeState(ctx context.Context, phone *waappv1.PhoneTarget, state engine.NativeState) (*waappv1.WAAccount, *waappv1.ClientProfile, *waappv1.ProtocolProfile, error) {
 	engine, ok := s.runner.(nativeStateSaver)
 	if !ok {
 		return nil, nil, nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "native engine is required", false)
@@ -607,14 +608,14 @@ func (s *serverCore) commitNativeState(ctx context.Context, phone *waappv1.Phone
 }
 
 type nativeStateSaver interface {
-	SaveState(context.Context, string, NativeState) error
+	SaveState(context.Context, string, engine.NativeState) error
 }
 
 func (s *serverCore) ensureDefaultProtocolProfile(ctx context.Context) (*waappv1.ProtocolProfile, error) {
 	protocolID := "waproto_native"
 	if profile, err := s.store.GetProtocolProfile(ctx, protocolID); err == nil {
-		if NativeAppVersion(profile.GetAppVersion()) != DefaultWAAppVersion {
-			profile.AppVersion = DefaultWAAppVersion
+		if engine.NativeAppVersion(profile.GetAppVersion()) != engine.DefaultWAAppVersion {
+			profile.AppVersion = engine.DefaultWAAppVersion
 			_ = s.store.SaveProtocolProfile(ctx, profile)
 		}
 		return profile, nil
@@ -629,7 +630,7 @@ func (s *serverCore) ensureDefaultProtocolProfile(ctx context.Context) (*waappv1
 		ProtocolProfileId: protocolID,
 		AppArtifactId:     artifactID,
 		DisplayName:       "WA native protocol",
-		AppVersion:        DefaultWAAppVersion,
+		AppVersion:        engine.DefaultWAAppVersion,
 		Status:            waappv1.ProtocolProfileStatus_PROTOCOL_PROFILE_STATUS_ACTIVE,
 		Capabilities: []waappv1.ProtocolCapability{
 			waappv1.ProtocolCapability_PROTOCOL_CAPABILITY_ACCOUNT_PROBE,
@@ -649,7 +650,7 @@ func (s *serverCore) ensureDefaultProtocolProfile(ctx context.Context) (*waappv1
 	return profile, nil
 }
 
-func (g *actionGateway) nativeEngineForPayload(payload map[string]any) (*NativeEngine, error) {
+func (g *actionGateway) nativeEngineForPayload(payload map[string]any) (*engine.NativeEngine, error) {
 	engine, err := g.nativeEngine()
 	if err != nil {
 		return nil, err
@@ -661,7 +662,7 @@ func (g *actionGateway) nativeEngineForPayload(payload map[string]any) (*NativeE
 	return engine.WithProxyURL(proxyURL)
 }
 
-func (g *actionGateway) registrationRunner(payload map[string]any) (*NativeEngine, wacore.WAProxyRoute, bool, error) {
+func (g *actionGateway) registrationRunner(payload map[string]any) (*engine.NativeEngine, wacore.WAProxyRoute, bool, error) {
 	engine, err := g.nativeEngine()
 	if err != nil {
 		return nil, wacore.WAProxyRoute{}, false, err
@@ -747,20 +748,20 @@ func cleanupVerificationRequestID(payload map[string]any) string {
 	)
 }
 
-func (g *actionGateway) nativeEngine() (*NativeEngine, error) {
-	engine, ok := g.server.runner.(*NativeEngine)
+func (g *actionGateway) nativeEngine() (*engine.NativeEngine, error) {
+	engine, ok := g.server.runner.(*engine.NativeEngine)
 	if !ok {
 		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "native engine is required", false)
 	}
 	return engine, nil
 }
 
-func (g *actionGateway) loadTransientState(ctx context.Context, ref string) (NativeState, error) {
+func (g *actionGateway) loadTransientState(ctx context.Context, ref string) (engine.NativeState, error) {
 	data, err := g.server.runtime.GetTransientState(ctx, ref)
 	if err != nil {
-		return NativeState{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_PROFILE_NOT_FOUND, "transient fingerprint state not found", false)
+		return engine.NativeState{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_PROFILE_NOT_FOUND, "transient fingerprint state not found", false)
 	}
-	return UnmarshalNativeState(data)
+	return engine.UnmarshalNativeState(data)
 }
 
 func readActionPayload(w http.ResponseWriter, r *http.Request) (map[string]any, bool) {

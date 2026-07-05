@@ -6,6 +6,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/engine"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -18,7 +19,7 @@ func (s *serverCore) attachClientProfileRuntime(ctx context.Context, profile *wa
 	if err != nil {
 		return profile
 	}
-	state, err := UnmarshalNativeState(data)
+	state, err := engine.UnmarshalNativeState(data)
 	if err != nil {
 		return profile
 	}
@@ -33,11 +34,11 @@ func (s *serverCore) attachClientProfilesRuntime(ctx context.Context, profiles [
 	return profiles
 }
 
-func deviceFingerprintFromState(state NativeState) *waappv1.DeviceFingerprint {
-	profile := NormalizeNativePhoneProfile(state.Profile, "")
+func deviceFingerprintFromState(state engine.NativeState) *waappv1.DeviceFingerprint {
+	profile := engine.NormalizeNativePhoneProfile(state.Profile, "")
 	normalizedState := state
 	normalizedState.Profile = profile
-	fields := NativeDeviceMapFields(normalizedState)
+	fields := engine.NativeDeviceMapFields(normalizedState)
 	createdAt := profile.CreatedAtUnix
 	if createdAt == 0 {
 		createdAt = state.CreatedAtUnix

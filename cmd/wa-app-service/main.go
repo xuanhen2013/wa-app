@@ -12,6 +12,7 @@ import (
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/app"
 	"github.com/byte-v-forge/wa-app/internal/config"
+	"github.com/byte-v-forge/wa-app/internal/waapp/engine"
 	"github.com/byte-v-forge/wa-app/internal/waapp/runtime"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/store"
@@ -31,7 +32,7 @@ const (
 func main() {
 	cfg := config.Load()
 	dataDir := configValue(cfg.DataDir, defaultWAAppDataDirectory)
-	if err := app.LoadRegistrationDeviceProfiles(cfg.DeviceProfilesFile); err != nil {
+	if err := engine.LoadRegistrationDeviceProfiles(cfg.DeviceProfilesFile); err != nil {
 		log.Printf("wa-app device profiles override ignored: %v", err)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -51,23 +52,23 @@ func main() {
 
 	clock := shared.SystemClock{}
 	ids := shared.RandomIDGenerator{}
-	engine, err := app.NewNativeEngine(store, clock, ids)
+	nativeEngine, err := engine.NewNativeEngine(store, clock, ids)
 	if err != nil {
 		log.Fatalf("initialize wa-app native engine: %v", err)
 	}
 	if strings.TrimSpace(cfg.PlayIntegrityAPIURL) != "" || strings.TrimSpace(cfg.PlayIntegrityAPIToken) != "" {
-		engine, err = engine.WithPlayIntegrityAPI(cfg.PlayIntegrityAPIURL, cfg.PlayIntegrityAPIToken)
+		nativeEngine, err = nativeEngine.WithPlayIntegrityAPI(cfg.PlayIntegrityAPIURL, cfg.PlayIntegrityAPIToken)
 		if err != nil {
 			log.Fatalf("initialize play integrity api client: %v", err)
 		}
 	}
 	if strings.TrimSpace(cfg.CommonProxy) != "" {
-		engine, err = engine.WithProxyURL(cfg.CommonProxy)
+		nativeEngine, err = nativeEngine.WithProxyURL(cfg.CommonProxy)
 		if err != nil {
 			log.Fatalf("initialize wa-app common proxy: %v", err)
 		}
 	}
-	service := app.NewServer(store, runtime, engine, clock, ids)
+	service := app.NewServer(store, runtime, nativeEngine, clock, ids)
 	service.SetCommonProxyURL(cfg.CommonProxy)
 	authConfig := newDashboardAuthConfig(cfg.DashboardAuthPass)
 	grpcListenAddr := configValue(cfg.GRPCListenAddr, defaultGRPCListenAddr)

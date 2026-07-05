@@ -6,6 +6,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/engine"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -47,7 +48,7 @@ func (s *messagingHandler) SendTextMessage(ctx context.Context, req *waappv1.Sen
 	if !ok {
 		return &waappv1.SendTextMessageResponse{Error: shared.ToProtoError(shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "WA text message sender is not configured", false))}, nil
 	}
-	providerID := NewTextProviderMessageID(req.GetClientMessageId())
+	providerID := engine.NewTextProviderMessageID(req.GetClientMessageId())
 	result := sender.SendTextMessage(ctx, wacore.EngineTextMessageInput{
 		WAAccountID:          accountID,
 		ClientProfileID:      loginState.GetClientProfileId(),
@@ -56,7 +57,7 @@ func (s *messagingHandler) SendTextMessage(ctx context.Context, req *waappv1.Sen
 		ContactJID:           contactJID,
 		Text:                 text,
 		ClientMessageID:      providerID,
-		RemoteTimeout:        DefaultTextMessageSendTimeout,
+		RemoteTimeout:        engine.DefaultTextMessageSendTimeout,
 	})
 	if result.ProviderMessageID != "" {
 		providerID = result.ProviderMessageID
@@ -133,7 +134,7 @@ func (s *serverCore) saveOutboundTextMessage(ctx context.Context, loginState *wa
 		MessageId:          messageID,
 		Status:             waappv1.DecryptionStatus_DECRYPTION_STATUS_DECRYPTED,
 		PlaintextRef:       "outbound:" + messageID,
-		PlaintextText:      SensitiveOutput(text, "outbound-message", true),
+		PlaintextText:      engine.SensitiveOutput(text, "outbound-message", true),
 		DecryptedAt:        timestamppb.New(sentAt.UTC()),
 	})
 }

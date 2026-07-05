@@ -9,6 +9,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/engine"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
@@ -46,10 +47,10 @@ func (s *serverCore) contactProfilePictureRunner(ctx context.Context, loginState
 }
 
 func contactProfilePictureRemoteTimeout(runner wacore.ProtocolEngine) time.Duration {
-	if _, ok := runner.(*LongConnectionNativeEngine); ok {
-		return longConnectionWaitTimeout + DefaultContactProfilePictureTimeout
+	if _, ok := runner.(*engine.LongConnectionNativeEngine); ok {
+		return longConnectionWaitTimeout + engine.DefaultContactProfilePictureTimeout
 	}
-	return DefaultContactProfilePictureTimeout
+	return engine.DefaultContactProfilePictureTimeout
 }
 
 func (s *accountSettingsHandler) GetAccountProfilePicture(ctx context.Context, req *waappv1.GetAccountProfilePictureRequest) (*waappv1.GetAccountProfilePictureResponse, error) {
@@ -154,7 +155,7 @@ func (s *serverCore) GetWAContactProfilePicture(ctx context.Context, contactID s
 		RegisteredIdentityID: loginState.GetRegisteredIdentityId(),
 		AppVersion:           s.loginStateAppVersion(ctx, loginState),
 		ContactJID:           contact.GetJid(),
-		ContactPNJID:         PhoneNumberWAJID(contact.GetNumber()),
+		ContactPNJID:         engine.PhoneNumberWAJID(contact.GetNumber()),
 		ContactPictureID:     contact.GetProfilePictureId(),
 		RemoteTimeout:        remoteTimeout,
 	})
@@ -311,5 +312,5 @@ func logWAProfilePictureError(scope string, err error) {
 		log.Printf("WA %s profile picture fetch failed code=%s retryable=%t", shared.SafeProxyLogToken(scope, "profile"), appErr.Code.String(), appErr.Retryable)
 		return
 	}
-	log.Printf("WA %s profile picture fetch failed code=%s retryable=false reason=%s", shared.SafeProxyLogToken(scope, "profile"), waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL.String(), ContactProfilePictureFailureReason(err))
+	log.Printf("WA %s profile picture fetch failed code=%s retryable=false reason=%s", shared.SafeProxyLogToken(scope, "profile"), waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL.String(), engine.ContactProfilePictureFailureReason(err))
 }

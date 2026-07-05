@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/engine"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 )
@@ -70,7 +71,7 @@ func (s *contactHandler) ResolveWAContacts(ctx context.Context, req *waappv1.Res
 		RegisteredIdentityID: loginState.GetRegisteredIdentityId(),
 		AppVersion:           s.loginStateAppVersion(ctx, loginState),
 		JIDs:                 jids,
-		RemoteTimeout:        DefaultContactUsyncTimeout,
+		RemoteTimeout:        engine.DefaultContactUsyncTimeout,
 	})
 	if len(result.Contacts) > 0 {
 		_ = s.store.SaveWAContacts(ctx, result.Contacts)
@@ -115,7 +116,7 @@ func (s *serverCore) resolveContactActionRefs(ctx context.Context, accountID str
 func (s *serverCore) resolveContactJIDs(ctx context.Context, accountID string, requested []string, limit int) ([]string, error) {
 	limit = normalizeContactResolveLimit(limit)
 	if len(requested) > 0 {
-		return firstNStrings(NormalizeContactUsyncJIDs(requested), limit), nil
+		return firstNStrings(engine.NormalizeContactUsyncJIDs(requested), limit), nil
 	}
 	contacts, _, err := s.store.ListWAContacts(ctx, accountID, "", limit)
 	if err != nil {
@@ -128,14 +129,14 @@ func (s *serverCore) resolveContactJIDs(ctx context.Context, accountID string, r
 		}
 		jids = append(jids, contact.GetJid())
 	}
-	return NormalizeContactUsyncJIDs(jids), nil
+	return engine.NormalizeContactUsyncJIDs(jids), nil
 }
 
 func needsContactResolution(contact *waappv1.WAContact) bool {
 	if contact == nil || !strings.HasSuffix(contact.GetJid(), "@lid") {
 		return false
 	}
-	return !ContactUsyncHasDisplayIdentity(contact) || contact.GetProfilePictureId() == ""
+	return !engine.ContactUsyncHasDisplayIdentity(contact) || contact.GetProfilePictureId() == ""
 }
 
 func (s *serverCore) activeContactResolveLoginState(ctx context.Context, accountID string) (*waappv1.LoginState, error) {
@@ -168,8 +169,8 @@ func normalizeContactResolveLimit(limit int) int {
 	if limit <= 0 {
 		return defaultContactResolveLimit
 	}
-	if limit > MaxContactUsyncBatchSize {
-		return MaxContactUsyncBatchSize
+	if limit > engine.MaxContactUsyncBatchSize {
+		return engine.MaxContactUsyncBatchSize
 	}
 	return limit
 }

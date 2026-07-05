@@ -9,6 +9,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/engine"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
@@ -275,7 +276,7 @@ func (m *LongConnectionManager) seedRevokedEntry(loginState *waappv1.LoginState)
 	}
 	lastErr := loginState.GetLastError()
 	if lastErr == nil {
-		lastErr = shared.ToProtoError(AccountLoggedOutError(""))
+		lastErr = shared.ToProtoError(engine.AccountLoggedOutError(""))
 	}
 	m.entries[key] = &longConnectionEntry{
 		revoked: true,
@@ -391,7 +392,7 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, loginState *waappv
 				return
 			}
 			m.recordLoopError(key, reconnects, err)
-			if longConnectionTerminalError(err) || IsAccountTakeoverError(err) {
+			if longConnectionTerminalError(err) || engine.IsAccountTakeoverError(err) {
 				m.persistIfAccountTakeover(ctx, loginState, err)
 				return
 			}
@@ -414,7 +415,7 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, loginState *waappv
 			}
 			m.recordLoopError(key, reconnects, err)
 			_, _ = m.server.CloseMessageSession(context.WithoutCancel(ctx), &waappv1.CloseMessageSessionRequest{Context: &waappv1.RequestContext{}, MessageSessionId: session.GetMessageSessionId(), Reason: "long connection runner unavailable"})
-			if longConnectionTerminalError(err) || IsAccountTakeoverError(err) {
+			if longConnectionTerminalError(err) || engine.IsAccountTakeoverError(err) {
 				m.persistIfAccountTakeover(ctx, loginState, err)
 				return
 			}
@@ -438,14 +439,14 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, loginState *waappv
 				}
 				lastErr = err
 				m.recordLoopError(key, reconnects, err)
-				terminal = longConnectionTerminalError(err) || IsAccountTakeoverError(err)
+				terminal = longConnectionTerminalError(err) || engine.IsAccountTakeoverError(err)
 				break
 			}
 			if resp.GetError() != nil {
 				respErr := shared.ErrorFromProto(resp.GetError())
 				lastErr = respErr
 				m.recordLoopError(key, reconnects, respErr)
-				terminal = longConnectionTerminalError(respErr) || IsAccountTakeoverError(respErr)
+				terminal = longConnectionTerminalError(respErr) || engine.IsAccountTakeoverError(respErr)
 				break
 			}
 			now := m.server.clock.Now()
@@ -518,7 +519,7 @@ func longConnectionTerminalError(err error) bool {
 // persistIfAccountTakeover 在长连接因账号被接管终止时把登录态持久化为 REVOKED 并停连,
 // 复用 device_logout 的"已转出"终态语义(重启后 restore 只拉 ACTIVE,不再被拉起)。
 func (m *LongConnectionManager) persistIfAccountTakeover(ctx context.Context, loginState *waappv1.LoginState, err error) {
-	if IsAccountTakeoverError(err) {
+	if engine.IsAccountTakeoverError(err) {
 		m.server.markLoginTransferredOut(context.WithoutCancel(ctx), loginState, err)
 	}
 }
@@ -583,7 +584,7 @@ func longConnectionLogErrorMessage(message string) string {
 	if strings.HasPrefix(message, "native chatd receive failed:") || strings.HasPrefix(message, "login state remote check failed:") {
 		return message
 	}
-	return SafeResponseSnippet(message)
+	return engine.SafeResponseSnippet(message)
 }
 
 func (m *LongConnectionManager) update(key string, mutate func(*waappv1.LongConnectionState)) {
@@ -702,13 +703,13 @@ func (s *serverCore) markLoginTransferredOut(ctx context.Context, loginState *wa
 }
 
 func (s *serverCore) longConnectionRunner(ctx context.Context, loginState *waappv1.LoginState, session *waappv1.MessageSession) (wacore.ProtocolEngine, error) {
-	engine, ok := s.runner.(*NativeEngine)
+	nativeEngine, ok := s.runner.(*engine.NativeEngine)
 	if !ok {
 		return s.runner, nil
 	}
 	input := longConnectionEngineInput(session)
 	input.AppVersion = s.protocolIDAppVersion(ctx, input.ProtocolProfileID)
-	return NewLongConnectionNativeEngine(engine, LongConnectionNativeEngineOptions{Input: input}), nil
+	return engine.NewLongConnectionNativeEngine(nativeEngine, engine.LongConnectionNativeEngineOptions{Input: input}), nil
 }
 
 func longConnectionEngineInput(session *waappv1.MessageSession) wacore.EngineMessageInput {
