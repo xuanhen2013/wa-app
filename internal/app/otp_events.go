@@ -2,7 +2,6 @@ package app
 
 import (
 	"context"
-	"fmt"
 	"log"
 	"strings"
 
@@ -42,7 +41,7 @@ func (s *serverCore) publishOTPCandidates(ctx context.Context, msg *waappv1.Inbo
 			ReceivedAt:           receivedAtTS,
 		}
 		if err := s.store.SaveOTPMessage(ctx, otpMessage); err != nil && ctx.Err() == nil {
-			log.Printf("save WA OTP history failed: %v", sanitizeLogError(err))
+			log.Printf("save WA OTP history failed: %v", shared.SanitizeLogError(err))
 		}
 	}
 }
@@ -54,11 +53,4 @@ func firstTimestamp(values ...*timestamppb.Timestamp) *timestamppb.Timestamp {
 		}
 	}
 	return nil
-}
-
-func sanitizeLogError(err error) error {
-	if err == nil {
-		return nil
-	}
-	return fmt.Errorf("%s", shared.SafeInternalErrorMessage(err))
 }

@@ -391,8 +391,8 @@ func postRegisterWithRetry(ctx context.Context, client *nativeHTTPClient, plain 
 			"wa_registration_register_retry status=scheduled attempt=%d http_status=%d wa_status=%s wa_reason=%s",
 			attempt,
 			int(jsonNumber(data["status_code"])),
-			probeLogValue(responseStatus(data)),
-			probeLogValue(responseReason(data)),
+			shared.ProbeLogValue(responseStatus(data)),
+			shared.ProbeLogValue(responseReason(data)),
 		)
 		if ctxErr := ctx.Err(); ctxErr != nil {
 			return data, enc, ctxErr
@@ -403,16 +403,16 @@ func postRegisterWithRetry(ctx context.Context, client *nativeHTTPClient, plain 
 				"wa_registration_register_retry status=accepted attempt=%d http_status=%d wa_status=%s wa_reason=%s",
 				attempt,
 				int(jsonNumber(data["status_code"])),
-				probeLogValue(responseStatus(data)),
-				probeLogValue(responseReason(data)),
+				shared.ProbeLogValue(responseStatus(data)),
+				shared.ProbeLogValue(responseReason(data)),
 			)
 		} else {
 			log.Printf(
 				"wa_registration_register_retry status=failed attempt=%d http_status=%d wa_status=%s wa_reason=%s retryable=%t",
 				attempt,
 				int(jsonNumber(data["status_code"])),
-				probeLogValue(responseStatus(data)),
-				probeLogValue(responseReason(data)),
+				shared.ProbeLogValue(responseStatus(data)),
+				shared.ProbeLogValue(responseReason(data)),
 				retryableRegisterHTTPFailure(data, err),
 			)
 		}

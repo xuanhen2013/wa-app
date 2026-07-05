@@ -7,11 +7,11 @@ import (
 
 func nativeIntegrityModeFromPayload(payload map[string]any) wacore.IntegrityMode {
 	mode := shared.FirstNonEmpty(
-		textField(payload, "integrity_mode"),
-		textField(payload, "integrityMode"),
-		textField(payload, "gpia_mode"),
-		textField(payload, "play_integrity_mode"),
-		textField(objectField(payload, "registration"), "integrity_mode"),
+		shared.TextField(payload, "integrity_mode"),
+		shared.TextField(payload, "integrityMode"),
+		shared.TextField(payload, "gpia_mode"),
+		shared.TextField(payload, "play_integrity_mode"),
+		shared.TextField(shared.ObjectField(payload, "registration"), "integrity_mode"),
 	)
 	return wacore.NormalizeIntegrityMode(mode)
 }

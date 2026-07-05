@@ -411,8 +411,8 @@ func logWASafeEnvelopeShape(endpoint *url.URL, envelope waSafeEnvelope, userAgen
 	}
 	log.Printf(
 		"wa_registration_envelope_shape kind=%s app_version=%s body_len=%d enc_len=%d h_len=%d authorization=%t",
-		probeLogValue(path),
-		probeLogValue(nativeAppVersionFromUserAgent(userAgent)),
+		shared.ProbeLogValue(path),
+		shared.ProbeLogValue(nativeAppVersionFromUserAgent(userAgent)),
 		len(envelope.Body),
 		len(envelope.Enc),
 		nativeWASafeHLength(envelope.Body),

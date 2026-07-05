@@ -34,8 +34,8 @@ func (e *engineCore) refreshPreChatdABProps(ctx context.Context, phone *waappv1.
 	summary := nativePreChatdABLogSummary(*state)
 	log.Printf(
 		"wa_registration_abprop_status status=%s reason=%s has_hash=%t has_exp_cfg=%t retry_after_seconds=%d exp_cfg_count=%d gpia_enabled=%t sim_signal_enabled=%t recaptcha_stage=%s request_id_random=%t",
-		probeLogValue(responseStatus(result)),
-		probeLogValue(responseReason(result)),
+		shared.ProbeLogValue(responseStatus(result)),
+		shared.ProbeLogValue(responseReason(result)),
 		strings.TrimSpace(state.PreChatdAB.Hash) != "",
 		strings.TrimSpace(state.PreChatdAB.ExpConfig) != "",
 		nativeABPropRetryAfterSeconds(result),

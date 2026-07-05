@@ -8,6 +8,8 @@ import (
 	"os"
 	"strings"
 	"sync"
+
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 // device_profiles.json 是内嵌的默认注册设备画像池。运行时可用环境变量
@@ -52,12 +54,12 @@ func LoadRegistrationDeviceProfiles(path string) error {
 	}
 	data, err := os.ReadFile(path)
 	if err != nil {
-		log.Printf("WA device profiles: read %s failed, keeping built-in pool: %v", path, sanitizeLogError(err))
+		log.Printf("WA device profiles: read %s failed, keeping built-in pool: %v", path, shared.SanitizeLogError(err))
 		return err
 	}
 	models, err := parseDeviceProfiles(data)
 	if err != nil {
-		log.Printf("WA device profiles: parse %s failed, keeping built-in pool: %v", path, sanitizeLogError(err))
+		log.Printf("WA device profiles: parse %s failed, keeping built-in pool: %v", path, shared.SanitizeLogError(err))
 		return err
 	}
 	if len(models) == 0 {

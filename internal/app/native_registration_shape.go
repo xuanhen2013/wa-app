@@ -22,9 +22,9 @@ func logNativeRegistrationOrderedShape(kind string, phone *waappv1.PhoneTarget, 
 	}
 	log.Printf(
 		"wa_registration_request_shape kind=%s phone_hash=%s method=%s field_count=%d fields=%s",
-		probeLogValue(kind),
+		shared.ProbeLogValue(kind),
 		phoneHash,
-		probeLogValue(registrationMethodName(method, "sms")),
+		shared.ProbeLogValue(registrationMethodName(method, "sms")),
 		len(params),
 		registrationShapeFields(params),
 	)
@@ -74,9 +74,9 @@ func logNativeRegistrationValueHashes(kind string, phoneHash string, method waap
 	}
 	log.Printf(
 		"wa_registration_value_hashes kind=%s phone_hash=%s method=%s values=%s",
-		probeLogValue(kind),
+		shared.ProbeLogValue(kind),
 		phoneHash,
-		probeLogValue(registrationMethodName(method, "sms")),
+		shared.ProbeLogValue(registrationMethodName(method, "sms")),
 		values,
 	)
 }
@@ -138,20 +138,20 @@ func logNativeRegistrationWamsysGAShape(kind string, phoneHash string, method wa
 		if err := json.Unmarshal([]byte(value), &shape); err != nil {
 			log.Printf(
 				"wa_registration_wamsys_ga_shape kind=%s phone_hash=%s method=%s len=%d hash=%s parse_error=%s",
-				probeLogValue(kind),
+				shared.ProbeLogValue(kind),
 				phoneHash,
-				probeLogValue(registrationMethodName(method, "sms")),
+				shared.ProbeLogValue(registrationMethodName(method, "sms")),
 				len([]byte(value)),
 				shared.StableID(value),
-				probeLogValue(err.Error()),
+				shared.ProbeLogValue(err.Error()),
 			)
 			return
 		}
 		log.Printf(
 			"wa_registration_wamsys_ga_shape kind=%s phone_hash=%s method=%s len=%d hash=%s bi_len=%d ap=%d ai=%d ae=%d mp=%t mu=%t",
-			probeLogValue(kind),
+			shared.ProbeLogValue(kind),
 			phoneHash,
-			probeLogValue(registrationMethodName(method, "sms")),
+			shared.ProbeLogValue(registrationMethodName(method, "sms")),
 			len([]byte(value)),
 			shared.StableID(value),
 			len([]byte(shape.BootID)),
@@ -170,10 +170,10 @@ func logNativeGPIAPlaintextShape(input wamsysMaterialInput, label string, keySou
 	if err != nil {
 		log.Printf(
 			"wa_registration_gpia_plaintext_shape kind=%s phone_hash=%s label=%s error=%s",
-			probeLogValue(registrationRequestKindName(input.Kind)),
+			shared.ProbeLogValue(registrationRequestKindName(input.Kind)),
 			wamsysInputPhoneHash(input),
-			probeLogValue(label),
-			probeLogValue(err.Error()),
+			shared.ProbeLogValue(label),
+			shared.ProbeLogValue(err.Error()),
 		)
 		return
 	}
@@ -183,15 +183,15 @@ func logNativeGPIAPlaintextShape(input wamsysMaterialInput, label string, keySou
 	}
 	log.Printf(
 		"wa_registration_gpia_plaintext_shape kind=%s phone_hash=%s label=%s key_source_len=%d key_source_hash=%s json_len=%d json_hash=%s keys=%s fields=%s",
-		probeLogValue(registrationRequestKindName(input.Kind)),
+		shared.ProbeLogValue(registrationRequestKindName(input.Kind)),
 		wamsysInputPhoneHash(input),
-		probeLogValue(label),
+		shared.ProbeLogValue(label),
 		len([]byte(keySource)),
 		shared.StableID(keySource),
 		len(plaintext),
 		jsonHash,
-		probeLogValue(nativeGPIAFieldKeys(fields)),
-		probeLogValue(nativeGPIAFieldShapes(fields)),
+		shared.ProbeLogValue(nativeGPIAFieldKeys(fields)),
+		shared.ProbeLogValue(nativeGPIAFieldShapes(fields)),
 	)
 }
 
@@ -200,15 +200,15 @@ func logNativeWamsysGAPlaintextShape(input wamsysMaterialInput, keySource string
 	if err != nil {
 		log.Printf(
 			"wa_registration_wamsys_ga_plaintext_shape kind=%s phone_hash=%s error=%s",
-			probeLogValue(registrationRequestKindName(input.Kind)),
+			shared.ProbeLogValue(registrationRequestKindName(input.Kind)),
 			wamsysInputPhoneHash(input),
-			probeLogValue(err.Error()),
+			shared.ProbeLogValue(err.Error()),
 		)
 		return
 	}
 	log.Printf(
 		"wa_registration_wamsys_ga_plaintext_shape kind=%s phone_hash=%s key_source_len=%d key_source_hash=%s boot_id_material_len=%d boot_id_material_hash=%s json_len=%d json_hash=%s keys=%s fields=%s",
-		probeLogValue(registrationRequestKindName(input.Kind)),
+		shared.ProbeLogValue(registrationRequestKindName(input.Kind)),
 		wamsysInputPhoneHash(input),
 		len([]byte(keySource)),
 		shared.StableID(keySource),
@@ -216,8 +216,8 @@ func logNativeWamsysGAPlaintextShape(input wamsysMaterialInput, keySource string
 		shared.StableID(bootIDMaterial),
 		len(plaintext),
 		shared.StableID(string(plaintext)),
-		probeLogValue(nativeGPIAFieldKeys(fields)),
-		probeLogValue(nativeGPIAFieldShapes(fields)),
+		shared.ProbeLogValue(nativeGPIAFieldKeys(fields)),
+		shared.ProbeLogValue(nativeGPIAFieldShapes(fields)),
 	)
 }
 
@@ -253,7 +253,7 @@ func nativeGPIAFieldShape(field nativeGPIAJSONField) string {
 	case nil:
 		return field.Key + ":null"
 	default:
-		return field.Key + ":type:" + probeLogValue(strconv.Quote(fmt.Sprintf("%T", value)))
+		return field.Key + ":type:" + shared.ProbeLogValue(strconv.Quote(fmt.Sprintf("%T", value)))
 	}
 }
 

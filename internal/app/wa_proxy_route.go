@@ -7,25 +7,25 @@ import (
 )
 
 func proxyCountryCodeFromPayload(payload map[string]any) string {
-	phone := objectField(payload, "phone")
-	proxy := objectField(payload, "proxy")
+	phone := shared.ObjectField(payload, "phone")
+	proxy := shared.ObjectField(payload, "proxy")
 	value := shared.FirstNonEmpty(
-		textField(payload, "proxy_country_code"),
-		textField(proxy, "country_code"),
-		textField(proxy, "proxy_country_code"),
-		textField(payload, "country_iso2"),
-		textField(payload, "country_region"),
-		textField(payload, "region"),
-		textField(phone, "country_iso2"),
+		shared.TextField(payload, "proxy_country_code"),
+		shared.TextField(proxy, "country_code"),
+		shared.TextField(proxy, "proxy_country_code"),
+		shared.TextField(payload, "country_iso2"),
+		shared.TextField(payload, "country_region"),
+		shared.TextField(payload, "region"),
+		shared.TextField(phone, "country_iso2"),
 	)
 	if value != "" {
 		return normalizeProxyCountryCode(value)
 	}
 	callingCode := shared.FirstNonEmpty(
-		textField(payload, "country_calling_code"),
-		textField(payload, "cc"),
-		textField(payload, "country_code"),
-		textField(phone, "country_calling_code"),
+		shared.TextField(payload, "country_calling_code"),
+		shared.TextField(payload, "cc"),
+		shared.TextField(payload, "country_code"),
+		shared.TextField(phone, "country_calling_code"),
 	)
 	return normalizeProxyCountryCode(proxyCountryCodeFromCallingCode(callingCode))
 }

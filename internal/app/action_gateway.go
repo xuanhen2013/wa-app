@@ -139,7 +139,7 @@ func fingerprintSummary(profile *waappv1.PhoneFingerprintProfile) map[string]any
 }
 
 func (g *actionGateway) commitFingerprint(ctx context.Context, payload map[string]any) (map[string]any, error) {
-	ref := textField(payload, "transient_fingerprint_ref")
+	ref := shared.TextField(payload, "transient_fingerprint_ref")
 	state, err := g.loadTransientState(ctx, ref)
 	if err != nil {
 		return nil, err
@@ -170,9 +170,9 @@ func (g *actionGateway) requestSMSOTP(ctx context.Context, payload map[string]an
 	reqCtx := actionContext(payload)
 	resp, err := g.server.requestVerificationCode(ctx, &waappv1.RequestVerificationCodeRequest{
 		Context:           reqCtx,
-		WaAccountId:       textField(payload, "wa_account_id"),
-		ClientProfileId:   textField(payload, "client_profile_id"),
-		ProtocolProfileId: textField(payload, "protocol_profile_id"),
+		WaAccountId:       shared.TextField(payload, "wa_account_id"),
+		ClientProfileId:   shared.TextField(payload, "client_profile_id"),
+		ProtocolProfileId: shared.TextField(payload, "protocol_profile_id"),
 		DeliveryMethod:    method,
 	}, runner)
 	runner.CloseIdleConnections()
@@ -219,11 +219,11 @@ func (g *actionGateway) awaitOTP(ctx context.Context, payload map[string]any) (m
 }
 
 func (g *actionGateway) resumeOTP(ctx context.Context, payload map[string]any) (map[string]any, error) {
-	code := shared.FirstNonEmpty(textField(payload, "otp"), textField(payload, "code"), textField(payload, "verification_code"))
+	code := shared.FirstNonEmpty(shared.TextField(payload, "otp"), shared.TextField(payload, "code"), shared.TextField(payload, "verification_code"))
 	if strings.TrimSpace(code) == "" {
 		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "otp is required", false)
 	}
-	wait, err := g.loadRegistrationOTPWait(ctx, textField(payload, "wa_account_id"), textField(payload, "verification_request_id"))
+	wait, err := g.loadRegistrationOTPWait(ctx, shared.TextField(payload, "wa_account_id"), shared.TextField(payload, "verification_request_id"))
 	if err != nil {
 		return nil, err
 	}
@@ -249,9 +249,9 @@ func (g *actionGateway) resumeOTP(ctx context.Context, payload map[string]any) (
 
 func registrationOTPWaitFromPayload(payload map[string]any) (registrationOTPWait, time.Duration, error) {
 	wait := registrationOTPWait{
-		WAAccountID:           textField(payload, "wa_account_id"),
-		VerificationRequestID: textField(payload, "verification_request_id"),
-		ResumeURL:             textField(payload, "resume_url"),
+		WAAccountID:           shared.TextField(payload, "wa_account_id"),
+		VerificationRequestID: shared.TextField(payload, "verification_request_id"),
+		ResumeURL:             shared.TextField(payload, "resume_url"),
 		CreatedAtUnix:         time.Now().UTC().Unix(),
 	}
 	if wait.VerificationRequestID == "" {
@@ -363,8 +363,8 @@ func (g *actionGateway) submitOTP(ctx context.Context, payload map[string]any) (
 	}
 	resp, err := g.server.submitVerificationCode(ctx, &waappv1.SubmitVerificationCodeRequest{
 		Context:               actionContext(payload),
-		VerificationRequestId: textField(payload, "verification_request_id"),
-		SubmittedCode:         &waappv1.SubmitVerificationCodeRequest_Code{Code: textField(payload, "code")},
+		VerificationRequestId: shared.TextField(payload, "verification_request_id"),
+		SubmittedCode:         &waappv1.SubmitVerificationCodeRequest_Code{Code: shared.TextField(payload, "code")},
 	}, runner)
 	runner.CloseIdleConnections()
 	if err != nil {
@@ -392,7 +392,7 @@ func (g *actionGateway) submitOTP(ctx context.Context, payload map[string]any) (
 func (g *actionGateway) refreshAccountTransferChallenge(ctx context.Context, payload map[string]any) (map[string]any, error) {
 	resp, err := g.server.RefreshAccountTransferChallenge(ctx, &waappv1.RefreshAccountTransferChallengeRequest{
 		Context:               actionContext(payload),
-		VerificationRequestId: textField(payload, "verification_request_id"),
+		VerificationRequestId: shared.TextField(payload, "verification_request_id"),
 	})
 	if err != nil {
 		return nil, err
@@ -435,7 +435,7 @@ func (g *actionGateway) pollAccountTransferRegistration(ctx context.Context, pay
 		}
 		result = resultValue
 		if boolField(result, "success") {
-			_ = g.deleteRegistrationOTPWait(ctx, registrationOTPWait{WAAccountID: textField(payload, "wa_account_id"), VerificationRequestID: textField(payload, "verification_request_id")})
+			_ = g.deleteRegistrationOTPWait(ctx, registrationOTPWait{WAAccountID: shared.TextField(payload, "wa_account_id"), VerificationRequestID: shared.TextField(payload, "verification_request_id")})
 			result["attempts"] = attempt + 1
 			return result, nil
 		}
@@ -456,14 +456,14 @@ func accountTransferPollRetryable(result map[string]any) bool {
 	if result == nil {
 		return true
 	}
-	if textField(result, "status") == waappv1.RegistrationStatus_REGISTRATION_STATUS_SUBMITTED.String() {
+	if shared.TextField(result, "status") == waappv1.RegistrationStatus_REGISTRATION_STATUS_SUBMITTED.String() {
 		return true
 	}
-	errorMap := objectField(result, "error")
+	errorMap := shared.ObjectField(result, "error")
 	if boolField(errorMap, "retryable") {
 		return true
 	}
-	message := strings.ToLower(shared.FirstNonEmpty(textField(result, "error_message"), textField(errorMap, "message")))
+	message := strings.ToLower(shared.FirstNonEmpty(shared.TextField(result, "error_message"), shared.TextField(errorMap, "message")))
 	return strings.Contains(message, "pending") || strings.Contains(message, "temporarily") || strings.Contains(message, "too_recent")
 }
 
@@ -506,17 +506,17 @@ func (g *actionGateway) cleanupFailedRegistration(ctx context.Context, payload m
 }
 
 func (g *actionGateway) persistLoginState(ctx context.Context, payload map[string]any) (map[string]any, error) {
-	registration := objectField(payload, "registration")
-	if nested := objectField(registration, "registration"); len(nested) > 0 {
+	registration := shared.ObjectField(payload, "registration")
+	if nested := shared.ObjectField(registration, "registration"); len(nested) > 0 {
 		registration = nested
 	}
-	registrationID := textField(registration, "registration_id")
+	registrationID := shared.TextField(registration, "registration_id")
 	var loginState *waappv1.LoginState
 	var err error
 	if registrationID != "" {
 		loginState, err = g.server.store.GetLoginStateByRegistration(ctx, registrationID)
-	} else if clientProfileID := textField(payload, "client_profile_id"); clientProfileID != "" {
-		loginState, err = g.server.store.GetActiveLoginState(ctx, textField(registration, "wa_account_id"), clientProfileID)
+	} else if clientProfileID := shared.TextField(payload, "client_profile_id"); clientProfileID != "" {
+		loginState, err = g.server.store.GetActiveLoginState(ctx, shared.TextField(registration, "wa_account_id"), clientProfileID)
 	} else {
 		err = shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "registration_id or client_profile_id is required", false)
 	}
@@ -532,13 +532,13 @@ func (g *actionGateway) checkLoginState(ctx context.Context, payload map[string]
 	if err != nil {
 		return nil, err
 	}
-	loginStatePayload := objectField(payload, "login_state")
+	loginStatePayload := shared.ObjectField(payload, "login_state")
 	req := &waappv1.CheckLoginStateRequest{
 		Context:              actionContext(payload),
-		LoginStateId:         shared.FirstNonEmpty(textField(payload, "login_state_id"), textField(loginStatePayload, "login_state_id")),
-		WaAccountId:          shared.FirstNonEmpty(textField(payload, "wa_account_id"), textField(loginStatePayload, "wa_account_id")),
-		ClientProfileId:      shared.FirstNonEmpty(textField(payload, "client_profile_id"), textField(loginStatePayload, "client_profile_id")),
-		RegisteredIdentityId: shared.FirstNonEmpty(textField(payload, "registered_identity_id"), textField(loginStatePayload, "registered_identity_id")),
+		LoginStateId:         shared.FirstNonEmpty(shared.TextField(payload, "login_state_id"), shared.TextField(loginStatePayload, "login_state_id")),
+		WaAccountId:          shared.FirstNonEmpty(shared.TextField(payload, "wa_account_id"), shared.TextField(loginStatePayload, "wa_account_id")),
+		ClientProfileId:      shared.FirstNonEmpty(shared.TextField(payload, "client_profile_id"), shared.TextField(loginStatePayload, "client_profile_id")),
+		RegisteredIdentityId: shared.FirstNonEmpty(shared.TextField(payload, "registered_identity_id"), shared.TextField(loginStatePayload, "registered_identity_id")),
 	}
 	if timeout := numberField(payload, "remote_timeout_seconds"); timeout > 0 {
 		req.RemoteTimeout = durationpb.New(time.Duration(timeout) * time.Second)
@@ -704,10 +704,10 @@ func registrationProxyRouteMap(route wacore.WAProxyRoute, managed bool) map[stri
 }
 
 func actionProxyURL(payload map[string]any) string {
-	if proxyURL := shared.FirstNonEmpty(textField(payload, "proxy_url"), textField(objectField(payload, "proxy"), "proxy_url")); proxyURL != "" {
+	if proxyURL := shared.FirstNonEmpty(shared.TextField(payload, "proxy_url"), shared.TextField(shared.ObjectField(payload, "proxy"), "proxy_url")); proxyURL != "" {
 		return proxyURL
 	}
-	rawState := shared.FirstNonEmpty(textField(payload, "proxy_state_json"), textField(payload, "state_json"), textField(objectField(payload, "proxy"), "proxy_state_json"), textField(objectField(payload, "proxy"), "state_json"))
+	rawState := shared.FirstNonEmpty(shared.TextField(payload, "proxy_state_json"), shared.TextField(payload, "state_json"), shared.TextField(shared.ObjectField(payload, "proxy"), "proxy_state_json"), shared.TextField(shared.ObjectField(payload, "proxy"), "state_json"))
 	if rawState == "" {
 		return ""
 	}
@@ -715,35 +715,35 @@ func actionProxyURL(payload map[string]any) string {
 	if err := json.Unmarshal([]byte(rawState), &state); err != nil {
 		return ""
 	}
-	return shared.FirstNonEmpty(textField(state, "_gopay_proxy"), textField(state, "proxy_url"), textField(objectField(state, "proxy"), "proxy_url"))
+	return shared.FirstNonEmpty(shared.TextField(state, "_gopay_proxy"), shared.TextField(state, "proxy_url"), shared.TextField(shared.ObjectField(state, "proxy"), "proxy_url"))
 }
 
 func cleanupWAAccountID(payload map[string]any) string {
-	registration := objectField(payload, "registration")
-	if nested := objectField(registration, "registration"); len(nested) > 0 {
+	registration := shared.ObjectField(payload, "registration")
+	if nested := shared.ObjectField(registration, "registration"); len(nested) > 0 {
 		registration = nested
 	}
-	verificationRequest := objectField(payload, "verification_request")
-	data := objectField(payload, "data")
+	verificationRequest := shared.ObjectField(payload, "verification_request")
+	data := shared.ObjectField(payload, "data")
 	return shared.FirstNonEmpty(
-		textField(payload, "wa_account_id"),
-		textField(registration, "wa_account_id"),
-		textField(verificationRequest, "wa_account_id"),
-		textField(objectField(payload, "account"), "wa_account_id"),
-		textField(data, "wa_account_id"),
-		textField(objectField(data, "registration"), "wa_account_id"),
-		textField(objectField(data, "verification_request"), "wa_account_id"),
+		shared.TextField(payload, "wa_account_id"),
+		shared.TextField(registration, "wa_account_id"),
+		shared.TextField(verificationRequest, "wa_account_id"),
+		shared.TextField(shared.ObjectField(payload, "account"), "wa_account_id"),
+		shared.TextField(data, "wa_account_id"),
+		shared.TextField(shared.ObjectField(data, "registration"), "wa_account_id"),
+		shared.TextField(shared.ObjectField(data, "verification_request"), "wa_account_id"),
 	)
 }
 
 func cleanupVerificationRequestID(payload map[string]any) string {
-	verificationRequest := objectField(payload, "verification_request")
-	data := objectField(payload, "data")
+	verificationRequest := shared.ObjectField(payload, "verification_request")
+	data := shared.ObjectField(payload, "data")
 	return shared.FirstNonEmpty(
-		textField(payload, "verification_request_id"),
-		textField(verificationRequest, "verification_request_id"),
-		textField(data, "verification_request_id"),
-		textField(objectField(data, "verification_request"), "verification_request_id"),
+		shared.TextField(payload, "verification_request_id"),
+		shared.TextField(verificationRequest, "verification_request_id"),
+		shared.TextField(data, "verification_request_id"),
+		shared.TextField(shared.ObjectField(data, "verification_request"), "verification_request_id"),
 	)
 }
 
@@ -790,53 +790,23 @@ func writeActionJSON(w http.ResponseWriter, status int, value any) {
 
 func actionContext(payload map[string]any) *waappv1.RequestContext {
 	return &waappv1.RequestContext{
-		RequestId:     textField(payload, "request_id"),
-		ActorId:       textField(payload, "actor_id"),
-		CorrelationId: shared.FirstNonEmpty(textField(payload, "correlation_id"), textField(payload, "job_id")),
-		TraceId:       textField(payload, "trace_id"),
+		RequestId:     shared.TextField(payload, "request_id"),
+		ActorId:       shared.TextField(payload, "actor_id"),
+		CorrelationId: shared.FirstNonEmpty(shared.TextField(payload, "correlation_id"), shared.TextField(payload, "job_id")),
+		TraceId:       shared.TextField(payload, "trace_id"),
 	}
 }
 
 func phoneFromAction(payload map[string]any) *waappv1.PhoneTarget {
-	phone := objectField(payload, "phone")
+	phone := shared.ObjectField(payload, "phone")
 	if len(phone) == 0 {
 		phone = payload
 	}
 	return &waappv1.PhoneTarget{
-		E164Number:         shared.FirstNonEmpty(textField(phone, "e164_number"), textField(payload, "e164_number")),
-		CountryCallingCode: shared.FirstNonEmpty(textField(phone, "country_calling_code"), textField(payload, "country_calling_code"), textField(payload, "cc")),
-		NationalNumber:     shared.FirstNonEmpty(textField(phone, "national_number"), textField(payload, "national_number"), textField(payload, "phone"), textField(payload, "number")),
-		CountryIso2:        shared.FirstNonEmpty(textField(phone, "country_iso2"), textField(payload, "country_iso2"), textField(payload, "country_code")),
-	}
-}
-
-func objectField(data map[string]any, key string) map[string]any {
-	if data == nil {
-		return map[string]any{}
-	}
-	if value, ok := data[key].(map[string]any); ok {
-		return value
-	}
-	return map[string]any{}
-}
-
-func textField(data map[string]any, key string) string {
-	if data == nil {
-		return ""
-	}
-	value, ok := data[key]
-	if !ok || value == nil {
-		return ""
-	}
-	switch typed := value.(type) {
-	case string:
-		return strings.TrimSpace(typed)
-	case json.Number:
-		return strings.TrimSpace(typed.String())
-	case float64:
-		return fmt.Sprintf("%.0f", typed)
-	default:
-		return strings.TrimSpace(fmt.Sprint(typed))
+		E164Number:         shared.FirstNonEmpty(shared.TextField(phone, "e164_number"), shared.TextField(payload, "e164_number")),
+		CountryCallingCode: shared.FirstNonEmpty(shared.TextField(phone, "country_calling_code"), shared.TextField(payload, "country_calling_code"), shared.TextField(payload, "cc")),
+		NationalNumber:     shared.FirstNonEmpty(shared.TextField(phone, "national_number"), shared.TextField(payload, "national_number"), shared.TextField(payload, "phone"), shared.TextField(payload, "number")),
+		CountryIso2:        shared.FirstNonEmpty(shared.TextField(phone, "country_iso2"), shared.TextField(payload, "country_iso2"), shared.TextField(payload, "country_code")),
 	}
 }
 

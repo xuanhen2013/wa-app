@@ -202,7 +202,7 @@ func (c *playIntegrityAPIClient) Issue(ctx context.Context, input wamsysMaterial
 		if !retry || attempt == playIntegrityAPIMaxAttempts || ctx.Err() != nil {
 			break
 		}
-		if !sleepContext(ctx, time.Duration(attempt)*500*time.Millisecond) {
+		if !shared.SleepContext(ctx, time.Duration(attempt)*500*time.Millisecond) {
 			if err := ctx.Err(); err != nil {
 				return "", err
 			}

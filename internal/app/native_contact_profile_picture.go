@@ -258,11 +258,11 @@ func logWAContactProfilePictureIQFailure(target string, pictureType string, requ
 	if err == nil {
 		return
 	}
-	log.Printf("WA contact profile picture iq failed target_kind=%s picture_type=%s request_id=%t reason=%s", contactProfilePictureTargetKind(target), safeProxyLogToken(pictureType, "unknown"), requestIDPresent, contactProfilePictureFailureReason(err))
+	log.Printf("WA contact profile picture iq failed target_kind=%s picture_type=%s request_id=%t reason=%s", contactProfilePictureTargetKind(target), shared.SafeProxyLogToken(pictureType, "unknown"), requestIDPresent, contactProfilePictureFailureReason(err))
 }
 
 func logWAContactProfilePictureIQLocation(target string, pictureType string, requestIDPresent bool, location contactProfilePictureLocation) {
-	log.Printf("WA contact profile picture iq location target_kind=%s picture_type=%s request_id=%t inline=%t direct_path=%t url=%t", contactProfilePictureTargetKind(target), safeProxyLogToken(pictureType, "unknown"), requestIDPresent, len(location.InlineData) > 0, location.DirectPath != "", location.URL != "")
+	log.Printf("WA contact profile picture iq location target_kind=%s picture_type=%s request_id=%t inline=%t direct_path=%t url=%t", contactProfilePictureTargetKind(target), shared.SafeProxyLogToken(pictureType, "unknown"), requestIDPresent, len(location.InlineData) > 0, location.DirectPath != "", location.URL != "")
 }
 
 func logWAContactProfilePictureDownloadFallback(err error) {

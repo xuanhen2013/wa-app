@@ -1,7 +1,6 @@
 package app
 
 import (
-	"strings"
 	"sync"
 	"time"
 )
@@ -22,27 +21,4 @@ func (l *proxyLogLimiter) allow(purpose string, reason string, now time.Time) bo
 	}
 	l.last[key] = now
 	return true
-}
-
-func safeProxyLogToken(value string, fallback string) string {
-	value = strings.ToLower(strings.TrimSpace(value))
-	var out strings.Builder
-	for _, char := range value {
-		switch {
-		case char >= 'a' && char <= 'z':
-			out.WriteRune(char)
-		case char >= '0' && char <= '9':
-			out.WriteRune(char)
-		case char == '_' || char == '-':
-			out.WriteRune(char)
-		}
-	}
-	token := strings.Trim(out.String(), "_-")
-	if token == "" {
-		return fallback
-	}
-	if len(token) > 64 {
-		return token[:64]
-	}
-	return token
 }

@@ -28,7 +28,7 @@ func (s *serverCore) markWAAccountTransferredOut(ctx context.Context, WAAccountI
 		return
 	}
 	if _, err := s.saveWAAccount(ctx, withWAAccountStatus(account, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_TRANSFERRED_OUT, s.clock.Now())); err != nil {
-		log.Printf("WA mark account transferred out failed: wa_account=%s error=%v", WAAccountID, sanitizeLogError(err))
+		log.Printf("WA mark account transferred out failed: wa_account=%s error=%v", WAAccountID, shared.SanitizeLogError(err))
 	}
 }
 

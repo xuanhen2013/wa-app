@@ -217,7 +217,7 @@ func (m *LongConnectionManager) restore(ctx context.Context) error {
 func (m *LongConnectionManager) seedRevoked(ctx context.Context) {
 	records, err := m.server.store.ListRevokedLoginStates(ctx)
 	if err != nil {
-		log.Printf("WA long connection restore revoked failed: %v", sanitizeLogError(err))
+		log.Printf("WA long connection restore revoked failed: %v", shared.SanitizeLogError(err))
 		return
 	}
 	for _, record := range records {
@@ -249,7 +249,7 @@ func (m *LongConnectionManager) reactivateFalselyRevoked(ctx context.Context, lo
 	}
 	loginState.Audit.UpdatedAt = timestamppb.New(now)
 	if err := m.server.store.SaveLoginState(ctx, loginState, "native-db:"+loginState.GetClientProfileId()); err != nil {
-		log.Printf("WA long connection reactivate (replaced) persist failed: registered_identity=%s error=%v", loginState.GetRegisteredIdentityId(), sanitizeLogError(err))
+		log.Printf("WA long connection reactivate (replaced) persist failed: registered_identity=%s error=%v", loginState.GetRegisteredIdentityId(), shared.SanitizeLogError(err))
 		return
 	}
 	if account, err := m.server.getWAAccount(ctx, loginState.GetWaAccountId()); err == nil && account != nil &&
@@ -309,7 +309,7 @@ func (m *LongConnectionManager) closeStaleMessageSessions(ctx context.Context) {
 	}
 	closed, err := m.server.store.CloseStaleOpenMessageSessions(ctx, m.server.clock.Now().Add(-staleMessageSessionTTL))
 	if err != nil {
-		log.Printf("WA stale message session cleanup failed: %v", sanitizeLogError(err))
+		log.Printf("WA stale message session cleanup failed: %v", shared.SanitizeLogError(err))
 		return
 	}
 	if closed > 0 {
@@ -339,7 +339,7 @@ func (m *LongConnectionManager) reconcileStoppedAccounts(ctx context.Context) {
 	}
 	records, err := m.server.store.ListActiveLoginStates(ctx)
 	if err != nil {
-		log.Printf("WA long connection reconcile list failed: %v", sanitizeLogError(err))
+		log.Printf("WA long connection reconcile list failed: %v", shared.SanitizeLogError(err))
 		return
 	}
 	for _, record := range records {
@@ -355,7 +355,7 @@ func (m *LongConnectionManager) reconcileStoppedAccounts(ctx context.Context) {
 			LoginStateId: loginState.GetLoginStateId(),
 		}
 		if _, err := m.server.checkLoginState(ctx, req, m.server.runner); err != nil {
-			log.Printf("WA long connection reconcile check failed: registered_identity=%s error=%v", loginState.GetRegisteredIdentityId(), sanitizeLogError(err))
+			log.Printf("WA long connection reconcile check failed: registered_identity=%s error=%v", loginState.GetRegisteredIdentityId(), shared.SanitizeLogError(err))
 		}
 	}
 }
@@ -395,7 +395,7 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, loginState *waappv
 				m.persistIfAccountTakeover(ctx, loginState, err)
 				return
 			}
-			if !sleepContext(ctx, backoff) {
+			if !shared.SleepContext(ctx, backoff) {
 				return
 			}
 			backoff = nextBackoff(backoff)
@@ -418,7 +418,7 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, loginState *waappv
 				m.persistIfAccountTakeover(ctx, loginState, err)
 				return
 			}
-			if !sleepContext(ctx, backoff) {
+			if !shared.SleepContext(ctx, backoff) {
 				return
 			}
 			backoff = nextBackoff(backoff)
@@ -484,7 +484,7 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, loginState *waappv
 		}
 		reconnects++
 		_, _ = m.server.CloseMessageSession(context.WithoutCancel(ctx), &waappv1.CloseMessageSessionRequest{Context: &waappv1.RequestContext{}, MessageSessionId: session.GetMessageSessionId(), Reason: "long connection reconnect"})
-		if !sleepContext(ctx, backoff) {
+		if !shared.SleepContext(ctx, backoff) {
 			return
 		}
 	}
@@ -555,7 +555,7 @@ func (m *LongConnectionManager) openSession(ctx context.Context, loginState *waa
 func (m *LongConnectionManager) decryptPendingMessages(ctx context.Context, session *waappv1.MessageSession, runner wacore.ProtocolEngine) {
 	messages, err := m.server.store.ListPendingEncryptedInboundMessages(ctx, session.GetWaAccountId(), session.GetClientProfileId(), longConnectionDecryptLimit)
 	if err != nil {
-		log.Printf("WA long connection pending decrypt load failed: %v", sanitizeLogError(err))
+		log.Printf("WA long connection pending decrypt load failed: %v", shared.SanitizeLogError(err))
 		return
 	}
 	if len(messages) == 0 {
@@ -572,7 +572,7 @@ func (m *LongConnectionManager) decryptReceivedMessages(ctx context.Context, ses
 		}
 		resp, err := m.server.decryptMessage(ctx, &waappv1.DecryptMessageRequest{Context: &waappv1.RequestContext{RequestId: m.server.ids.NewID("wa-dec_"), CorrelationId: session.GetRegisteredIdentityId()}, MessageId: msg.GetMessageId(), SessionCommitPolicy: waappv1.SessionCommitPolicy_SESSION_COMMIT_POLICY_COMMIT_LEARNED_STATE, IncludeSensitivePlaintext: true}, runner, waappv1.WaOtpSource_WA_OTP_SOURCE_LONG_CONNECTION)
 		if err != nil && !errors.Is(err, context.Canceled) {
-			log.Printf("WA long connection decrypt failed: message_id=%s error=%v", msg.GetMessageId(), sanitizeLogError(err))
+			log.Printf("WA long connection decrypt failed: message_id=%s error=%v", msg.GetMessageId(), shared.SanitizeLogError(err))
 		}
 		if resp != nil && resp.GetError() != nil {
 			log.Printf("WA long connection decrypt failed: message_id=%s code=%s retryable=%t", msg.GetMessageId(), resp.GetError().GetCode().String(), resp.GetError().GetRetryable())
@@ -708,7 +708,7 @@ func (s *serverCore) markLoginTransferredOut(ctx context.Context, loginState *wa
 	loginState.LastError = shared.ToProtoError(cause)
 	loginState.Audit.UpdatedAt = timestamppb.New(now)
 	if err := s.store.SaveLoginState(ctx, loginState, "native-db:"+loginState.GetClientProfileId()); err != nil {
-		log.Printf("WA long connection persist transferred-out failed: registered_identity=%s error=%v", registeredIdentityID, sanitizeLogError(err))
+		log.Printf("WA long connection persist transferred-out failed: registered_identity=%s error=%v", registeredIdentityID, shared.SanitizeLogError(err))
 	}
 	s.markWAAccountTransferredOut(ctx, loginState.GetWaAccountId())
 	s.revokeLongConnection(registeredIdentityID, cause)
@@ -750,18 +750,4 @@ func nextBackoff(current time.Duration) time.Duration {
 		return longConnectionMaxBackoff
 	}
 	return current
-}
-
-func sleepContext(ctx context.Context, d time.Duration) bool {
-	if d <= 0 {
-		return true
-	}
-	timer := time.NewTimer(d)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		return false
-	case <-timer.C:
-		return true
-	}
 }

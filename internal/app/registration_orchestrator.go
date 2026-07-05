@@ -21,8 +21,8 @@ func (s *serverCore) StartRegistration(ctx context.Context, payload map[string]a
 	}
 	gateway := &actionGateway{server: s.facade}
 	basePayload := cloneActionPayload(payload)
-	basePayload["purpose"] = shared.FirstNonEmpty(textField(basePayload, "purpose"), "WA_REGISTRATION")
-	basePayload["proxy_session_mode"] = shared.FirstNonEmpty(textField(basePayload, "proxy_session_mode"), "STICKY")
+	basePayload["purpose"] = shared.FirstNonEmpty(shared.TextField(basePayload, "purpose"), "WA_REGISTRATION")
+	basePayload["proxy_session_mode"] = shared.FirstNonEmpty(shared.TextField(basePayload, "proxy_session_mode"), "STICKY")
 	method := registrationMethodFromPayload(basePayload)
 	authCodeContext := authCodeContextFromPayload(basePayload)
 	integrityMode := nativeIntegrityModeFromPayload(basePayload)
@@ -79,7 +79,7 @@ func (s *serverCore) StartRegistration(ctx context.Context, payload map[string]a
 		"success":                 true,
 		"status":                  record.GetStatus().String(),
 		"error_message":           "",
-		"phone":                   objectField(basePayload, "phone"),
+		"phone":                   shared.ObjectField(basePayload, "phone"),
 		"wa_account_id":           wamodel.WAAccountID(account),
 		"client_profile_id":       profile.GetClientProfileId(),
 		"protocol_profile_id":     protocol.GetProtocolProfileId(),
@@ -146,7 +146,7 @@ func logRegistrationAttemptState(payload map[string]any, phone *waappv1.PhoneTar
 	}
 	log.Printf(
 		"wa_registration_attempt_state correlation=%s phone_hash=%s reused=%t ttl_seconds=%d",
-		probeLogValue(actionContext(payload).GetCorrelationId()),
+		shared.ProbeLogValue(actionContext(payload).GetCorrelationId()),
 		phoneHash,
 		reused,
 		int64(registrationAttemptStateTTL/time.Second),
@@ -161,18 +161,18 @@ func logRegistrationCodeResult(payload map[string]any, phone *waappv1.PhoneTarge
 	protoErr := shared.ToProtoError(result.Err)
 	log.Printf(
 		"wa_registration_code_result correlation=%s phone_hash=%s proxy_account=%s route_id=%s accepted=%t method=%s status=%s raw_status=%s raw_reason=%s retry_after_seconds=%d method_status_count=%d error=%s",
-		probeLogValue(actionContext(payload).GetCorrelationId()),
+		shared.ProbeLogValue(actionContext(payload).GetCorrelationId()),
 		phoneHash,
-		probeLogValue(route.AccountID),
-		probeLogValue(route.RouteID),
+		shared.ProbeLogValue(route.AccountID),
+		shared.ProbeLogValue(route.RouteID),
 		verificationCodeRequestAccepted(result),
-		probeLogValue(registrationMethodName(method, "sms")),
-		probeLogValue(result.Status.String()),
-		probeLogValue(result.RawStatus),
-		probeLogValue(result.RawReason),
+		shared.ProbeLogValue(registrationMethodName(method, "sms")),
+		shared.ProbeLogValue(result.Status.String()),
+		shared.ProbeLogValue(result.RawStatus),
+		shared.ProbeLogValue(result.RawReason),
 		int64(result.RetryAfter/time.Second),
 		len(result.MethodStatuses),
-		probeLogValue(protoErr.GetMessage()),
+		shared.ProbeLogValue(protoErr.GetMessage()),
 	)
 }
 
@@ -184,36 +184,36 @@ func logRegistrationProbeResult(payload map[string]any, phone *waappv1.PhoneTarg
 	protoErr := shared.ToProtoError(result.Err)
 	log.Printf(
 		"wa_registration_probe_result correlation=%s phone_hash=%s proxy_account=%s route_id=%s allowed=%t method=%s account_flow=%s account_status=%s raw_status=%s raw_reason=%s sms_available=%t sms_wait_seconds=%d method_status_count=%d error=%s",
-		probeLogValue(actionContext(payload).GetCorrelationId()),
+		shared.ProbeLogValue(actionContext(payload).GetCorrelationId()),
 		phoneHash,
-		probeLogValue(route.AccountID),
-		probeLogValue(route.RouteID),
+		shared.ProbeLogValue(route.AccountID),
+		shared.ProbeLogValue(route.RouteID),
 		registrationProbeAllowsMethod(result, method),
-		probeLogValue(registrationMethodName(method, "sms")),
-		probeLogValue(result.AccountFlow),
-		probeLogValue(result.Status.String()),
-		probeLogValue(result.RawStatus),
-		probeLogValue(result.RawReason),
+		shared.ProbeLogValue(registrationMethodName(method, "sms")),
+		shared.ProbeLogValue(result.AccountFlow),
+		shared.ProbeLogValue(result.Status.String()),
+		shared.ProbeLogValue(result.RawStatus),
+		shared.ProbeLogValue(result.RawReason),
 		result.CanSendSMS,
 		result.SMSWaitSeconds,
 		len(result.MethodStatuses),
-		probeLogValue(protoErr.GetMessage()),
+		shared.ProbeLogValue(protoErr.GetMessage()),
 	)
 }
 
 func authCodeContextFromPayload(payload map[string]any) string {
 	return shared.FirstNonEmpty(
-		textField(payload, "auth_code_context"),
-		textField(payload, "authCodeContext"),
-		textField(payload, "code_entrypoint"),
+		shared.TextField(payload, "auth_code_context"),
+		shared.TextField(payload, "authCodeContext"),
+		shared.TextField(payload, "code_entrypoint"),
 	)
 }
 
 func registrationMethodFromPayload(payload map[string]any) waappv1.VerificationDeliveryMethod {
 	method := verificationMethodFromName(shared.FirstNonEmpty(
-		textField(payload, "delivery_method"),
-		textField(payload, "verification_method"),
-		textField(payload, "method"),
+		shared.TextField(payload, "delivery_method"),
+		shared.TextField(payload, "verification_method"),
+		shared.TextField(payload, "method"),
 	))
 	if method == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_UNSPECIFIED {
 		return waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS
@@ -306,7 +306,7 @@ func (g *actionGateway) requestVerificationCodeWithFallback(ctx context.Context,
 			"wa_registration_method_fallback from=%s to=%s reason=%s",
 			registrationMethodName(current, ""),
 			registrationMethodName(next, ""),
-			probeLogValue(result.RawReason),
+			shared.ProbeLogValue(result.RawReason),
 		)
 		current = next
 	}
@@ -403,7 +403,7 @@ func registrationRequestFailureMap(result wacore.EngineCodeResult, method waappv
 		},
 		"phone_status": registrationCodeResultPhoneStatus(result, method, true),
 	}
-	phoneStatus := objectField(response, "phone_status")
+	phoneStatus := shared.ObjectField(response, "phone_status")
 	phoneStatus["account_flow"] = accountFlow
 	phoneStatus["account_error"] = protoErr.GetMessage()
 	phoneStatus["blocked"] = accountFlow == accountProbeFlowBlocked
@@ -581,23 +581,23 @@ func (g *actionGateway) discardRejectedRegistration(ctx context.Context, basePay
 	if boolField(result, "success") {
 		return nil
 	}
-	return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, shared.FirstNonEmpty(textField(result, "error_message"), "discard rejected WA registration failed"), false)
+	return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, shared.FirstNonEmpty(shared.TextField(result, "error_message"), "discard rejected WA registration failed"), false)
 }
 
 func rejectedRegistrationResult(basePayload map[string]any, requested map[string]any) map[string]any {
-	errorMessage := shared.FirstNonEmpty(textField(requested, "error_message"), textField(objectField(requested, "error"), "message"), "WA registration request was rejected")
+	errorMessage := shared.FirstNonEmpty(shared.TextField(requested, "error_message"), shared.TextField(shared.ObjectField(requested, "error"), "message"), "WA registration request was rejected")
 	response := map[string]any{
 		"success":                 false,
-		"status":                  shared.FirstNonEmpty(textField(requested, "status"), "OTP_REQUEST_REJECTED"),
-		"error":                   objectField(requested, "error"),
+		"status":                  shared.FirstNonEmpty(shared.TextField(requested, "status"), "OTP_REQUEST_REJECTED"),
+		"error":                   shared.ObjectField(requested, "error"),
 		"error_message":           errorMessage,
 		"reject_reason":           registrationRejectReason(errorMessage),
-		"phone":                   objectField(basePayload, "phone"),
-		"registration_phase":      shared.FirstNonEmpty(textField(requested, "registration_phase"), "OTP_REQUEST_REJECTED"),
+		"phone":                   shared.ObjectField(basePayload, "phone"),
+		"registration_phase":      shared.FirstNonEmpty(shared.TextField(requested, "registration_phase"), "OTP_REQUEST_REJECTED"),
 		"fingerprint_persistence": "DISCARDED",
 		"persisted":               false,
-		"phone_status":            objectField(requested, "phone_status"),
-		"proxy":                   registrationOrchestratorProxySummary(objectField(requested, "proxy")),
+		"phone_status":            shared.ObjectField(requested, "phone_status"),
+		"proxy":                   registrationOrchestratorProxySummary(shared.ObjectField(requested, "proxy")),
 	}
 	if seconds := numberField(requested, "retry_after_seconds"); seconds > 0 {
 		response["retry_after_seconds"] = seconds
@@ -632,7 +632,7 @@ func registrationRejectReason(errorMessage string) string {
 }
 
 func registrationOrchestratorProxySummary(proxy map[string]any) map[string]any {
-	mode := shared.FirstNonEmpty(textField(proxy, "proxy_mode"), "DIRECT")
-	countryCode := shared.FirstNonEmpty(textField(proxy, "country_code"), "LOCAL")
+	mode := shared.FirstNonEmpty(shared.TextField(proxy, "proxy_mode"), "DIRECT")
+	countryCode := shared.FirstNonEmpty(shared.TextField(proxy, "country_code"), "LOCAL")
 	return map[string]any{"proxy_mode": mode, "country_code": countryCode}
 }

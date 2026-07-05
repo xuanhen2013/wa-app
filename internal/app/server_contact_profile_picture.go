@@ -308,10 +308,10 @@ func IsWAContactProfilePictureNotFound(err error) bool {
 func logWAProfilePictureError(scope string, err error) {
 	var appErr *shared.AppError
 	if errors.As(err, &appErr) {
-		log.Printf("WA %s profile picture fetch failed code=%s retryable=%t", safeProxyLogToken(scope, "profile"), appErr.Code.String(), appErr.Retryable)
+		log.Printf("WA %s profile picture fetch failed code=%s retryable=%t", shared.SafeProxyLogToken(scope, "profile"), appErr.Code.String(), appErr.Retryable)
 		return
 	}
-	log.Printf("WA %s profile picture fetch failed code=%s retryable=false reason=%s", safeProxyLogToken(scope, "profile"), waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL.String(), contactProfilePictureFailureReason(err))
+	log.Printf("WA %s profile picture fetch failed code=%s retryable=false reason=%s", shared.SafeProxyLogToken(scope, "profile"), waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL.String(), contactProfilePictureFailureReason(err))
 }
 
 func contactProfilePictureFailureReason(err error) string {
@@ -343,7 +343,7 @@ func contactProfilePictureFailureReason(err error) string {
 	}
 	reason := chatdFailureReason(text)
 	if reason != "" && reason != "chatd_failed" {
-		return safeProxyLogToken(reason, "chatd_failed")
+		return shared.SafeProxyLogToken(reason, "chatd_failed")
 	}
 	return "unexpected_failure"
 }

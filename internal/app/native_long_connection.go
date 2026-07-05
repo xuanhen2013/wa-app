@@ -489,7 +489,7 @@ func longConnectionProxySessionFallbackReason(err error) string {
 }
 
 func logLongConnectionProxySessionFallback(reason string) {
-	reason = safeProxyLogToken(reason, "session_failed")
+	reason = shared.SafeProxyLogToken(reason, "session_failed")
 	if !longConnectionProxySessionFallbackLogs.allow("wa_long_connection_session", reason, time.Now().UTC()) {
 		return
 	}
