@@ -92,6 +92,13 @@ func newServerFacade(core *serverCore) *Server {
 	return server
 }
 
+// Clock, IDs, Store and Runner expose the core dependencies the long-connection
+// manager needs through the LongConnectionHost port (see long_connection.go).
+func (s *serverCore) Clock() shared.Clock           { return s.clock }
+func (s *serverCore) IDs() shared.IDGenerator       { return s.ids }
+func (s *serverCore) Store() store.Store            { return s.store }
+func (s *serverCore) Runner() wacore.ProtocolEngine { return s.runner }
+
 func NewServer(store store.Store, runtime runtime.RuntimeState, runner wacore.ProtocolEngine, clock shared.Clock, ids shared.IDGenerator) *Server {
 	if clock == nil {
 		clock = shared.SystemClock{}

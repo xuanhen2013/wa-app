@@ -11,6 +11,7 @@ import (
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/engine"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/store"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 	"google.golang.org/protobuf/proto"
@@ -28,8 +29,27 @@ const (
 	longConnectionReconcileInterval    = 5 * time.Minute
 )
 
+// LongConnectionHost is the narrow surface the long-connection manager needs from
+// the service, so the manager depends on this port rather than the concrete
+// *Server (breaks the Server<->manager reference cycle).
+type LongConnectionHost interface {
+	OpenMessageSession(ctx context.Context, req *waappv1.OpenMessageSessionRequest) (*waappv1.OpenMessageSessionResponse, error)
+	CloseMessageSession(ctx context.Context, req *waappv1.CloseMessageSessionRequest) (*waappv1.CloseMessageSessionResponse, error)
+	checkLoginState(ctx context.Context, req *waappv1.CheckLoginStateRequest, runner wacore.ProtocolEngine) (*waappv1.CheckLoginStateResponse, error)
+	decryptMessage(ctx context.Context, req *waappv1.DecryptMessageRequest, runner wacore.ProtocolEngine, otpSource waappv1.WaOtpSource) (*waappv1.DecryptMessageResponse, error)
+	getWAAccount(ctx context.Context, accountID string) (*waappv1.WAAccount, error)
+	longConnectionRunner(ctx context.Context, loginState *waappv1.LoginState, session *waappv1.MessageSession) (wacore.ProtocolEngine, error)
+	markLoginTransferredOut(ctx context.Context, loginState *waappv1.LoginState, cause error)
+	receiveMessageBatch(ctx context.Context, req *waappv1.ReceiveMessageBatchRequest, runner wacore.ProtocolEngine) (*waappv1.ReceiveMessageBatchResponse, error)
+	saveWAAccount(ctx context.Context, account *waappv1.WAAccount) (*waappv1.WAAccount, error)
+	Clock() shared.Clock
+	IDs() shared.IDGenerator
+	Store() store.Store
+	Runner() wacore.ProtocolEngine
+}
+
 type LongConnectionManager struct {
-	server *Server
+	host LongConnectionHost
 
 	mu      sync.Mutex
 	rootCtx context.Context
@@ -49,12 +69,12 @@ type longConnectionStopItem struct {
 	runner wacore.ProtocolEngine
 }
 
-func NewLongConnectionManager(server *Server) *LongConnectionManager {
-	return &LongConnectionManager{server: server, entries: map[string]*longConnectionEntry{}}
+func NewLongConnectionManager(host LongConnectionHost) *LongConnectionManager {
+	return &LongConnectionManager{host: host, entries: map[string]*longConnectionEntry{}}
 }
 
 func (m *LongConnectionManager) Run(ctx context.Context) error {
-	if m == nil || m.server == nil {
+	if m == nil || m.host == nil {
 		return nil
 	}
 	rootCtx, cancel := context.WithCancel(ctx)
@@ -99,7 +119,7 @@ func (m *LongConnectionManager) Ensure(ctx context.Context, loginState *waappv1.
 		RegisteredIdentityId: loginState.GetRegisteredIdentityId(),
 		Status:               waappv1.LongConnectionStatus_LONG_CONNECTION_STATUS_STARTING,
 		HeartbeatSupported:   true,
-		StartedAt:            timestamppb.New(m.server.clock.Now()),
+		StartedAt:            timestamppb.New(m.host.Clock().Now()),
 	}
 	m.entries[key] = &longConnectionEntry{cancel: cancel, snapshot: snapshot}
 	m.mu.Unlock()
@@ -198,7 +218,7 @@ func (m *LongConnectionManager) clearRunner(key string) {
 }
 
 func (m *LongConnectionManager) restore(ctx context.Context) error {
-	records, err := m.server.store.ListActiveLoginStates(ctx)
+	records, err := m.host.Store().ListActiveLoginStates(ctx)
 	if err != nil {
 		return err
 	}
@@ -216,7 +236,7 @@ func (m *LongConnectionManager) restore(ctx context.Context) error {
 // 使「已转出」在进程重启后仍持续展示。这些 entry 不持有连接(cancel/runner 为空),
 // 也不会被 restore 的 active 循环或 Ensure 拉起(只拉 ACTIVE 登录态)。
 func (m *LongConnectionManager) seedRevoked(ctx context.Context) {
-	records, err := m.server.store.ListRevokedLoginStates(ctx)
+	records, err := m.host.Store().ListRevokedLoginStates(ctx)
 	if err != nil {
 		log.Printf("WA long connection restore revoked failed: %v", shared.SanitizeLogError(err))
 		return
@@ -242,20 +262,20 @@ func loginRevokedByReplaced(loginState *waappv1.LoginState) bool {
 
 // reactivateFalselyRevoked 自愈被 replaced 误判转出的账号:登录态与账号状态重置为 ACTIVE 并重新上线。
 func (m *LongConnectionManager) reactivateFalselyRevoked(ctx context.Context, loginState *waappv1.LoginState) {
-	now := m.server.clock.Now()
+	now := m.host.Clock().Now()
 	loginState.Status = waappv1.LoginStateStatus_LOGIN_STATE_STATUS_ACTIVE
 	loginState.LastError = nil
 	if loginState.Audit == nil {
 		loginState.Audit = &waappv1.AuditStamp{CreatedAt: timestamppb.New(now)}
 	}
 	loginState.Audit.UpdatedAt = timestamppb.New(now)
-	if err := m.server.store.SaveLoginState(ctx, loginState, "native-db:"+loginState.GetClientProfileId()); err != nil {
+	if err := m.host.Store().SaveLoginState(ctx, loginState, "native-db:"+loginState.GetClientProfileId()); err != nil {
 		log.Printf("WA long connection reactivate (replaced) persist failed: registered_identity=%s error=%v", loginState.GetRegisteredIdentityId(), shared.SanitizeLogError(err))
 		return
 	}
-	if account, err := m.server.getWAAccount(ctx, loginState.GetWaAccountId()); err == nil && account != nil &&
+	if account, err := m.host.getWAAccount(ctx, loginState.GetWaAccountId()); err == nil && account != nil &&
 		wamodel.WAAccountStatus(account) == waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_TRANSFERRED_OUT {
-		_, _ = m.server.saveWAAccount(ctx, withWAAccountStatus(account, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_ACTIVE, now))
+		_, _ = m.host.saveWAAccount(ctx, withWAAccountStatus(account, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_ACTIVE, now))
 	}
 	log.Printf("WA long connection reactivated falsely-revoked account (replaced): registered_identity=%s", loginState.GetRegisteredIdentityId())
 	m.Ensure(ctx, loginState)
@@ -305,10 +325,10 @@ func (m *LongConnectionManager) cleanupStaleMessageSessions(ctx context.Context)
 }
 
 func (m *LongConnectionManager) closeStaleMessageSessions(ctx context.Context) {
-	if m == nil || m.server == nil || m.server.store == nil {
+	if m == nil || m.host == nil || m.host.Store() == nil {
 		return
 	}
-	closed, err := m.server.store.CloseStaleOpenMessageSessions(ctx, m.server.clock.Now().Add(-staleMessageSessionTTL))
+	closed, err := m.host.Store().CloseStaleOpenMessageSessions(ctx, m.host.Clock().Now().Add(-staleMessageSessionTTL))
 	if err != nil {
 		log.Printf("WA stale message session cleanup failed: %v", shared.SanitizeLogError(err))
 		return
@@ -335,10 +355,10 @@ func (m *LongConnectionManager) reconcileLoop(ctx context.Context) {
 // 让登录态与对外展示和服务端实况一致:能恢复的(探测 ACTIVE)重新拉起长连接;已被服务端拒登的标记登录态
 // INVALID(前端据此显示离线)。只探测无活跃连接的号,绝不在长连接存活/重连时另开连接,避免自我 replaced。
 func (m *LongConnectionManager) reconcileStoppedAccounts(ctx context.Context) {
-	if m == nil || m.server == nil {
+	if m == nil || m.host == nil {
 		return
 	}
-	records, err := m.server.store.ListActiveLoginStates(ctx)
+	records, err := m.host.Store().ListActiveLoginStates(ctx)
 	if err != nil {
 		log.Printf("WA long connection reconcile list failed: %v", shared.SanitizeLogError(err))
 		return
@@ -352,10 +372,10 @@ func (m *LongConnectionManager) reconcileStoppedAccounts(ctx context.Context) {
 			continue
 		}
 		req := &waappv1.CheckLoginStateRequest{
-			Context:      &waappv1.RequestContext{RequestId: m.server.ids.NewID("wa-reconcile_"), CorrelationId: loginState.GetLoginStateId()},
+			Context:      &waappv1.RequestContext{RequestId: m.host.IDs().NewID("wa-reconcile_"), CorrelationId: loginState.GetLoginStateId()},
 			LoginStateId: loginState.GetLoginStateId(),
 		}
-		if _, err := m.server.checkLoginState(ctx, req, m.server.runner); err != nil {
+		if _, err := m.host.checkLoginState(ctx, req, m.host.Runner()); err != nil {
 			log.Printf("WA long connection reconcile check failed: registered_identity=%s error=%v", loginState.GetRegisteredIdentityId(), shared.SanitizeLogError(err))
 		}
 	}
@@ -407,14 +427,14 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, loginState *waappv
 			snapshot.MessageSessionId = session.GetMessageSessionId()
 			snapshot.LastError = nil
 		})
-		runner, err := m.server.longConnectionRunner(connectionCtx, loginState, session)
+		runner, err := m.host.longConnectionRunner(connectionCtx, loginState, session)
 		if err != nil {
 			stopConnection()
 			if ctx.Err() != nil {
 				return
 			}
 			m.recordLoopError(key, reconnects, err)
-			_, _ = m.server.CloseMessageSession(context.WithoutCancel(ctx), &waappv1.CloseMessageSessionRequest{Context: &waappv1.RequestContext{}, MessageSessionId: session.GetMessageSessionId(), Reason: "long connection runner unavailable"})
+			_, _ = m.host.CloseMessageSession(context.WithoutCancel(ctx), &waappv1.CloseMessageSessionRequest{Context: &waappv1.RequestContext{}, MessageSessionId: session.GetMessageSessionId(), Reason: "long connection runner unavailable"})
 			if longConnectionTerminalError(err) || engine.IsAccountTakeoverError(err) {
 				m.persistIfAccountTakeover(ctx, loginState, err)
 				return
@@ -432,7 +452,7 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, loginState *waappv
 		terminal := false
 		var lastErr error
 		for connectionCtx.Err() == nil {
-			resp, err := m.server.receiveMessageBatch(connectionCtx, &waappv1.ReceiveMessageBatchRequest{Context: &waappv1.RequestContext{RequestId: m.server.ids.NewID("wa-rx_"), CorrelationId: loginState.GetLoginStateId()}, MessageSessionId: session.GetMessageSessionId(), MaxMessages: 10, WaitTimeout: durationpb.New(longConnectionWaitTimeout)}, runner)
+			resp, err := m.host.receiveMessageBatch(connectionCtx, &waappv1.ReceiveMessageBatchRequest{Context: &waappv1.RequestContext{RequestId: m.host.IDs().NewID("wa-rx_"), CorrelationId: loginState.GetLoginStateId()}, MessageSessionId: session.GetMessageSessionId(), MaxMessages: 10, WaitTimeout: durationpb.New(longConnectionWaitTimeout)}, runner)
 			if err != nil {
 				if ctx.Err() != nil {
 					break
@@ -449,7 +469,7 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, loginState *waappv
 				terminal = longConnectionTerminalError(respErr) || engine.IsAccountTakeoverError(respErr)
 				break
 			}
-			now := m.server.clock.Now()
+			now := m.host.Clock().Now()
 			messages := resp.GetMessages()
 			m.update(key, func(snapshot *waappv1.LongConnectionState) {
 				if snapshot.GetStatus() != waappv1.LongConnectionStatus_LONG_CONNECTION_STATUS_CONNECTED && snapshot.GetStatus() != waappv1.LongConnectionStatus_LONG_CONNECTION_STATUS_HEARTBEAT_WAITING {
@@ -476,7 +496,7 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, loginState *waappv
 		m.clearRunner(key)
 		closeLongConnectionRunner(runner)
 		if terminal {
-			_, _ = m.server.CloseMessageSession(context.WithoutCancel(ctx), &waappv1.CloseMessageSessionRequest{Context: &waappv1.RequestContext{}, MessageSessionId: session.GetMessageSessionId(), Reason: "long connection account terminal"})
+			_, _ = m.host.CloseMessageSession(context.WithoutCancel(ctx), &waappv1.CloseMessageSessionRequest{Context: &waappv1.RequestContext{}, MessageSessionId: session.GetMessageSessionId(), Reason: "long connection account terminal"})
 			m.persistIfAccountTakeover(ctx, loginState, lastErr)
 			return
 		}
@@ -484,7 +504,7 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, loginState *waappv
 			backoff = nextBackoff(backoff)
 		}
 		reconnects++
-		_, _ = m.server.CloseMessageSession(context.WithoutCancel(ctx), &waappv1.CloseMessageSessionRequest{Context: &waappv1.RequestContext{}, MessageSessionId: session.GetMessageSessionId(), Reason: "long connection reconnect"})
+		_, _ = m.host.CloseMessageSession(context.WithoutCancel(ctx), &waappv1.CloseMessageSessionRequest{Context: &waappv1.RequestContext{}, MessageSessionId: session.GetMessageSessionId(), Reason: "long connection reconnect"})
 		if !shared.SleepContext(ctx, backoff) {
 			return
 		}
@@ -520,13 +540,13 @@ func longConnectionTerminalError(err error) bool {
 // 复用 device_logout 的"已转出"终态语义(重启后 restore 只拉 ACTIVE,不再被拉起)。
 func (m *LongConnectionManager) persistIfAccountTakeover(ctx context.Context, loginState *waappv1.LoginState, err error) {
 	if engine.IsAccountTakeoverError(err) {
-		m.server.markLoginTransferredOut(context.WithoutCancel(ctx), loginState, err)
+		m.host.markLoginTransferredOut(context.WithoutCancel(ctx), loginState, err)
 	}
 }
 
 func (m *LongConnectionManager) openSession(ctx context.Context, loginState *waappv1.LoginState) (*waappv1.MessageSession, error) {
-	resp, err := m.server.OpenMessageSession(ctx, &waappv1.OpenMessageSessionRequest{
-		Context:              &waappv1.RequestContext{RequestId: m.server.ids.NewID("wa-open_"), CorrelationId: loginState.GetLoginStateId()},
+	resp, err := m.host.OpenMessageSession(ctx, &waappv1.OpenMessageSessionRequest{
+		Context:              &waappv1.RequestContext{RequestId: m.host.IDs().NewID("wa-open_"), CorrelationId: loginState.GetLoginStateId()},
 		WaAccountId:          loginState.GetWaAccountId(),
 		ClientProfileId:      loginState.GetClientProfileId(),
 		RegisteredIdentityId: loginState.GetRegisteredIdentityId(),
@@ -541,7 +561,7 @@ func (m *LongConnectionManager) openSession(ctx context.Context, loginState *waa
 }
 
 func (m *LongConnectionManager) decryptPendingMessages(ctx context.Context, session *waappv1.MessageSession, runner wacore.ProtocolEngine) {
-	messages, err := m.server.store.ListPendingEncryptedInboundMessages(ctx, session.GetWaAccountId(), session.GetClientProfileId(), longConnectionDecryptLimit)
+	messages, err := m.host.Store().ListPendingEncryptedInboundMessages(ctx, session.GetWaAccountId(), session.GetClientProfileId(), longConnectionDecryptLimit)
 	if err != nil {
 		log.Printf("WA long connection pending decrypt load failed: %v", shared.SanitizeLogError(err))
 		return
@@ -558,7 +578,7 @@ func (m *LongConnectionManager) decryptReceivedMessages(ctx context.Context, ses
 		if msg.GetEncryptionState() == waappv1.MessageEncryptionState_MESSAGE_ENCRYPTION_STATE_PLAINTEXT && !strings.HasPrefix(msg.GetPayloadRef(), "plaintext:") {
 			continue
 		}
-		resp, err := m.server.decryptMessage(ctx, &waappv1.DecryptMessageRequest{Context: &waappv1.RequestContext{RequestId: m.server.ids.NewID("wa-dec_"), CorrelationId: session.GetRegisteredIdentityId()}, MessageId: msg.GetMessageId(), SessionCommitPolicy: waappv1.SessionCommitPolicy_SESSION_COMMIT_POLICY_COMMIT_LEARNED_STATE, IncludeSensitivePlaintext: true}, runner, waappv1.WaOtpSource_WA_OTP_SOURCE_LONG_CONNECTION)
+		resp, err := m.host.decryptMessage(ctx, &waappv1.DecryptMessageRequest{Context: &waappv1.RequestContext{RequestId: m.host.IDs().NewID("wa-dec_"), CorrelationId: session.GetRegisteredIdentityId()}, MessageId: msg.GetMessageId(), SessionCommitPolicy: waappv1.SessionCommitPolicy_SESSION_COMMIT_POLICY_COMMIT_LEARNED_STATE, IncludeSensitivePlaintext: true}, runner, waappv1.WaOtpSource_WA_OTP_SOURCE_LONG_CONNECTION)
 		if err != nil && !errors.Is(err, context.Canceled) {
 			log.Printf("WA long connection decrypt failed: message_id=%s error=%v", msg.GetMessageId(), shared.SanitizeLogError(err))
 		}
