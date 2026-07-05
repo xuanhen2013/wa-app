@@ -1,9 +1,13 @@
 package app
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+)
 
 func sqliteInClause(expression string, values []string) (string, []any) {
-	values = uniqueNonEmptyStrings(values...)
+	values = shared.UniqueNonEmptyStrings(values...)
 	if len(values) == 0 {
 		return "1=0", nil
 	}

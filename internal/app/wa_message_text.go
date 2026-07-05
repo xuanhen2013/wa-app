@@ -422,7 +422,7 @@ func waCompositeTextField(path []protowire.Number, raw []byte) (string, int, boo
 }
 
 func waProductDisplayText(raw []byte) string {
-	parts := uniqueNonEmptyStrings(
+	parts := shared.UniqueNonEmptyStrings(
 		waHumanStringAtPath(raw, 1, 3),
 		waHumanStringAtPath(raw, 5),
 		waHumanStringAtPath(raw, 1, 4),
@@ -438,7 +438,7 @@ func waProductDisplayText(raw []byte) string {
 }
 
 func waExtendedTextDisplayText(raw []byte) string {
-	parts := uniqueNonEmptyStrings(
+	parts := shared.UniqueNonEmptyStrings(
 		waHumanStringAtPath(raw, 1),
 		waHumanStringAtPath(raw, 6),
 		waHumanStringAtPath(raw, 5),
@@ -460,7 +460,7 @@ func waHighlyStructuredDisplayText(raw []byte) string {
 	if len(parts) == 0 {
 		parts = append(parts, templateName)
 	}
-	return withWAPrefix("模板", strings.Join(uniqueNonEmptyStrings(parts...), "\n"))
+	return withWAPrefix("模板", strings.Join(shared.UniqueNonEmptyStrings(parts...), "\n"))
 }
 
 func waProtocolMessageDisplayText(raw []byte) string {
@@ -480,7 +480,7 @@ func waProtocolMessageDisplayText(raw []byte) string {
 }
 
 func waTemplateDisplayText(raw []byte) string {
-	parts := uniqueNonEmptyStrings(
+	parts := shared.UniqueNonEmptyStrings(
 		waHumanStringAtPath(raw, 4, 6),
 		waHumanStringAtPath(raw, 4, 2),
 		waHumanStringAtPath(raw, 4, 7),
@@ -503,21 +503,21 @@ func waTemplateDisplayText(raw []byte) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return withWAPrefix("模板", strings.Join(uniqueNonEmptyStrings(parts...), "\n"))
+	return withWAPrefix("模板", strings.Join(shared.UniqueNonEmptyStrings(parts...), "\n"))
 }
 
 func waHydratedTemplateParts(raw []byte) []string {
-	parts := uniqueNonEmptyStrings(waHumanStringAtPath(raw, 6), waHumanStringAtPath(raw, 2), waHumanStringAtPath(raw, 7))
+	parts := shared.UniqueNonEmptyStrings(waHumanStringAtPath(raw, 6), waHumanStringAtPath(raw, 2), waHumanStringAtPath(raw, 7))
 	for _, button := range waBytesValuesAtPath(raw, 8) {
 		if text := waButtonDisplayText(button); text != "" {
 			parts = append(parts, "• "+text)
 		}
 	}
-	return uniqueNonEmptyStrings(parts...)
+	return shared.UniqueNonEmptyStrings(parts...)
 }
 
 func waContactDisplayText(raw []byte) string {
-	parts := uniqueNonEmptyStrings(waHumanStringAtPath(raw, 1), waVCardPhone(waStringAtPath(raw, 16)))
+	parts := shared.UniqueNonEmptyStrings(waHumanStringAtPath(raw, 1), waVCardPhone(waStringAtPath(raw, 16)))
 	if len(parts) == 0 {
 		return ""
 	}
@@ -525,7 +525,7 @@ func waContactDisplayText(raw []byte) string {
 }
 
 func waContactsArrayDisplayText(raw []byte) string {
-	parts := uniqueNonEmptyStrings(waHumanStringAtPath(raw, 1))
+	parts := shared.UniqueNonEmptyStrings(waHumanStringAtPath(raw, 1))
 	for _, contact := range waBytesValuesAtPath(raw, 2) {
 		if text := strings.TrimPrefix(waContactDisplayText(contact), "[联系人] "); text != "" {
 			parts = append(parts, text)
@@ -534,11 +534,11 @@ func waContactsArrayDisplayText(raw []byte) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return withWAPrefix("联系人", strings.Join(uniqueNonEmptyStrings(parts...), "\n"))
+	return withWAPrefix("联系人", strings.Join(shared.UniqueNonEmptyStrings(parts...), "\n"))
 }
 
 func waLocationDisplayText(label string, raw []byte) string {
-	parts := uniqueNonEmptyStrings(
+	parts := shared.UniqueNonEmptyStrings(
 		waHumanStringAtPath(raw, 3),
 		waHumanStringAtPath(raw, 4),
 		waHumanStringAtPath(raw, 11),
@@ -552,7 +552,7 @@ func waLocationDisplayText(label string, raw []byte) string {
 }
 
 func waListDisplayText(raw []byte) string {
-	parts := uniqueNonEmptyStrings(waHumanStringAtPath(raw, 1), waHumanStringAtPath(raw, 2), waHumanStringAtPath(raw, 3), waHumanStringAtPath(raw, 7))
+	parts := shared.UniqueNonEmptyStrings(waHumanStringAtPath(raw, 1), waHumanStringAtPath(raw, 2), waHumanStringAtPath(raw, 3), waHumanStringAtPath(raw, 7))
 	if len(parts) == 0 {
 		return ""
 	}
@@ -560,7 +560,7 @@ func waListDisplayText(raw []byte) string {
 }
 
 func waListResponseDisplayText(raw []byte) string {
-	parts := uniqueNonEmptyStrings(waHumanStringAtPath(raw, 1), waHumanStringAtPath(raw, 5), waHumanStringAtPath(raw, 3, 2), waHumanStringAtPath(raw, 3, 3), waHumanStringAtPath(raw, 3, 1))
+	parts := shared.UniqueNonEmptyStrings(waHumanStringAtPath(raw, 1), waHumanStringAtPath(raw, 5), waHumanStringAtPath(raw, 3, 2), waHumanStringAtPath(raw, 3, 3), waHumanStringAtPath(raw, 3, 1))
 	if len(parts) == 0 {
 		return ""
 	}
@@ -568,7 +568,7 @@ func waListResponseDisplayText(raw []byte) string {
 }
 
 func waButtonsDisplayText(raw []byte) string {
-	parts := uniqueNonEmptyStrings(waHumanStringAtPath(raw, 1), waHumanStringAtPath(raw, 6), waHumanStringAtPath(raw, 7))
+	parts := shared.UniqueNonEmptyStrings(waHumanStringAtPath(raw, 1), waHumanStringAtPath(raw, 6), waHumanStringAtPath(raw, 7))
 	for _, button := range waBytesValuesAtPath(raw, 9) {
 		if text := waButtonDisplayText(button); text != "" {
 			parts = append(parts, "• "+text)
@@ -577,7 +577,7 @@ func waButtonsDisplayText(raw []byte) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return withWAPrefix("按钮", strings.Join(uniqueNonEmptyStrings(parts...), "\n"))
+	return withWAPrefix("按钮", strings.Join(shared.UniqueNonEmptyStrings(parts...), "\n"))
 }
 
 func waButtonDisplayText(raw []byte) string {
@@ -591,7 +591,7 @@ func waButtonDisplayText(raw []byte) string {
 }
 
 func waInteractiveDisplayText(raw []byte) string {
-	parts := uniqueNonEmptyStrings(
+	parts := shared.UniqueNonEmptyStrings(
 		waHumanStringAtPath(raw, 2, 1),
 		waHumanStringAtPath(raw, 1, 1),
 		waHumanStringAtPath(raw, 1, 2),
@@ -608,11 +608,11 @@ func waInteractiveDisplayText(raw []byte) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return withWAPrefix("互动", strings.Join(uniqueNonEmptyStrings(parts...), "\n"))
+	return withWAPrefix("互动", strings.Join(shared.UniqueNonEmptyStrings(parts...), "\n"))
 }
 
 func waInteractiveResponseDisplayText(raw []byte) string {
-	parts := uniqueNonEmptyStrings(waHumanStringAtPath(raw, 1, 1), waHumanStringAtPath(raw, 2, 1), waHumanStringAtPath(raw, 2, 2))
+	parts := shared.UniqueNonEmptyStrings(waHumanStringAtPath(raw, 1, 1), waHumanStringAtPath(raw, 2, 1), waHumanStringAtPath(raw, 2, 2))
 	if len(parts) == 0 {
 		return ""
 	}
@@ -620,15 +620,15 @@ func waInteractiveResponseDisplayText(raw []byte) string {
 }
 
 func waNativeFlowParts(raw []byte) []string {
-	parts := uniqueNonEmptyStrings(waHumanStringAtPath(raw, 6, 2))
+	parts := shared.UniqueNonEmptyStrings(waHumanStringAtPath(raw, 6, 2))
 	for _, button := range waBytesValuesAtPath(raw, 6, 1) {
-		parts = append(parts, uniqueNonEmptyStrings(waHumanStringAtPath(button, 1), waHumanStringAtPath(button, 2))...)
+		parts = append(parts, shared.UniqueNonEmptyStrings(waHumanStringAtPath(button, 1), waHumanStringAtPath(button, 2))...)
 	}
-	return uniqueNonEmptyStrings(parts...)
+	return shared.UniqueNonEmptyStrings(parts...)
 }
 
 func waPollDisplayText(raw []byte) string {
-	parts := uniqueNonEmptyStrings(waHumanStringAtPath(raw, 2))
+	parts := shared.UniqueNonEmptyStrings(waHumanStringAtPath(raw, 2))
 	for _, option := range waBytesValuesAtPath(raw, 3) {
 		if text := waHumanStringAtPath(option, 1); text != "" {
 			parts = append(parts, "• "+text)
@@ -637,11 +637,11 @@ func waPollDisplayText(raw []byte) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return withWAPrefix("投票", strings.Join(uniqueNonEmptyStrings(parts...), "\n"))
+	return withWAPrefix("投票", strings.Join(shared.UniqueNonEmptyStrings(parts...), "\n"))
 }
 
 func waOrderDisplayText(raw []byte) string {
-	parts := uniqueNonEmptyStrings(
+	parts := shared.UniqueNonEmptyStrings(
 		waHumanStringAtPath(raw, 7),
 		waHumanStringAtPath(raw, 6),
 		waOrderTotal(raw),
@@ -657,7 +657,7 @@ func waScheduledCallDisplayText(raw []byte) string {
 }
 
 func waEventDisplayText(raw []byte) string {
-	parts := uniqueNonEmptyStrings(
+	parts := shared.UniqueNonEmptyStrings(
 		waMessageStringAtPath(raw, 3),
 		waMessageStringAtPath(raw, 4),
 		waMessageStringAtPath(raw, 6),
@@ -668,7 +668,7 @@ func waEventDisplayText(raw []byte) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return withWAPrefix("活动", strings.Join(uniqueNonEmptyStrings(parts...), "\n"))
+	return withWAPrefix("活动", strings.Join(shared.UniqueNonEmptyStrings(parts...), "\n"))
 }
 
 func waEventInviteDisplayText(raw []byte) string {
@@ -697,7 +697,7 @@ func waPollAddOptionDisplayText(raw []byte) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return withWAPrefix("投票选项", strings.Join(uniqueNonEmptyStrings(parts...), "\n"))
+	return withWAPrefix("投票选项", strings.Join(shared.UniqueNonEmptyStrings(parts...), "\n"))
 }
 
 func waRichResponseDisplayText(raw []byte) string {
@@ -711,7 +711,7 @@ func waRichResponseDisplayText(raw []byte) string {
 	if len(parts) == 0 {
 		return ""
 	}
-	return withWAPrefix("富响应", strings.Join(uniqueNonEmptyStrings(parts...), "\n"))
+	return withWAPrefix("富响应", strings.Join(shared.UniqueNonEmptyStrings(parts...), "\n"))
 }
 
 func waMessageFieldsDisplayText(label string, raw []byte, paths ...[]protowire.Number) string {
@@ -724,7 +724,7 @@ func waMessageFieldsDisplayText(label string, raw []byte, paths ...[]protowire.N
 	if len(parts) == 0 {
 		return ""
 	}
-	return withWAPrefix(label, strings.Join(uniqueNonEmptyStrings(parts...), "\n"))
+	return withWAPrefix(label, strings.Join(shared.UniqueNonEmptyStrings(parts...), "\n"))
 }
 
 func waNestedMessageTextParts(raw []byte, depth int) []string {
@@ -737,7 +737,7 @@ func waNestedMessageTextParts(raw []byte, depth int) []string {
 	}
 	fields, ok := parseWAProtoFieldsWithLimit(raw, 64)
 	if !ok {
-		return uniqueNonEmptyStrings(parts...)
+		return shared.UniqueNonEmptyStrings(parts...)
 	}
 	for _, field := range fields {
 		if field.kind != protowire.BytesType {
@@ -748,7 +748,7 @@ func waNestedMessageTextParts(raw []byte, depth int) []string {
 		}
 		parts = append(parts, waNestedMessageTextParts(field.value, depth+1)...)
 	}
-	return uniqueNonEmptyStrings(parts...)
+	return shared.UniqueNonEmptyStrings(parts...)
 }
 
 func waProductPrice(raw []byte) string {
@@ -871,7 +871,7 @@ func waHighlyStructuredParams(raw []byte) []string {
 			params = append(params, text)
 		}
 	}
-	return uniqueNonEmptyStrings(params...)
+	return shared.UniqueNonEmptyStrings(params...)
 }
 
 func waTemplateParamDisplayText(raw []byte) string {
@@ -908,7 +908,7 @@ func waJSONDisplayText(text string) string {
 	if len(parts) == 0 {
 		parts = append(parts, waJSONNestedTextValues(payload, 0)...)
 	}
-	return strings.Join(uniqueNonEmptyStrings(parts...), "\n")
+	return strings.Join(shared.UniqueNonEmptyStrings(parts...), "\n")
 }
 
 func waJSONTextValue(value any) string {
@@ -950,18 +950,18 @@ func waJSONNestedTextValues(value any, depth int) []string {
 			}
 		}
 		if len(parts) > 0 {
-			return uniqueNonEmptyStrings(parts...)
+			return shared.UniqueNonEmptyStrings(parts...)
 		}
 		for _, child := range typed {
 			parts = append(parts, waJSONNestedTextValues(child, depth+1)...)
 		}
-		return uniqueNonEmptyStrings(parts...)
+		return shared.UniqueNonEmptyStrings(parts...)
 	case []any:
 		parts := []string{}
 		for _, child := range typed {
 			parts = append(parts, waJSONNestedTextValues(child, depth+1)...)
 		}
-		return uniqueNonEmptyStrings(parts...)
+		return shared.UniqueNonEmptyStrings(parts...)
 	default:
 		return nil
 	}
@@ -1403,21 +1403,4 @@ func isLikelyShortMachineFragment(text string) bool {
 		return false
 	}
 	return strings.ContainsAny(text, "|\\^~`")
-}
-
-func uniqueNonEmptyStrings(values ...string) []string {
-	out := []string{}
-	seen := map[string]struct{}{}
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		out = append(out, value)
-	}
-	return out
 }

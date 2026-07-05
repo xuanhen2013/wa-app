@@ -172,7 +172,7 @@ func encryptNativeTextSignalMessage(state *nativeState, contactJID string, text 
 }
 
 func exactSignalSession(sessions map[string]nativeSignalSession, contactJID string) (string, nativeSignalSession, bool) {
-	for _, candidate := range uniqueNonEmptyStrings(contactJID, normalizeWAJID(contactJID)) {
+	for _, candidate := range shared.UniqueNonEmptyStrings(contactJID, normalizeWAJID(contactJID)) {
 		key := signalSenderKey(candidate)
 		if session, ok := sessions[key]; ok {
 			return key, session, true

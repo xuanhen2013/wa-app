@@ -13,7 +13,7 @@ func (s *SQLiteStore) ListAccountMessages(ctx context.Context, waAccountIDValue 
 	if err != nil {
 		return nil, "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, err.Error(), false)
 	}
-	contactRefs = uniqueNonEmptyStrings(contactRefs...)
+	contactRefs = shared.UniqueNonEmptyStrings(contactRefs...)
 	if len(contactRefs) == 0 {
 		return nil, "", nil
 	}
@@ -44,7 +44,7 @@ func (s *SQLiteStore) ListAccountMessages(ctx context.Context, waAccountIDValue 
 }
 
 func (s *SQLiteStore) ListUnreadInboundMessagesByContactRefs(ctx context.Context, waAccountIDValue string, contactRefs []string, limit int) ([]*waappv1.InboundMessage, error) {
-	contactRefs = uniqueNonEmptyStrings(contactRefs...)
+	contactRefs = shared.UniqueNonEmptyStrings(contactRefs...)
 	if len(contactRefs) == 0 {
 		return nil, nil
 	}

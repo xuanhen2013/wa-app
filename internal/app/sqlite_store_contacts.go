@@ -117,7 +117,7 @@ func (s *SQLiteStore) ListWAContacts(ctx context.Context, waAccountIDValue strin
 }
 
 func (s *SQLiteStore) DeleteWAContact(ctx context.Context, waAccountIDValue string, refs []string, deletedAt time.Time) (DeleteWAContactResult, error) {
-	refs = uniqueNonEmptyStrings(refs...)
+	refs = shared.UniqueNonEmptyStrings(refs...)
 	if len(refs) == 0 {
 		return DeleteWAContactResult{}, nil
 	}

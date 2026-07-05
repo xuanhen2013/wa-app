@@ -676,7 +676,7 @@ func waContactMetadataRecordHint(raw []byte) waContactHint {
 	if !hasContactMetadataMarker {
 		return waContactHint{}
 	}
-	if personName := strings.Join(uniqueNonEmptyStrings(firstName, lastName), " "); personName != "" {
+	if personName := strings.Join(shared.UniqueNonEmptyStrings(firstName, lastName), " "); personName != "" {
 		hint.DisplayName = shared.FirstNonEmpty(hint.DisplayName, personName)
 	}
 	return hint.normalized()

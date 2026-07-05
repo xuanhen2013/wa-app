@@ -57,7 +57,7 @@ func knownWAContactAliasName(contact *waappv1.WAContact) string {
 	}
 	jid := normalizeWAJID(contact.GetJid())
 	number := shared.DigitsOnly(contact.GetNumber())
-	businessIDs := uniqueNonEmptyStrings(shared.DigitsOnly(contact.GetDisplayName()), shared.DigitsOnly(contact.GetWaName()), shared.DigitsOnly(contact.GetVerifiedName()))
+	businessIDs := shared.UniqueNonEmptyStrings(shared.DigitsOnly(contact.GetDisplayName()), shared.DigitsOnly(contact.GetWaName()), shared.DigitsOnly(contact.GetVerifiedName()))
 	for _, alias := range waKnownContactAliases {
 		if stringInSlice(jid, alias.JIDs) || stringInSlice(number, alias.Numbers) {
 			return alias.Name

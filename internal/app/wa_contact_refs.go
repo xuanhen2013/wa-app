@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 func contactActionRefs(contactRef string, contact *waappv1.WAContact) []string {
@@ -12,7 +13,7 @@ func contactActionRefs(contactRef string, contact *waappv1.WAContact) []string {
 		refs = append(refs, contact.GetContactId())
 		refs = append(refs, contactMessageRefs(contact)...)
 	}
-	return uniqueNonEmptyStrings(refs...)
+	return shared.UniqueNonEmptyStrings(refs...)
 }
 
 func contactMessageRefs(contact *waappv1.WAContact) []string {
@@ -21,7 +22,7 @@ func contactMessageRefs(contact *waappv1.WAContact) []string {
 	}
 	refs := contactRefVariants(contact.GetJid())
 	refs = append(refs, contactRefVariants(contact.GetNumber())...)
-	return uniqueNonEmptyStrings(refs...)
+	return shared.UniqueNonEmptyStrings(refs...)
 }
 
 func contactRefVariants(contactRef string) []string {
@@ -32,5 +33,5 @@ func contactRefVariants(contactRef string) []string {
 	} else if strings.Contains(numberRef, "@") {
 		numberRef = contactRef
 	}
-	return uniqueNonEmptyStrings(contactRef, numberRef, normalizeWAJID(numberRef))
+	return shared.UniqueNonEmptyStrings(contactRef, numberRef, normalizeWAJID(numberRef))
 }
