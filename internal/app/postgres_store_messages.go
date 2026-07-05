@@ -6,20 +6,21 @@ import (
 	"fmt"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/jackc/pgx/v5"
 )
 
 func (s *PostgresStore) ListAccountMessages(ctx context.Context, waAccountIDValue string, contactRefs []string, cursorValue string, limit int, includeSensitiveText bool) ([]*waappv1.AccountMessage, string, error) {
-	cursor, err := decodeKeysetCursor(cursorValue)
+	cursor, err := shared.DecodeKeysetCursor(cursorValue)
 	if err != nil {
-		return nil, "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, err.Error(), false)
+		return nil, "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, err.Error(), false)
 	}
 	contactRefs = uniqueNonEmptyStrings(contactRefs...)
 	if len(contactRefs) == 0 {
 		return nil, "", nil
 	}
-	limit = normalizePageLimit(limit)
-	rows, err := s.queryAccountMessagePage(ctx, waAccountIDValue, contactRefs, cursor, keysetLookaheadLimit(limit))
+	limit = shared.NormalizePageLimit(limit)
+	rows, err := s.queryAccountMessagePage(ctx, waAccountIDValue, contactRefs, cursor, shared.KeysetLookaheadLimit(limit))
 	if err != nil {
 		return nil, "", err
 	}
@@ -35,13 +36,13 @@ func (s *PostgresStore) ListAccountMessages(ctx context.Context, waAccountIDValu
 	if err := rows.Err(); err != nil {
 		return nil, "", err
 	}
-	items, nextCursor := newKeysetPage(items, limit, func(message *waappv1.AccountMessage) keysetCursor {
-		return keysetCursorValue(timeFromProto(message.GetReceivedAt()), message.GetAccountMessageId())
+	items, nextCursor := shared.NewKeysetPage(items, limit, func(message *waappv1.AccountMessage) shared.KeysetCursor {
+		return shared.KeysetCursorValue(timeFromProto(message.GetReceivedAt()), message.GetAccountMessageId())
 	})
 	return items, nextCursor, nil
 }
 
-func (s *PostgresStore) queryAccountMessagePage(ctx context.Context, waAccountIDValue string, contactRefs []string, cursor keysetCursor, limit int) (pgx.Rows, error) {
+func (s *PostgresStore) queryAccountMessagePage(ctx context.Context, waAccountIDValue string, contactRefs []string, cursor shared.KeysetCursor, limit int) (pgx.Rows, error) {
 	query := `SELECT m.message_id,ms.wa_account_id,m.message_session_id,m.kind,m.encryption_state,m.ack_status,m.direction,m.source,m.contact_ref,m.sender_ref,m.payload_ref,m.read_at,m.delete_status,m.deleted_at,COALESCE(d.plaintext_value,''),COALESCE(d.plaintext_redacted,''),COALESCE(d.plaintext_secret_ref,''),m.last_error_code,m.last_error_message,m.last_error_retryable,m.received_at
 FROM wa_inbound_messages m
 JOIN wa_message_sessions ms ON ms.message_session_id=m.message_session_id
@@ -58,7 +59,7 @@ WHERE ms.wa_account_id=$1
   AND COALESCE(m.delete_status,'MESSAGE_DELETE_STATUS_NOT_DELETED')<>'MESSAGE_DELETE_STATUS_DELETED_FOR_ME'`
 	args := []any{waAccountIDValue, waappv1.InboundMessageKind_INBOUND_MESSAGE_KIND_MESSAGE.String(), contactRefs}
 	nextArg := 4
-	if hasKeysetCursor(cursor) {
+	if shared.HasKeysetCursor(cursor) {
 		query += fmt.Sprintf(" AND (m.received_at, m.message_id) < ($%d, $%d)", nextArg, nextArg+1)
 		args = append(args, cursor.UpdatedAt, cursor.ID)
 		nextArg += 2

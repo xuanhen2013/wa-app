@@ -6,6 +6,8 @@ import (
 	"encoding/json"
 	"strconv"
 	"strings"
+
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 const (
@@ -172,7 +174,7 @@ func nativeRecaptchaStage(state nativeState, configs map[int]nativePreChatdABCon
 }
 
 func nativeRecaptchaInstallRoll(state nativeState) int {
-	seed := firstNonEmpty(state.Profile.ExpID, state.Profile.FDID, state.Profile.PhoneSHA256, state.AuthKey)
+	seed := shared.FirstNonEmpty(state.Profile.ExpID, state.Profile.FDID, state.Profile.PhoneSHA256, state.AuthKey)
 	sum := sha256.Sum256([]byte(seed))
 	return 1 + int(binary.BigEndian.Uint16(sum[:2])%1000)
 }

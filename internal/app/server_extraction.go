@@ -4,6 +4,7 @@ import (
 	"context"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 func (s *extractionHandler) DecryptMessage(ctx context.Context, req *waappv1.DecryptMessageRequest) (*waappv1.DecryptMessageResponse, error) {
@@ -11,28 +12,28 @@ func (s *extractionHandler) DecryptMessage(ctx context.Context, req *waappv1.Dec
 }
 
 func (s *serverCore) decryptMessage(ctx context.Context, req *waappv1.DecryptMessageRequest, runner ProtocolEngine, otpSource waappv1.WaOtpSource) (*waappv1.DecryptMessageResponse, error) {
-	if err := validateContext(req.GetContext()); err != nil {
-		return &waappv1.DecryptMessageResponse{Error: ToProtoError(err)}, nil
+	if err := shared.ValidateContext(req.GetContext()); err != nil {
+		return &waappv1.DecryptMessageResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	msg, err := s.store.GetInboundMessage(ctx, req.GetMessageId())
 	if err != nil {
-		return &waappv1.DecryptMessageResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.DecryptMessageResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	session, err := s.store.GetMessageSession(ctx, msg.GetMessageSessionId())
 	if err != nil {
-		return &waappv1.DecryptMessageResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.DecryptMessageResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	if runner == nil {
 		runner = s.runner
 	}
 	result := runner.DecryptMessage(ctx, EngineDecryptInput{MessageID: msg.GetMessageId(), MessageSessionID: msg.GetMessageSessionId(), ClientProfileID: session.GetClientProfileId(), PayloadRef: msg.GetPayloadRef(), SessionCommitPolicy: req.GetSessionCommitPolicy(), IncludePlaintextText: req.GetIncludeSensitivePlaintext()})
 	if result.Err != nil {
-		return &waappv1.DecryptMessageResponse{Error: ToProtoError(result.Err)}, nil
+		return &waappv1.DecryptMessageResponse{Error: shared.ToProtoError(result.Err)}, nil
 	}
 	if err := s.store.SaveDecryptedMessage(ctx, result.DecryptedMessage); err != nil {
-		return &waappv1.DecryptMessageResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.DecryptMessageResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	if contact := contactFromDecryptedMessage(session.GetWaAccountId(), msg, firstNonEmpty(result.DecryptedMessage.GetPlaintextText().GetValue(), result.DecryptedMessage.GetPlaintextText().GetRedactedValue()), s.clock.Now()); contact != nil {
+	if contact := contactFromDecryptedMessage(session.GetWaAccountId(), msg, shared.FirstNonEmpty(result.DecryptedMessage.GetPlaintextText().GetValue(), result.DecryptedMessage.GetPlaintextText().GetRedactedValue()), s.clock.Now()); contact != nil {
 		_ = s.store.SaveWAContacts(ctx, []*waappv1.WAContact{contact})
 	}
 	if contacts := contactsFromContactHints(session.GetWaAccountId(), msg, result.ContactHints, s.clock.Now()); len(contacts) > 0 {
@@ -48,51 +49,51 @@ func (s *serverCore) decryptMessage(ctx context.Context, req *waappv1.DecryptMes
 }
 
 func (s *extractionHandler) ExtractCandidates(ctx context.Context, req *waappv1.ExtractCandidatesRequest) (*waappv1.ExtractCandidatesResponse, error) {
-	if err := validateContext(req.GetContext()); err != nil {
-		return &waappv1.ExtractCandidatesResponse{Error: ToProtoError(err)}, nil
+	if err := shared.ValidateContext(req.GetContext()); err != nil {
+		return &waappv1.ExtractCandidatesResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	messageID := req.GetMessageId()
 	if messageID == "" {
 		decrypted, err := s.store.GetDecryptedMessage(ctx, req.GetDecryptedMessageId())
 		if err != nil {
-			return &waappv1.ExtractCandidatesResponse{Error: ToProtoError(err)}, nil
+			return &waappv1.ExtractCandidatesResponse{Error: shared.ToProtoError(err)}, nil
 		}
 		messageID = decrypted.GetMessageId()
 	}
 	msg, err := s.store.GetInboundMessage(ctx, messageID)
 	if err != nil {
-		return &waappv1.ExtractCandidatesResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.ExtractCandidatesResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	session, err := s.store.GetMessageSession(ctx, msg.GetMessageSessionId())
 	if err != nil {
-		return &waappv1.ExtractCandidatesResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.ExtractCandidatesResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	result := s.runner.DecryptMessage(ctx, EngineDecryptInput{MessageID: msg.GetMessageId(), MessageSessionID: msg.GetMessageSessionId(), ClientProfileID: session.GetClientProfileId(), PayloadRef: msg.GetPayloadRef(), SessionCommitPolicy: waappv1.SessionCommitPolicy_SESSION_COMMIT_POLICY_TRANSIENT, IncludePlaintextText: req.GetIncludeSensitiveValues()})
 	if result.Err != nil {
-		return &waappv1.ExtractCandidatesResponse{Error: ToProtoError(result.Err)}, nil
+		return &waappv1.ExtractCandidatesResponse{Error: shared.ToProtoError(result.Err)}, nil
 	}
 	candidates := filterCandidates(result.Candidates, req.GetCandidateKinds())
 	if err := s.store.SaveCandidates(ctx, candidates); err != nil {
-		return &waappv1.ExtractCandidatesResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.ExtractCandidatesResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	s.publishOTPCandidates(context.WithoutCancel(ctx), msg, session, candidates, waappv1.WaOtpSource_WA_OTP_SOURCE_AUTO_EXTRACTION)
 	return &waappv1.ExtractCandidatesResponse{Candidates: candidates}, nil
 }
 
 func (s *extractionHandler) ListAccountOtpMessages(ctx context.Context, req *waappv1.ListAccountOtpMessagesRequest) (*waappv1.ListAccountOtpMessagesResponse, error) {
-	if err := validateContext(req.GetContext()); err != nil {
-		return &waappv1.ListAccountOtpMessagesResponse{Error: ToProtoError(err)}, nil
+	if err := shared.ValidateContext(req.GetContext()); err != nil {
+		return &waappv1.ListAccountOtpMessagesResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	accountID, err := requireWAAccountID(req.GetWaAccountId())
 	if err != nil {
-		return &waappv1.ListAccountOtpMessagesResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.ListAccountOtpMessagesResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	if _, err := s.getWAAccount(ctx, accountID); err != nil {
-		return &waappv1.ListAccountOtpMessagesResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.ListAccountOtpMessagesResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	items, nextCursor, err := s.store.ListAccountOTPMessages(ctx, accountID, req.GetCursor(), int(req.GetLimit()), req.GetIncludeSensitiveValues())
 	if err != nil {
-		return &waappv1.ListAccountOtpMessagesResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.ListAccountOtpMessagesResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	return &waappv1.ListAccountOtpMessagesResponse{OtpMessages: items, NextCursor: nextCursor}, nil
 }

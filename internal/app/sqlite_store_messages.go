@@ -5,19 +5,20 @@ import (
 	"strings"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 func (s *SQLiteStore) ListAccountMessages(ctx context.Context, waAccountIDValue string, contactRefs []string, cursorValue string, limit int, includeSensitiveText bool) ([]*waappv1.AccountMessage, string, error) {
-	cursor, err := decodeKeysetCursor(cursorValue)
+	cursor, err := shared.DecodeKeysetCursor(cursorValue)
 	if err != nil {
-		return nil, "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, err.Error(), false)
+		return nil, "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, err.Error(), false)
 	}
 	contactRefs = uniqueNonEmptyStrings(contactRefs...)
 	if len(contactRefs) == 0 {
 		return nil, "", nil
 	}
-	limit = normalizePageLimit(limit)
-	rows, err := s.queryAccountMessages(ctx, waAccountIDValue, contactRefs, cursor, keysetLookaheadLimit(limit))
+	limit = shared.NormalizePageLimit(limit)
+	rows, err := s.queryAccountMessages(ctx, waAccountIDValue, contactRefs, cursor, shared.KeysetLookaheadLimit(limit))
 	if err != nil {
 		return nil, "", err
 	}
@@ -36,8 +37,8 @@ func (s *SQLiteStore) ListAccountMessages(ctx context.Context, waAccountIDValue 
 	if err := rows.Err(); err != nil {
 		return nil, "", err
 	}
-	items, nextCursor := newKeysetPage(items, limit, func(message *waappv1.AccountMessage) keysetCursor {
-		return keysetCursorValue(timeFromProto(message.GetReceivedAt()), message.GetAccountMessageId())
+	items, nextCursor := shared.NewKeysetPage(items, limit, func(message *waappv1.AccountMessage) shared.KeysetCursor {
+		return shared.KeysetCursorValue(timeFromProto(message.GetReceivedAt()), message.GetAccountMessageId())
 	})
 	return items, nextCursor, nil
 }
@@ -64,7 +65,7 @@ LIMIT ?`
 	return sqliteListPayloads(ctx, s.db, func() *waappv1.InboundMessage { return &waappv1.InboundMessage{} }, query, args...)
 }
 
-func (s *SQLiteStore) queryAccountMessages(ctx context.Context, waAccountIDValue string, contactRefs []string, cursor keysetCursor, limit int) (sqlRows, error) {
+func (s *SQLiteStore) queryAccountMessages(ctx context.Context, waAccountIDValue string, contactRefs []string, cursor shared.KeysetCursor, limit int) (sqlRows, error) {
 	query := `SELECT m.payload, COALESCE((
   SELECT d.payload
   FROM wa_sqlite_decrypted_messages d
@@ -79,7 +80,7 @@ WHERE s.wa_account_id=? AND json_extract(m.payload, '$.kind')=? AND COALESCE(jso
 	inClause, inArgs := sqliteInClause("COALESCE(NULLIF(json_extract(m.payload, '$.contact_ref'), ''), json_extract(m.payload, '$.sender_ref'))", contactRefs)
 	query += ` AND ` + inClause
 	args = append(args, inArgs...)
-	if hasKeysetCursor(cursor) {
+	if shared.HasKeysetCursor(cursor) {
 		value := sqliteTimeValue(cursor.UpdatedAt)
 		query += ` AND (m.received_at < ? OR (m.received_at = ? AND m.id < ?))`
 		args = append(args, value, value, cursor.ID)

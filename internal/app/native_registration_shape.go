@@ -9,6 +9,7 @@ import (
 	"strings"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 func logNativeRegistrationOrderedShape(kind string, phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, params orderedParams) {
@@ -17,7 +18,7 @@ func logNativeRegistrationOrderedShape(kind string, phone *waappv1.PhoneTarget, 
 	}
 	phoneHash := ""
 	if phone != nil && phone.GetE164Number() != "" {
-		phoneHash = stableID(phone.GetE164Number())
+		phoneHash = shared.StableID(phone.GetE164Number())
 	}
 	log.Printf(
 		"wa_registration_request_shape kind=%s phone_hash=%s method=%s field_count=%d fields=%s",
@@ -87,7 +88,7 @@ func registrationValueHashes(params orderedParams) string {
 			continue
 		}
 		value := registrationHashValue(param.val, param.raw)
-		parts = append(parts, param.key+":"+strconv.Itoa(len([]byte(value)))+":"+stableID(value))
+		parts = append(parts, param.key+":"+strconv.Itoa(len([]byte(value)))+":"+shared.StableID(value))
 	}
 	return strings.Join(parts, ",")
 }
@@ -141,7 +142,7 @@ func logNativeRegistrationWamsysGAShape(kind string, phoneHash string, method wa
 				phoneHash,
 				probeLogValue(registrationMethodName(method, "sms")),
 				len([]byte(value)),
-				stableID(value),
+				shared.StableID(value),
 				probeLogValue(err.Error()),
 			)
 			return
@@ -152,7 +153,7 @@ func logNativeRegistrationWamsysGAShape(kind string, phoneHash string, method wa
 			phoneHash,
 			probeLogValue(registrationMethodName(method, "sms")),
 			len([]byte(value)),
-			stableID(value),
+			shared.StableID(value),
 			len([]byte(shape.BootID)),
 			shape.SourcePathAge,
 			shape.DataPathAge,
@@ -176,7 +177,7 @@ func logNativeGPIAPlaintextShape(input wamsysMaterialInput, label string, keySou
 		)
 		return
 	}
-	jsonHash := stableID(string(plaintext))
+	jsonHash := shared.StableID(string(plaintext))
 	if nativeGPIAFieldsContainSensitive(fields) {
 		jsonHash = "sensitive"
 	}
@@ -186,7 +187,7 @@ func logNativeGPIAPlaintextShape(input wamsysMaterialInput, label string, keySou
 		wamsysInputPhoneHash(input),
 		probeLogValue(label),
 		len([]byte(keySource)),
-		stableID(keySource),
+		shared.StableID(keySource),
 		len(plaintext),
 		jsonHash,
 		probeLogValue(nativeGPIAFieldKeys(fields)),
@@ -210,11 +211,11 @@ func logNativeWamsysGAPlaintextShape(input wamsysMaterialInput, keySource string
 		probeLogValue(registrationRequestKindName(input.Kind)),
 		wamsysInputPhoneHash(input),
 		len([]byte(keySource)),
-		stableID(keySource),
+		shared.StableID(keySource),
 		len([]byte(bootIDMaterial)),
-		stableID(bootIDMaterial),
+		shared.StableID(bootIDMaterial),
 		len(plaintext),
-		stableID(string(plaintext)),
+		shared.StableID(string(plaintext)),
 		probeLogValue(nativeGPIAFieldKeys(fields)),
 		probeLogValue(nativeGPIAFieldShapes(fields)),
 	)
@@ -242,7 +243,7 @@ func nativeGPIAFieldShape(field nativeGPIAJSONField) string {
 		if nativeGPIAFieldSensitive(field.Key) {
 			return field.Key + ":string:" + strconv.Itoa(len([]byte(value))) + ":sensitive"
 		}
-		return field.Key + ":string:" + strconv.Itoa(len([]byte(value))) + ":" + stableID(value)
+		return field.Key + ":string:" + strconv.Itoa(len([]byte(value))) + ":" + shared.StableID(value)
 	case int:
 		return field.Key + ":number:int:" + strconv.Itoa(value)
 	case int64:
@@ -276,7 +277,7 @@ func nativeGPIAFieldsContainSensitive(fields []nativeGPIAJSONField) bool {
 
 func wamsysInputPhoneHash(input wamsysMaterialInput) string {
 	if input.Phone != nil && input.Phone.GetE164Number() != "" {
-		return stableID(input.Phone.GetE164Number())
+		return shared.StableID(input.Phone.GetE164Number())
 	}
 	return ""
 }

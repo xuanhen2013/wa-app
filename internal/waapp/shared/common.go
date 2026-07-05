@@ -1,4 +1,4 @@
-package app
+package shared
 
 import (
 	"context"
@@ -66,31 +66,31 @@ func ToProtoError(err error) *waappv1.WaError {
 	}
 	return &waappv1.WaError{
 		Code:      waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL,
-		Message:   safeInternalErrorMessage(err),
+		Message:   SafeInternalErrorMessage(err),
 		Retryable: isRetryableInternalError(err),
 	}
 }
 
-func errorFromProto(err *waappv1.WaError) *AppError {
+func ErrorFromProto(err *waappv1.WaError) *AppError {
 	if err == nil || err.GetCode() == waappv1.WaErrorCode_WA_ERROR_CODE_UNSPECIFIED {
 		return nil
 	}
 	return NewError(err.GetCode(), err.GetMessage(), err.GetRetryable())
 }
 
-func validateContext(ctx *waappv1.RequestContext) error {
+func ValidateContext(ctx *waappv1.RequestContext) error {
 	_ = ctx
 	return nil
 }
 
-func timestamp(t time.Time) *timestamppb.Timestamp {
+func ProtoTimestamp(t time.Time) *timestamppb.Timestamp {
 	if t.IsZero() {
 		return nil
 	}
 	return timestamppb.New(t.UTC())
 }
 
-func firstNonEmpty(values ...string) string {
+func FirstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {
 			return value
@@ -99,7 +99,7 @@ func firstNonEmpty(values ...string) string {
 	return ""
 }
 
-func redacted(value string) string {
+func Redacted(value string) string {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
 		return ""
@@ -111,15 +111,15 @@ func redacted(value string) string {
 	return string(runes[:2]) + strings.Repeat("*", len(runes)-4) + string(runes[len(runes)-2:])
 }
 
-func phoneCC(phone *waappv1.PhoneTarget) string {
+func PhoneCC(phone *waappv1.PhoneTarget) string {
 	if phone == nil {
 		return ""
 	}
-	if cc := digitsOnly(phone.GetCountryCallingCode()); cc != "" {
+	if cc := DigitsOnly(phone.GetCountryCallingCode()); cc != "" {
 		return cc
 	}
-	e164 := digitsOnly(phone.GetE164Number())
-	national := digitsOnly(phone.GetNationalNumber())
+	e164 := DigitsOnly(phone.GetE164Number())
+	national := DigitsOnly(phone.GetNationalNumber())
 	if e164 != "" && national != "" && strings.HasSuffix(e164, national) {
 		return strings.TrimSuffix(e164, national)
 	}
@@ -129,22 +129,22 @@ func phoneCC(phone *waappv1.PhoneTarget) string {
 	return ""
 }
 
-func phoneNational(phone *waappv1.PhoneTarget) string {
+func PhoneNational(phone *waappv1.PhoneTarget) string {
 	if phone == nil {
 		return ""
 	}
-	if national := digitsOnly(phone.GetNationalNumber()); national != "" {
+	if national := DigitsOnly(phone.GetNationalNumber()); national != "" {
 		return national
 	}
-	e164 := digitsOnly(phone.GetE164Number())
-	cc := phoneCC(phone)
+	e164 := DigitsOnly(phone.GetE164Number())
+	cc := PhoneCC(phone)
 	if cc != "" && strings.HasPrefix(e164, cc) {
 		return strings.TrimPrefix(e164, cc)
 	}
 	return e164
 }
 
-func digitsOnly(value string) string {
+func DigitsOnly(value string) string {
 	var b strings.Builder
 	for _, r := range value {
 		if r >= '0' && r <= '9' {
@@ -154,34 +154,34 @@ func digitsOnly(value string) string {
 	return b.String()
 }
 
-func stableID(value string) string {
+func StableID(value string) string {
 	sum := sha256.Sum256([]byte(value))
 	return hex.EncodeToString(sum[:])[:24]
 }
 
-func durationFromProto(value *durationpb.Duration) time.Duration {
+func DurationFromProto(value *durationpb.Duration) time.Duration {
 	if value == nil {
 		return 0
 	}
 	return value.AsDuration()
 }
 
-func durationToProto(value time.Duration) *durationpb.Duration {
+func DurationToProto(value time.Duration) *durationpb.Duration {
 	if value <= 0 {
 		return nil
 	}
 	return durationpb.New(value)
 }
 
-func durationSeconds(value *durationpb.Duration) int64 {
-	duration := durationFromProto(value)
+func DurationSeconds(value *durationpb.Duration) int64 {
+	duration := DurationFromProto(value)
 	if duration <= 0 {
 		return 0
 	}
 	return int64(duration / time.Second)
 }
 
-func durationFromSeconds(seconds int64) *durationpb.Duration {
+func DurationFromSeconds(seconds int64) *durationpb.Duration {
 	if seconds <= 0 {
 		return nil
 	}
@@ -231,7 +231,7 @@ func hasRetryableErrorMarker(message string) bool {
 	return false
 }
 
-func safeInternalErrorMessage(err error) string {
+func SafeInternalErrorMessage(err error) string {
 	if err == nil {
 		return "wa-app operation failed"
 	}

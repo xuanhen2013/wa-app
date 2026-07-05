@@ -7,6 +7,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -66,15 +67,15 @@ func oldRegistrationOTPMessage(input EngineMessageInput, node chatdNode, otp cha
 	if strings.TrimSpace(input.WAAccountID) == "" || strings.TrimSpace(otp.code) == "" || otp.expiresAt.IsZero() {
 		return nil
 	}
-	otpID := "waotp_old_" + stableID(strings.Join([]string{input.WAAccountID, node.Attrs["id"], otp.code, strconv.FormatInt(otp.expiresAt.Unix(), 10)}, ":"))
+	otpID := "waotp_old_" + shared.StableID(strings.Join([]string{input.WAAccountID, node.Attrs["id"], otp.code, strconv.FormatInt(otp.expiresAt.Unix(), 10)}, ":"))
 	return &waappv1.OtpMessage{
 		OtpMessageId:         otpID,
 		WaAccountId:          input.WAAccountID,
 		ClientProfileId:      input.ClientProfileID,
 		RegisteredIdentityId: input.RegisteredIdentityID,
 		Source:               waappv1.WaOtpSource_WA_OTP_SOURCE_LONG_CONNECTION,
-		SourceParty:          firstNonEmpty(node.Attrs["from"], "wa_old_registration"),
-		Otp:                  &waappv1.SensitiveText{Value: otp.code, RedactedValue: redacted(otp.code), SecretRef: "wa-otp:" + stableID(otpID)},
+		SourceParty:          shared.FirstNonEmpty(node.Attrs["from"], "wa_old_registration"),
+		Otp:                  &waappv1.SensitiveText{Value: otp.code, RedactedValue: shared.Redacted(otp.code), SecretRef: "wa-otp:" + shared.StableID(otpID)},
 		ReceivedAt:           timestamppb.New(now.UTC()),
 		ExpiresAt:            timestamppb.New(otp.expiresAt.UTC()),
 	}

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/nyaruka/phonenumbers"
 )
 
@@ -28,7 +29,7 @@ func registrationDeviceCountryISO(phone *waappv1.PhoneTarget) string {
 	if iso := strings.ToUpper(strings.TrimSpace(phone.GetCountryIso2())); len(iso) == 2 {
 		return iso
 	}
-	code, err := strconv.Atoi(phoneCC(phone))
+	code, err := strconv.Atoi(shared.PhoneCC(phone))
 	if err != nil || code <= 0 {
 		return "US"
 	}
@@ -41,8 +42,8 @@ func registrationDeviceCountryISO(phone *waappv1.PhoneTarget) string {
 func (e *engineCore) existParams(phone *waappv1.PhoneTarget, state nativeState) (map[string]string, map[string]struct{}) {
 	lg, lc := registrationLocale(phone)
 	params := map[string]string{
-		"cc":                phoneCC(phone),
-		"in":                phoneNational(phone),
+		"cc":                shared.PhoneCC(phone),
+		"in":                shared.PhoneNational(phone),
 		"lg":                lg,
 		"lc":                lc,
 		"fdid":              state.Profile.FDID,
@@ -67,7 +68,7 @@ func (e *engineCore) existParams(phone *waappv1.PhoneTarget, state nativeState) 
 }
 
 func (e *engineCore) registrationToken(phone *waappv1.PhoneTarget, state nativeState) string {
-	if token := deriveDefaultRegistrationToken(phoneNational(phone)); token != "" {
+	if token := deriveDefaultRegistrationToken(shared.PhoneNational(phone)); token != "" {
 		return token
 	}
 	return state.LastCodeParams["token"]
@@ -83,8 +84,8 @@ func (e *engineCore) codeRequestOrderedParamsWithWamsys(ctx context.Context, pho
 	attempts := nativeCodeRequestAttempts(state)
 	lg, lc := registrationLocale(phone)
 	params := orderedParams{}
-	params.set("cc", phoneCC(phone), false)
-	params.set("in", phoneNational(phone), false)
+	params.set("cc", shared.PhoneCC(phone), false)
+	params.set("in", shared.PhoneNational(phone), false)
 	params.set("lg", lg, false)
 	params.set("lc", lc, false)
 	params.set("fdid", state.Profile.FDID, false)
@@ -283,7 +284,7 @@ func codeDeviceMap(method string, state nativeState) map[string]string {
 
 func nativePreferSMSOverFlash(method string, fields map[string]string) string {
 	_ = method
-	return firstNonEmpty(fields["prefer_sms_over_flash"], "false")
+	return shared.FirstNonEmpty(fields["prefer_sms_over_flash"], "false")
 }
 
 func addNonEmptyNativeCodeField(out map[string]string, fields map[string]string, key string) {
@@ -324,7 +325,7 @@ func nativeDeviceMapFields(state nativeState) map[string]string {
 		fields[key] = value
 	}
 	for key, value := range nativeDefaultDeviceMapFields() {
-		fields[key] = firstNonEmpty(fields[key], value)
+		fields[key] = shared.FirstNonEmpty(fields[key], value)
 	}
 	applyNativePreChatdABDeviceFields(fields, state)
 	for key, value := range nativeRuntimeDeviceMapFields(state) {
@@ -453,7 +454,7 @@ func nativeRegisterClientMetrics(method string) string {
 		Attempts             int    `json:"attempts"`
 		VerifyMethod         string `json:"verify_method"`
 		WasActivatedFromStub bool   `json:"was_activated_from_stub"`
-	}{Attempts: 1, VerifyMethod: firstNonEmpty(method, "sms"), WasActivatedFromStub: false})
+	}{Attempts: 1, VerifyMethod: shared.FirstNonEmpty(method, "sms"), WasActivatedFromStub: false})
 	if err != nil {
 		return `{"attempts":1,"verify_method":"sms","was_activated_from_stub":false}`
 	}
@@ -692,7 +693,7 @@ func existRegisteredSignal(status string, reason string, data map[string]any) bo
 	if existRegisteredStatus(status) {
 		return true
 	}
-	return firstNonEmpty(jsonString(data["new_jid"]), jsonString(data["jid"]), jsonString(data["registration_jid"])) != ""
+	return shared.FirstNonEmpty(jsonString(data["new_jid"]), jsonString(data["jid"]), jsonString(data["registration_jid"])) != ""
 }
 
 func existRegisteredReason(reason string) bool {
@@ -795,7 +796,7 @@ func waProtocolError(data map[string]any, fallback string) error {
 	case "no_routes":
 		code = waappv1.WaErrorCode_WA_ERROR_CODE_ROUTE_UNAVAILABLE
 	}
-	return NewError(code, message, retryable)
+	return shared.NewError(code, message, retryable)
 }
 
 func accountTransferRegisterTerminalFailure(data map[string]any) bool {

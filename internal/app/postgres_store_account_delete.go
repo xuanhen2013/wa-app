@@ -6,6 +6,7 @@ import (
 	"fmt"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -36,7 +37,7 @@ func lockWAAccount(ctx context.Context, tx pgx.Tx, waAccountIDValue string) erro
 	var accountID string
 	err := tx.QueryRow(ctx, `SELECT wa_account_id FROM wa_accounts WHERE wa_account_id=$1 FOR UPDATE`, waAccountIDValue).Scan(&accountID)
 	if errors.Is(err, pgx.ErrNoRows) {
-		return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_WA_ACCOUNT_NOT_FOUND, "WA account not found", false)
+		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_WA_ACCOUNT_NOT_FOUND, "WA account not found", false)
 	}
 	return err
 }

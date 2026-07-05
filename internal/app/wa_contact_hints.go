@@ -9,6 +9,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"google.golang.org/protobuf/encoding/protowire"
 )
 
@@ -124,7 +125,7 @@ func contactHintsFromChatdAttrs(attrs map[string]string) []waContactHint {
 	appendChatdAttrHints(&hints, attrs, displayName, waContactUsername(firstChatdAttr(attrs, "peer_recipient_username", "username")), verifiedName, peerLIDKeys, peerPNKeys)
 	appendChatdAttrHints(&hints, attrs, displayName, waContactUsername(firstChatdAttr(attrs, "author_username", "username")), verifiedName, actorLIDKeys, actorPNKeys)
 	appendChatdAttrHints(&hints, attrs, displayName, username, verifiedName, []string{"from"}, []string{"from_pn", "from_pn_jid", "pn_jid", "new_jid"})
-	appendChatdAttrHints(&hints, attrs, waContactName(firstNonEmpty(firstChatdAttr(attrs, "contact_push_name"), displayName)), waContactUsername(firstChatdAttr(attrs, "contact_username", "username")), verifiedName, contactLIDKeys, contactPNKeys)
+	appendChatdAttrHints(&hints, attrs, waContactName(shared.FirstNonEmpty(firstChatdAttr(attrs, "contact_push_name"), displayName)), waContactUsername(firstChatdAttr(attrs, "contact_username", "username")), verifiedName, contactLIDKeys, contactPNKeys)
 	appendChatdAttrHints(&hints, attrs, displayName, username, verifiedName, []string{"caller_lid"}, []string{"caller_pn", "caller_pn_jid"})
 	appendChatdAttrHints(&hints, attrs, displayName, username, verifiedName, []string{"invitee_lid"}, []string{"invitee_pn", "invitee_pn_jid"})
 	if len(hints) == 0 {
@@ -148,7 +149,7 @@ func firstChatdAttr(attrs map[string]string, keys ...string) string {
 	for _, key := range keys {
 		values = append(values, attrs[key])
 	}
-	return firstNonEmpty(values...)
+	return shared.FirstNonEmpty(values...)
 }
 
 func appendChatdAttrHints(hints *[]waContactHint, attrs map[string]string, displayName string, username string, verifiedName string, lidKeys []string, pnKeys []string) {
@@ -336,28 +337,28 @@ func waSyncdIndexJID(index []string, suffix string) string {
 
 func waIndexedAppStateContactActionHint(raw []byte, indexLID string, indexPN string) waContactHint {
 	hint := waAppStateContactActionHint(raw)
-	hint.LIDJID = firstNonEmpty(hint.LIDJID, indexLID)
-	hint.PNJID = firstNonEmpty(hint.PNJID, indexPN)
+	hint.LIDJID = shared.FirstNonEmpty(hint.LIDJID, indexLID)
+	hint.PNJID = shared.FirstNonEmpty(hint.PNJID, indexPN)
 	return hint.normalized()
 }
 
 func waIndexedPNForLIDChatActionHint(raw []byte, indexLID string) waContactHint {
 	hint := waPNForLIDChatActionHint(raw)
-	hint.LIDJID = firstNonEmpty(hint.LIDJID, indexLID)
+	hint.LIDJID = shared.FirstNonEmpty(hint.LIDJID, indexLID)
 	return hint.normalized()
 }
 
 func waIndexedLIDContactActionHint(raw []byte, indexLID string, indexPN string) waContactHint {
 	hint := waLIDContactActionHint(raw)
-	hint.LIDJID = firstNonEmpty(hint.LIDJID, indexLID)
-	hint.PNJID = firstNonEmpty(hint.PNJID, indexPN)
+	hint.LIDJID = shared.FirstNonEmpty(hint.LIDJID, indexLID)
+	hint.PNJID = shared.FirstNonEmpty(hint.PNJID, indexPN)
 	return hint.normalized()
 }
 
 func waIndexedOutContactActionHint(raw []byte, indexLID string, indexPN string) waContactHint {
 	hint := waOutContactActionHint(raw)
-	hint.LIDJID = firstNonEmpty(hint.LIDJID, indexLID)
-	hint.PNJID = firstNonEmpty(hint.PNJID, indexPN)
+	hint.LIDJID = shared.FirstNonEmpty(hint.LIDJID, indexLID)
+	hint.PNJID = shared.FirstNonEmpty(hint.PNJID, indexPN)
 	return hint.normalized()
 }
 
@@ -676,7 +677,7 @@ func waContactMetadataRecordHint(raw []byte) waContactHint {
 		return waContactHint{}
 	}
 	if personName := strings.Join(uniqueNonEmptyStrings(firstName, lastName), " "); personName != "" {
-		hint.DisplayName = firstNonEmpty(hint.DisplayName, personName)
+		hint.DisplayName = shared.FirstNonEmpty(hint.DisplayName, personName)
 	}
 	return hint.normalized()
 }
@@ -708,9 +709,9 @@ func applyContactRecordJID(hint *waContactHint, value string) {
 	jid := normalizeWAJID(value)
 	switch {
 	case strings.HasSuffix(jid, "@lid"):
-		hint.LIDJID = firstNonEmpty(hint.LIDJID, jid)
+		hint.LIDJID = shared.FirstNonEmpty(hint.LIDJID, jid)
 	case strings.HasSuffix(jid, "@s.whatsapp.net"):
-		hint.PNJID = firstNonEmpty(hint.PNJID, jid)
+		hint.PNJID = shared.FirstNonEmpty(hint.PNJID, jid)
 	}
 }
 
@@ -753,10 +754,10 @@ func dedupeWAContactHints(hints []waContactHint) []waContactHint {
 		}
 		current.LIDJID = hint.LIDJID
 		current.PNJID = hint.PNJID
-		current.DisplayName = firstNonEmpty(current.DisplayName, hint.DisplayName)
-		current.WAName = firstNonEmpty(current.WAName, hint.WAName)
-		current.Username = firstNonEmpty(current.Username, hint.Username)
-		current.VerifiedName = firstNonEmpty(current.VerifiedName, hint.VerifiedName)
+		current.DisplayName = shared.FirstNonEmpty(current.DisplayName, hint.DisplayName)
+		current.WAName = shared.FirstNonEmpty(current.WAName, hint.WAName)
+		current.Username = shared.FirstNonEmpty(current.Username, hint.Username)
+		current.VerifiedName = shared.FirstNonEmpty(current.VerifiedName, hint.VerifiedName)
 		merged[key] = current
 	}
 	out := make([]waContactHint, 0, len(order))
@@ -778,7 +779,7 @@ func numericWAJID(value uint64, domain string) string {
 }
 
 func phoneNumberWAJID(value string) string {
-	digits := digitsOnly(value)
+	digits := shared.DigitsOnly(value)
 	if len(digits) < 5 || len(digits) > 24 {
 		return ""
 	}

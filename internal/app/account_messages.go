@@ -5,6 +5,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -34,7 +35,7 @@ func newAccountMessage(parts accountMessageParts, includeSensitiveText bool) *wa
 	displayPlaintext := accountMessageDisplayText(parts.plaintext)
 	displayRedacted := accountMessageDisplayText(parts.redacted)
 	text := &waappv1.SensitiveText{
-		RedactedValue: firstNonEmpty(displayRedacted, redacted(displayPlaintext), payloadTextSummary(parts.payloadRef)),
+		RedactedValue: shared.FirstNonEmpty(displayRedacted, shared.Redacted(displayPlaintext), payloadTextSummary(parts.payloadRef)),
 		SecretRef:     parts.secretRef,
 	}
 	if includeSensitiveText {
@@ -52,11 +53,11 @@ func newAccountMessage(parts accountMessageParts, includeSensitiveText bool) *wa
 		EncryptionState:  parts.encryptionState,
 		AckStatus:        parts.ackStatus,
 		Text:             text,
-		ReceivedAt:       timestamp(parts.receivedAt),
+		ReceivedAt:       shared.ProtoTimestamp(parts.receivedAt),
 		LastError:        parts.lastError,
-		ReadAt:           timestamp(parts.readAt),
+		ReadAt:           shared.ProtoTimestamp(parts.readAt),
 		DeleteStatus:     accountMessageDeleteStatus(parts.deleteStatus),
-		DeletedAt:        timestamp(parts.deletedAt),
+		DeletedAt:        shared.ProtoTimestamp(parts.deletedAt),
 	}
 }
 
@@ -103,7 +104,7 @@ func protoTimeOrZero(ts *timestamppb.Timestamp) time.Time {
 }
 
 func contactRefForMessage(contactRef string, sender string) string {
-	value := strings.TrimSpace(firstNonEmpty(contactRef, sender))
+	value := strings.TrimSpace(shared.FirstNonEmpty(contactRef, sender))
 	if value == "" {
 		return "unknown"
 	}

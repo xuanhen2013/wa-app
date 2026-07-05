@@ -12,6 +12,7 @@ import (
 	"strings"
 	"unicode/utf8"
 
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"golang.org/x/crypto/hkdf"
 	"google.golang.org/protobuf/encoding/protowire"
 )
@@ -371,7 +372,7 @@ func waAppStatePatchContactHints(state *nativeState, raw []byte) []waContactHint
 		case field.kind == protowire.BytesType && field.number == 6:
 			patch.keyID = parseNativeAppStateRawKeyID(field.value)
 		case field.kind == protowire.BytesType && field.number == 9:
-			patch.collectionName = firstNonEmpty(patch.collectionName, waAppStatePatchDebugCollectionName(field.value))
+			patch.collectionName = shared.FirstNonEmpty(patch.collectionName, waAppStatePatchDebugCollectionName(field.value))
 		}
 	}
 	if len(patch.mutations) == 0 {

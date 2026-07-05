@@ -11,6 +11,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -115,15 +116,15 @@ func (s *SQLiteStore) FindWAAccountByPhone(ctx context.Context, e164 string) (*w
 }
 
 func (s *SQLiteStore) ListWAAccounts(ctx context.Context, cursorValue string, limit int) ([]*waappv1.WAAccount, string, error) {
-	cursor, err := decodeKeysetCursor(cursorValue)
+	cursor, err := shared.DecodeKeysetCursor(cursorValue)
 	if err != nil {
-		return nil, "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, err.Error(), false)
+		return nil, "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, err.Error(), false)
 	}
-	limit = normalizePageLimit(limit)
-	lookahead := keysetLookaheadLimit(limit)
+	limit = shared.NormalizePageLimit(limit)
+	lookahead := shared.KeysetLookaheadLimit(limit)
 	query := `SELECT payload FROM wa_sqlite_accounts`
 	args := []any{}
-	if hasKeysetCursor(cursor) {
+	if shared.HasKeysetCursor(cursor) {
 		query += ` WHERE (updated_at < ? OR (updated_at = ? AND id < ?))`
 		value := sqliteTimeValue(cursor.UpdatedAt)
 		args = append(args, value, value, cursor.ID)
@@ -134,8 +135,8 @@ func (s *SQLiteStore) ListWAAccounts(ctx context.Context, cursorValue string, li
 	if err != nil {
 		return nil, "", err
 	}
-	items, nextCursor := newKeysetPage(items, limit, func(account *waappv1.WAAccount) keysetCursor {
-		return keysetCursorValue(waAccountUpdatedAt(account), waAccountID(account))
+	items, nextCursor := shared.NewKeysetPage(items, limit, func(account *waappv1.WAAccount) shared.KeysetCursor {
+		return shared.KeysetCursorValue(waAccountUpdatedAt(account), waAccountID(account))
 	})
 	return items, nextCursor, nil
 }
@@ -173,15 +174,15 @@ func (s *SQLiteStore) GetClientProfile(ctx context.Context, id string) (*waappv1
 }
 
 func (s *SQLiteStore) ListClientProfiles(ctx context.Context, waAccountIDValue string, cursorValue string, limit int) ([]*waappv1.ClientProfile, string, error) {
-	cursor, err := decodeKeysetCursor(cursorValue)
+	cursor, err := shared.DecodeKeysetCursor(cursorValue)
 	if err != nil {
-		return nil, "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, err.Error(), false)
+		return nil, "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, err.Error(), false)
 	}
-	limit = normalizePageLimit(limit)
-	lookahead := keysetLookaheadLimit(limit)
+	limit = shared.NormalizePageLimit(limit)
+	lookahead := shared.KeysetLookaheadLimit(limit)
 	query := `SELECT payload FROM wa_sqlite_client_profiles WHERE wa_account_id=?`
 	args := []any{waAccountIDValue}
-	if hasKeysetCursor(cursor) {
+	if shared.HasKeysetCursor(cursor) {
 		value := sqliteTimeValue(cursor.UpdatedAt)
 		query += ` AND (updated_at < ? OR (updated_at = ? AND id < ?))`
 		args = append(args, value, value, cursor.ID)
@@ -192,8 +193,8 @@ func (s *SQLiteStore) ListClientProfiles(ctx context.Context, waAccountIDValue s
 	if err != nil {
 		return nil, "", err
 	}
-	items, nextCursor := newKeysetPage(items, limit, func(profile *waappv1.ClientProfile) keysetCursor {
-		return keysetCursorValue(timeFromProto(profile.GetAudit().GetUpdatedAt()), profile.GetClientProfileId())
+	items, nextCursor := shared.NewKeysetPage(items, limit, func(profile *waappv1.ClientProfile) shared.KeysetCursor {
+		return shared.KeysetCursorValue(timeFromProto(profile.GetAudit().GetUpdatedAt()), profile.GetClientProfileId())
 	})
 	return items, nextCursor, nil
 }
@@ -488,13 +489,13 @@ func (s *SQLiteStore) SaveOTPMessage(ctx context.Context, msg *waappv1.OtpMessag
 		return nil
 	}
 	stored := proto.Clone(msg).(*waappv1.OtpMessage)
-	stored.OtpMessageId = firstNonEmpty(stored.GetOtpMessageId(), stableOTPMessageID(stored.GetWaAccountId(), stored.GetSourceParty(), otpValue))
+	stored.OtpMessageId = shared.FirstNonEmpty(stored.GetOtpMessageId(), stableOTPMessageID(stored.GetWaAccountId(), stored.GetSourceParty(), otpValue))
 	if stored.Otp == nil {
 		stored.Otp = &waappv1.SensitiveText{}
 	}
 	stored.Otp.Value = otpValue
-	stored.Otp.RedactedValue = firstNonEmpty(stored.GetOtp().GetRedactedValue(), redacted(otpValue))
-	stored.Otp.SecretRef = firstNonEmpty(stored.GetOtp().GetSecretRef(), "wa-otp:"+stableID(stored.GetOtpMessageId()))
+	stored.Otp.RedactedValue = shared.FirstNonEmpty(stored.GetOtp().GetRedactedValue(), shared.Redacted(otpValue))
+	stored.Otp.SecretRef = shared.FirstNonEmpty(stored.GetOtp().GetSecretRef(), "wa-otp:"+shared.StableID(stored.GetOtpMessageId()))
 	if stored.ReceivedAt == nil {
 		stored.ReceivedAt = timestamppb.New(time.Now().UTC())
 	}
@@ -508,19 +509,19 @@ ON CONFLICT(id) DO UPDATE SET wa_account_id=excluded.wa_account_id, received_at=
 }
 
 func (s *SQLiteStore) ListAccountOTPMessages(ctx context.Context, waAccountIDValue string, cursorValue string, limit int, includeSensitiveValues bool) ([]*waappv1.OtpMessage, string, error) {
-	cursor, err := decodeKeysetCursor(cursorValue)
+	cursor, err := shared.DecodeKeysetCursor(cursorValue)
 	if err != nil {
-		return nil, "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, err.Error(), false)
+		return nil, "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, err.Error(), false)
 	}
-	limit = normalizePageLimit(limit)
-	lookahead := keysetLookaheadLimit(limit)
+	limit = shared.NormalizePageLimit(limit)
+	lookahead := shared.KeysetLookaheadLimit(limit)
 	query := `SELECT o.payload FROM wa_sqlite_otp_messages o
 WHERE o.wa_account_id=? AND NOT EXISTS (
   SELECT 1 FROM wa_sqlite_inbound_messages m
   WHERE m.id=json_extract(o.payload, '$.message_id') AND COALESCE(json_extract(m.payload, '$.delete_status'), 'MESSAGE_DELETE_STATUS_NOT_DELETED')='MESSAGE_DELETE_STATUS_DELETED_FOR_ME'
 )`
 	args := []any{waAccountIDValue}
-	if hasKeysetCursor(cursor) {
+	if shared.HasKeysetCursor(cursor) {
 		value := sqliteTimeValue(cursor.UpdatedAt)
 		query += ` AND (o.received_at < ? OR (o.received_at = ? AND o.id < ?))`
 		args = append(args, value, value, cursor.ID)
@@ -538,8 +539,8 @@ WHERE o.wa_account_id=? AND NOT EXISTS (
 			}
 		}
 	}
-	items, nextCursor := newKeysetPage(items, limit, func(msg *waappv1.OtpMessage) keysetCursor {
-		return keysetCursorValue(timeFromProto(msg.GetReceivedAt()), msg.GetOtpMessageId())
+	items, nextCursor := shared.NewKeysetPage(items, limit, func(msg *waappv1.OtpMessage) shared.KeysetCursor {
+		return shared.KeysetCursorValue(timeFromProto(msg.GetReceivedAt()), msg.GetOtpMessageId())
 	})
 	return items, nextCursor, nil
 }
@@ -612,7 +613,7 @@ func sqliteUnmarshal(data []byte, msg proto.Message) error {
 
 func sqliteNotFound(err error, code waappv1.WaErrorCode, message string) error {
 	if errors.Is(err, sql.ErrNoRows) {
-		return NewError(code, message, false)
+		return shared.NewError(code, message, false)
 	}
 	return err
 }

@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 // chatdDeviceLogout 表示服务端经长连接下发的 device_logout 通知:该号码已在其他
@@ -53,7 +54,7 @@ func accountLoggedOutError(reason string) error {
 	if strings.TrimSpace(reason) == "" {
 		reason = "account registered on another device"
 	}
-	return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, reason, false)
+	return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, reason, false)
 }
 
 // chatdAccountTakeoverMarker 是"账号被接管"登出信号在错误消息里的稳定标记,贯穿 chatd 错误构造
@@ -100,7 +101,7 @@ func chatdConflictIsAccountTakeover(node chatdNode) bool {
 // accountTakenOverError 构造账号被接管的登出错误:非可重试 CONFLICT,消息以 account_takeover 标记开头,
 // 供 chatdReceiveError 透传后由 isAccountTakeoverError 识别。
 func accountTakenOverError(summary string) error {
-	return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, chatdAccountTakeoverMarker+": "+summary, false)
+	return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, chatdAccountTakeoverMarker+": "+summary, false)
 }
 
 func accountLoggedOutMessage(l *chatdDeviceLogout) string {

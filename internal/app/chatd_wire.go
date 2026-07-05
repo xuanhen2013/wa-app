@@ -12,6 +12,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"golang.org/x/crypto/curve25519"
 )
 
@@ -587,7 +588,7 @@ func chatdUserAgentForState(state nativeState, version string) userAgentConfig {
 		localeLang:    "en",
 		localeCountry: "US",
 		deviceBoard:   "lahaina",
-		deviceExpID:   firstNonEmpty(profile.ExpIDUUID, profile.ExpID),
+		deviceExpID:   shared.FirstNonEmpty(profile.ExpIDUUID, profile.ExpID),
 		modelType:     "phone",
 	}
 	if profile.AdditionalMapFields != nil {

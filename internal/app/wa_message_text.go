@@ -9,6 +9,7 @@ import (
 	"unicode"
 	"unicode/utf8"
 
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"google.golang.org/protobuf/encoding/protowire"
 )
 
@@ -580,7 +581,7 @@ func waButtonsDisplayText(raw []byte) string {
 }
 
 func waButtonDisplayText(raw []byte) string {
-	return firstNonEmpty(
+	return shared.FirstNonEmpty(
 		waHumanStringAtPath(raw, 1, 1),
 		waHumanStringAtPath(raw, 2, 1),
 		waHumanStringAtPath(raw, 2, 2),

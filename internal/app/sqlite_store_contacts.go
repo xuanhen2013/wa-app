@@ -6,6 +6,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 func (s *SQLiteStore) SaveWAContacts(ctx context.Context, contacts []*waappv1.WAContact) error {
@@ -84,15 +85,15 @@ func (s *SQLiteStore) GetWAContactByRef(ctx context.Context, waAccountIDValue st
 }
 
 func (s *SQLiteStore) ListWAContacts(ctx context.Context, waAccountIDValue string, cursorValue string, limit int) ([]*waappv1.WAContact, string, error) {
-	cursor, err := decodeKeysetCursor(cursorValue)
+	cursor, err := shared.DecodeKeysetCursor(cursorValue)
 	if err != nil {
-		return nil, "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, err.Error(), false)
+		return nil, "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, err.Error(), false)
 	}
-	limit = normalizePageLimit(limit)
-	lookahead := keysetLookaheadLimit(limit)
+	limit = shared.NormalizePageLimit(limit)
+	lookahead := shared.KeysetLookaheadLimit(limit)
 	query := `SELECT payload FROM wa_sqlite_contacts WHERE wa_account_id=?`
 	args := []any{waAccountIDValue}
-	if hasKeysetCursor(cursor) {
+	if shared.HasKeysetCursor(cursor) {
 		value := sqliteTimeValue(cursor.UpdatedAt)
 		query += ` AND (updated_at < ? OR (updated_at = ? AND id < ?))`
 		args = append(args, value, value, cursor.ID)
@@ -109,8 +110,8 @@ func (s *SQLiteStore) ListWAContacts(ctx context.Context, waAccountIDValue strin
 			return nil, "", err
 		}
 	}
-	items, nextCursor := newKeysetPage(items, limit, func(contact *waappv1.WAContact) keysetCursor {
-		return keysetCursorValue(timeFromProto(contact.GetAudit().GetUpdatedAt()), contact.GetContactId())
+	items, nextCursor := shared.NewKeysetPage(items, limit, func(contact *waappv1.WAContact) shared.KeysetCursor {
+		return shared.KeysetCursorValue(timeFromProto(contact.GetAudit().GetUpdatedAt()), contact.GetContactId())
 	})
 	return items, nextCursor, nil
 }
@@ -205,7 +206,7 @@ WHERE s.wa_account_id=?
 	contact.MessageCount = messageCount
 	contact.UnreadCount = unreadCount
 	if lastMessageAt > 0 {
-		contact.LastMessageAt = timestamp(time.Unix(0, lastMessageAt).UTC())
+		contact.LastMessageAt = shared.ProtoTimestamp(time.Unix(0, lastMessageAt).UTC())
 	}
 	preview, err := s.latestWAContactMessagePreview(ctx, waAccountIDValue, primaryRef, secondaryRef, jidRef)
 	if err != nil {

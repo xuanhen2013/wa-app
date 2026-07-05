@@ -11,6 +11,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -100,7 +101,7 @@ func (g *actionGateway) generateTransientFingerprint(ctx context.Context, payloa
 	}
 	phone := normalizePhone(phoneFromAction(payload))
 	if phone.GetE164Number() == "" {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "phone is required", false)
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "phone is required", false)
 	}
 	state, err := engine.newState(phone)
 	if err != nil {
@@ -193,7 +194,7 @@ func (g *actionGateway) requestSMSOTP(ctx context.Context, payload map[string]an
 		response["account_transfer_challenge"] = protoMap(challenge)
 		response["registration_phase"] = "ACCOUNT_TRANSFER_WAITING"
 	}
-	if seconds := durationSeconds(record.GetRetryAfter()); seconds > 0 {
+	if seconds := shared.DurationSeconds(record.GetRetryAfter()); seconds > 0 {
 		response["retry_after_seconds"] = seconds
 	}
 	return response, nil
@@ -216,9 +217,9 @@ func (g *actionGateway) awaitOTP(ctx context.Context, payload map[string]any) (m
 }
 
 func (g *actionGateway) resumeOTP(ctx context.Context, payload map[string]any) (map[string]any, error) {
-	code := firstNonEmpty(textField(payload, "otp"), textField(payload, "code"), textField(payload, "verification_code"))
+	code := shared.FirstNonEmpty(textField(payload, "otp"), textField(payload, "code"), textField(payload, "verification_code"))
 	if strings.TrimSpace(code) == "" {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "otp is required", false)
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "otp is required", false)
 	}
 	wait, err := g.loadRegistrationOTPWait(ctx, textField(payload, "wa_account_id"), textField(payload, "verification_request_id"))
 	if err != nil {
@@ -252,7 +253,7 @@ func registrationOTPWaitFromPayload(payload map[string]any) (registrationOTPWait
 		CreatedAtUnix:         time.Now().UTC().Unix(),
 	}
 	if wait.VerificationRequestID == "" {
-		return registrationOTPWait{}, 0, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "verification_request_id is required", false)
+		return registrationOTPWait{}, 0, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "verification_request_id is required", false)
 	}
 	if wait.WAAccountID != "" {
 		accountID, err := requireWAAccountID(wait.WAAccountID)
@@ -296,11 +297,11 @@ func (g *actionGateway) loadRegistrationOTPWait(ctx context.Context, waAccountID
 		key = registrationOTPWaitAccountKey(accountID)
 	}
 	if key == "" {
-		return registrationOTPWait{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "wa_account_id or verification_request_id is required", false)
+		return registrationOTPWait{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "wa_account_id or verification_request_id is required", false)
 	}
 	data, err := g.server.runtime.GetTransientState(ctx, key)
 	if err != nil {
-		return registrationOTPWait{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_PROFILE_NOT_FOUND, "registration otp wait not found", false)
+		return registrationOTPWait{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_PROFILE_NOT_FOUND, "registration otp wait not found", false)
 	}
 	var wait registrationOTPWait
 	if err := json.Unmarshal(data, &wait); err != nil {
@@ -460,7 +461,7 @@ func accountTransferPollRetryable(result map[string]any) bool {
 	if boolField(errorMap, "retryable") {
 		return true
 	}
-	message := strings.ToLower(firstNonEmpty(textField(result, "error_message"), textField(errorMap, "message")))
+	message := strings.ToLower(shared.FirstNonEmpty(textField(result, "error_message"), textField(errorMap, "message")))
 	return strings.Contains(message, "pending") || strings.Contains(message, "temporarily") || strings.Contains(message, "too_recent")
 }
 
@@ -515,10 +516,10 @@ func (g *actionGateway) persistLoginState(ctx context.Context, payload map[strin
 	} else if clientProfileID := textField(payload, "client_profile_id"); clientProfileID != "" {
 		loginState, err = g.server.store.GetActiveLoginState(ctx, textField(registration, "wa_account_id"), clientProfileID)
 	} else {
-		err = NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "registration_id or client_profile_id is required", false)
+		err = shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "registration_id or client_profile_id is required", false)
 	}
 	if err != nil {
-		return map[string]any{"success": false, "error": protoMap(ToProtoError(err)), "error_message": ToProtoError(err).GetMessage()}, nil
+		return map[string]any{"success": false, "error": protoMap(shared.ToProtoError(err)), "error_message": shared.ToProtoError(err).GetMessage()}, nil
 	}
 	ok := loginState.GetStatus() == waappv1.LoginStateStatus_LOGIN_STATE_STATUS_ACTIVE
 	return map[string]any{"success": ok, "status": loginState.GetStatus().String(), "login_state": protoMap(loginState)}, nil
@@ -532,10 +533,10 @@ func (g *actionGateway) checkLoginState(ctx context.Context, payload map[string]
 	loginStatePayload := objectField(payload, "login_state")
 	req := &waappv1.CheckLoginStateRequest{
 		Context:              actionContext(payload),
-		LoginStateId:         firstNonEmpty(textField(payload, "login_state_id"), textField(loginStatePayload, "login_state_id")),
-		WaAccountId:          firstNonEmpty(textField(payload, "wa_account_id"), textField(loginStatePayload, "wa_account_id")),
-		ClientProfileId:      firstNonEmpty(textField(payload, "client_profile_id"), textField(loginStatePayload, "client_profile_id")),
-		RegisteredIdentityId: firstNonEmpty(textField(payload, "registered_identity_id"), textField(loginStatePayload, "registered_identity_id")),
+		LoginStateId:         shared.FirstNonEmpty(textField(payload, "login_state_id"), textField(loginStatePayload, "login_state_id")),
+		WaAccountId:          shared.FirstNonEmpty(textField(payload, "wa_account_id"), textField(loginStatePayload, "wa_account_id")),
+		ClientProfileId:      shared.FirstNonEmpty(textField(payload, "client_profile_id"), textField(loginStatePayload, "client_profile_id")),
+		RegisteredIdentityId: shared.FirstNonEmpty(textField(payload, "registered_identity_id"), textField(loginStatePayload, "registered_identity_id")),
 	}
 	if timeout := numberField(payload, "remote_timeout_seconds"); timeout > 0 {
 		req.RemoteTimeout = durationpb.New(time.Duration(timeout) * time.Second)
@@ -562,10 +563,10 @@ func (g *actionGateway) checkLoginState(ctx context.Context, payload map[string]
 func (s *serverCore) commitNativeState(ctx context.Context, phone *waappv1.PhoneTarget, state nativeState) (*waappv1.WAAccount, *waappv1.ClientProfile, *waappv1.ProtocolProfile, error) {
 	engine, ok := s.runner.(nativeStateSaver)
 	if !ok {
-		return nil, nil, nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "native engine is required", false)
+		return nil, nil, nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "native engine is required", false)
 	}
 	if phone.GetE164Number() == "" {
-		return nil, nil, nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "phone is required", false)
+		return nil, nil, nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "phone is required", false)
 	}
 	account, err := s.store.FindWAAccountByPhone(ctx, phone.GetE164Number())
 	if err != nil {
@@ -585,11 +586,11 @@ func (s *serverCore) commitNativeState(ctx context.Context, phone *waappv1.Phone
 	if err := s.store.SaveClientProfile(ctx, profile); err != nil {
 		return nil, nil, nil, err
 	}
-	state.CC = firstNonEmpty(state.CC, phoneCC(phone))
-	state.Phone = firstNonEmpty(state.Phone, phoneNational(phone))
+	state.CC = shared.FirstNonEmpty(state.CC, shared.PhoneCC(phone))
+	state.Phone = shared.FirstNonEmpty(state.Phone, shared.PhoneNational(phone))
 	if err := engine.saveState(ctx, profile.GetClientProfileId(), state); err != nil {
 		profile.Status = waappv1.ClientProfileStatus_CLIENT_PROFILE_STATUS_REJECTED
-		profile.LastError = ToProtoError(err)
+		profile.LastError = shared.ToProtoError(err)
 		_ = s.store.SaveClientProfile(ctx, profile)
 		return nil, nil, nil, err
 	}
@@ -682,8 +683,8 @@ func registrationProxyRouteMap(route WAProxyRoute, managed bool) map[string]any 
 		return map[string]any{}
 	}
 	result := map[string]any{
-		"proxy_mode":   firstNonEmpty(route.ProxyMode, "PROXY"),
-		"country_code": firstNonEmpty(route.CountryCode, "UNKNOWN"),
+		"proxy_mode":   shared.FirstNonEmpty(route.ProxyMode, "PROXY"),
+		"country_code": shared.FirstNonEmpty(route.CountryCode, "UNKNOWN"),
 	}
 	if strings.TrimSpace(route.AccountID) != "" {
 		result["account_id"] = route.AccountID
@@ -701,10 +702,10 @@ func registrationProxyRouteMap(route WAProxyRoute, managed bool) map[string]any 
 }
 
 func actionProxyURL(payload map[string]any) string {
-	if proxyURL := firstNonEmpty(textField(payload, "proxy_url"), textField(objectField(payload, "proxy"), "proxy_url")); proxyURL != "" {
+	if proxyURL := shared.FirstNonEmpty(textField(payload, "proxy_url"), textField(objectField(payload, "proxy"), "proxy_url")); proxyURL != "" {
 		return proxyURL
 	}
-	rawState := firstNonEmpty(textField(payload, "proxy_state_json"), textField(payload, "state_json"), textField(objectField(payload, "proxy"), "proxy_state_json"), textField(objectField(payload, "proxy"), "state_json"))
+	rawState := shared.FirstNonEmpty(textField(payload, "proxy_state_json"), textField(payload, "state_json"), textField(objectField(payload, "proxy"), "proxy_state_json"), textField(objectField(payload, "proxy"), "state_json"))
 	if rawState == "" {
 		return ""
 	}
@@ -712,7 +713,7 @@ func actionProxyURL(payload map[string]any) string {
 	if err := json.Unmarshal([]byte(rawState), &state); err != nil {
 		return ""
 	}
-	return firstNonEmpty(textField(state, "_gopay_proxy"), textField(state, "proxy_url"), textField(objectField(state, "proxy"), "proxy_url"))
+	return shared.FirstNonEmpty(textField(state, "_gopay_proxy"), textField(state, "proxy_url"), textField(objectField(state, "proxy"), "proxy_url"))
 }
 
 func cleanupWAAccountID(payload map[string]any) string {
@@ -722,7 +723,7 @@ func cleanupWAAccountID(payload map[string]any) string {
 	}
 	verificationRequest := objectField(payload, "verification_request")
 	data := objectField(payload, "data")
-	return firstNonEmpty(
+	return shared.FirstNonEmpty(
 		textField(payload, "wa_account_id"),
 		textField(registration, "wa_account_id"),
 		textField(verificationRequest, "wa_account_id"),
@@ -736,7 +737,7 @@ func cleanupWAAccountID(payload map[string]any) string {
 func cleanupVerificationRequestID(payload map[string]any) string {
 	verificationRequest := objectField(payload, "verification_request")
 	data := objectField(payload, "data")
-	return firstNonEmpty(
+	return shared.FirstNonEmpty(
 		textField(payload, "verification_request_id"),
 		textField(verificationRequest, "verification_request_id"),
 		textField(data, "verification_request_id"),
@@ -747,7 +748,7 @@ func cleanupVerificationRequestID(payload map[string]any) string {
 func (g *actionGateway) nativeEngine() (*NativeEngine, error) {
 	engine, ok := g.server.runner.(*NativeEngine)
 	if !ok {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "native engine is required", false)
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "native engine is required", false)
 	}
 	return engine, nil
 }
@@ -755,7 +756,7 @@ func (g *actionGateway) nativeEngine() (*NativeEngine, error) {
 func (g *actionGateway) loadTransientState(ctx context.Context, ref string) (nativeState, error) {
 	data, err := g.server.runtime.GetTransientState(ctx, ref)
 	if err != nil {
-		return nativeState{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_PROFILE_NOT_FOUND, "transient fingerprint state not found", false)
+		return nativeState{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_PROFILE_NOT_FOUND, "transient fingerprint state not found", false)
 	}
 	return unmarshalNativeState(data)
 }
@@ -789,7 +790,7 @@ func actionContext(payload map[string]any) *waappv1.RequestContext {
 	return &waappv1.RequestContext{
 		RequestId:     textField(payload, "request_id"),
 		ActorId:       textField(payload, "actor_id"),
-		CorrelationId: firstNonEmpty(textField(payload, "correlation_id"), textField(payload, "job_id")),
+		CorrelationId: shared.FirstNonEmpty(textField(payload, "correlation_id"), textField(payload, "job_id")),
 		TraceId:       textField(payload, "trace_id"),
 	}
 }
@@ -800,10 +801,10 @@ func phoneFromAction(payload map[string]any) *waappv1.PhoneTarget {
 		phone = payload
 	}
 	return &waappv1.PhoneTarget{
-		E164Number:         firstNonEmpty(textField(phone, "e164_number"), textField(payload, "e164_number")),
-		CountryCallingCode: firstNonEmpty(textField(phone, "country_calling_code"), textField(payload, "country_calling_code"), textField(payload, "cc")),
-		NationalNumber:     firstNonEmpty(textField(phone, "national_number"), textField(payload, "national_number"), textField(payload, "phone"), textField(payload, "number")),
-		CountryIso2:        firstNonEmpty(textField(phone, "country_iso2"), textField(payload, "country_iso2"), textField(payload, "country_code")),
+		E164Number:         shared.FirstNonEmpty(textField(phone, "e164_number"), textField(payload, "e164_number")),
+		CountryCallingCode: shared.FirstNonEmpty(textField(phone, "country_calling_code"), textField(payload, "country_calling_code"), textField(payload, "cc")),
+		NationalNumber:     shared.FirstNonEmpty(textField(phone, "national_number"), textField(payload, "national_number"), textField(payload, "phone"), textField(payload, "number")),
+		CountryIso2:        shared.FirstNonEmpty(textField(phone, "country_iso2"), textField(payload, "country_iso2"), textField(payload, "country_code")),
 	}
 }
 
@@ -867,7 +868,7 @@ func protoMap(msg proto.Message) map[string]any {
 }
 
 func actionError(err error) map[string]any {
-	protoErr := ToProtoError(err)
+	protoErr := shared.ToProtoError(err)
 	return map[string]any{"success": false, "error": protoMap(protoErr), "error_message": protoErr.GetMessage()}
 }
 

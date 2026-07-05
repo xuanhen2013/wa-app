@@ -10,6 +10,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 type wamsysMaterialInput struct {
@@ -87,7 +88,7 @@ func (p localWamsysMaterialProvider) registrationGPIAMaterial(ctx context.Contex
 		return buildNativeGPIAErrorMaterial(input)
 	}
 	if p.playIntegrity == nil {
-		return nativeGPIAMaterial{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "play integrity api is not configured", false)
+		return nativeGPIAMaterial{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "play integrity api is not configured", false)
 	}
 	token, err := p.playIntegrity.Issue(ctx, input)
 	if err != nil {
@@ -177,8 +178,8 @@ func nativeWamsysRuntimeOffset(input wamsysMaterialInput, label string, base int
 		label,
 		fmt.Sprintf("%d", input.Kind),
 		fmt.Sprintf("%d", bucket),
-		phoneCC(input.Phone),
-		phoneNational(input.Phone),
+		shared.PhoneCC(input.Phone),
+		shared.PhoneNational(input.Phone),
 		input.State.Profile.PhoneSHA256,
 		input.State.Profile.FDID,
 		input.State.Profile.AccessSessionIDUUID,

@@ -7,6 +7,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 type nativeGMSHardwareContext struct {
@@ -247,7 +249,7 @@ func nativePlayIntegrityTelephony(ctx nativeGMSHardwareContext) map[string]any {
 	networkCountry := strings.ToLower(nativePlayIntegrityLocale(ctx).Country)
 	networkOperator := nativePlayIntegrityOperator(ctx.Fields, "mcc", "mnc")
 	simOperator := nativePlayIntegrityOperator(ctx.Fields, "sim_mcc", "sim_mnc")
-	operatorName := firstNonEmpty(ctx.Fields["network_operator_name"], ctx.Fields["sim_operator_name"])
+	operatorName := shared.FirstNonEmpty(ctx.Fields["network_operator_name"], ctx.Fields["sim_operator_name"])
 	return map[string]any{
 		"phoneType":           1,
 		"phoneCount":          1,
@@ -256,7 +258,7 @@ func nativePlayIntegrityTelephony(ctx nativeGMSHardwareContext) map[string]any {
 		"networkOperator":     networkOperator,
 		"simOperator":         simOperator,
 		"networkOperatorName": operatorName,
-		"simOperatorName":     firstNonEmpty(ctx.Fields["sim_operator_name"], operatorName),
+		"simOperatorName":     shared.FirstNonEmpty(ctx.Fields["sim_operator_name"], operatorName),
 	}
 }
 
@@ -316,7 +318,7 @@ func nativePlayIntegrityInput(ctx nativeGMSHardwareContext) map[string]any {
 	return map[string]any{"devices": []map[string]any{{
 		"id":           1,
 		"name":         "gpio-keys",
-		"descriptor":   "safe-gpio-keys-" + stableID(ctx.Device),
+		"descriptor":   "safe-gpio-keys-" + shared.StableID(ctx.Device),
 		"sources":      0x00000101,
 		"keyboardType": 1,
 		"vendorId":     0,
@@ -656,7 +658,7 @@ func nativePlayIntegrityIntField(fields map[string]string, key string, fallback 
 }
 
 func nativePlayIntegrityMemoryTotalKB(ctx nativeGMSHardwareContext) int {
-	ramGiB, err := strconv.ParseFloat(firstNonEmpty(ctx.Fields["device_ram"], nativeDefaultDeviceRAMGiB), 64)
+	ramGiB, err := strconv.ParseFloat(shared.FirstNonEmpty(ctx.Fields["device_ram"], nativeDefaultDeviceRAMGiB), 64)
 	if err != nil || ramGiB <= 0 {
 		ramGiB = 6.58
 	}

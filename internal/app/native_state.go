@@ -16,6 +16,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 const nativeStateSchema = "byte-v-forge-wa-app-native-state/v1"
@@ -236,7 +237,7 @@ func unmarshalNativeState(data []byte) (nativeState, error) {
 		} `json:"profile"`
 	}
 	_ = json.Unmarshal(data, &disk)
-	state.Profile = normalizeNativePhoneProfile(state.Profile, firstNonEmpty(disk.Profile.UserAgent, disk.UserAgent))
+	state.Profile = normalizeNativePhoneProfile(state.Profile, shared.FirstNonEmpty(disk.Profile.UserAgent, disk.UserAgent))
 	state.ensureMaps()
 	return state, nil
 }
@@ -287,8 +288,8 @@ func newNativeState(phone *waappv1.PhoneTarget) (nativeState, error) {
 	state := nativeState{
 		Schema:        nativeStateSchema,
 		CreatedAtUnix: time.Now().UTC().Unix(),
-		CC:            phoneCC(phone),
-		Phone:         phoneNational(phone),
+		CC:            shared.PhoneCC(phone),
+		Phone:         shared.PhoneNational(phone),
 		AuthKey:       chatStatic.Public,
 		Profile:       profile,
 		ChatStatic:    chatStatic,
@@ -342,7 +343,7 @@ func buildNativePhoneProfile(phone *waappv1.PhoneTarget) nativePhoneProfile {
 	accessUUID, accessID := uuidPair()
 	id := randomBytes(20)
 	backup := randomBytes(20)
-	phoneHash := sha256.Sum256([]byte(fullPhoneKey(phoneCC(phone), phoneNational(phone))))
+	phoneHash := sha256.Sum256([]byte(fullPhoneKey(shared.PhoneCC(phone), shared.PhoneNational(phone))))
 	additionalFields := map[string]string{
 		"network_radio_type":    "1",
 		"simnum":                "0",
@@ -581,16 +582,16 @@ func nativeAppVersionFromUserAgent(userAgent string) string {
 
 func normalizeNativePhoneProfile(profile nativePhoneProfile, userAgent string) nativePhoneProfile {
 	if device, ok := nativeDeviceModelFromUserAgent(userAgent); ok {
-		profile.DeviceVendor = firstNonEmpty(profile.DeviceVendor, device.Vendor)
-		profile.DeviceModel = firstNonEmpty(profile.DeviceModel, device.Model)
-		profile.AndroidVersion = firstNonEmpty(profile.AndroidVersion, device.Android)
-		profile.BuildDisplayID = firstNonEmpty(profile.BuildDisplayID, nativeBuildDisplayIDForModel(device))
+		profile.DeviceVendor = shared.FirstNonEmpty(profile.DeviceVendor, device.Vendor)
+		profile.DeviceModel = shared.FirstNonEmpty(profile.DeviceModel, device.Model)
+		profile.AndroidVersion = shared.FirstNonEmpty(profile.AndroidVersion, device.Android)
+		profile.BuildDisplayID = shared.FirstNonEmpty(profile.BuildDisplayID, nativeBuildDisplayIDForModel(device))
 	}
 	device := defaultNativeDeviceModel()
-	profile.DeviceVendor = firstNonEmpty(profile.DeviceVendor, device.Vendor)
-	profile.DeviceModel = firstNonEmpty(profile.DeviceModel, device.Model)
-	profile.AndroidVersion = firstNonEmpty(profile.AndroidVersion, device.Android)
-	profile.BuildDisplayID = firstNonEmpty(profile.BuildDisplayID, nativeBuildDisplayIDForModel(nativeDeviceModel{
+	profile.DeviceVendor = shared.FirstNonEmpty(profile.DeviceVendor, device.Vendor)
+	profile.DeviceModel = shared.FirstNonEmpty(profile.DeviceModel, device.Model)
+	profile.AndroidVersion = shared.FirstNonEmpty(profile.AndroidVersion, device.Android)
+	profile.BuildDisplayID = shared.FirstNonEmpty(profile.BuildDisplayID, nativeBuildDisplayIDForModel(nativeDeviceModel{
 		Vendor:  profile.DeviceVendor,
 		Model:   profile.DeviceModel,
 		Android: profile.AndroidVersion,
@@ -745,7 +746,7 @@ func nativeDeviceDisplayName(state nativeState) string {
 		strings.TrimSpace(profile.DeviceVendor),
 		strings.TrimSpace(profile.DeviceModel),
 	}, " "))
-	return firstNonEmpty(value, defaultNativeDeviceModel().Vendor+" "+defaultNativeDeviceModel().Model)
+	return shared.FirstNonEmpty(value, defaultNativeDeviceModel().Vendor+" "+defaultNativeDeviceModel().Model)
 }
 
 func responseStatus(data map[string]any) string {

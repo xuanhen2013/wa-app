@@ -22,6 +22,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	utls "github.com/refraction-networking/utls"
 	xproxy "golang.org/x/net/proxy"
 )
@@ -325,7 +326,7 @@ func (c *nativeHTTPClient) postWASafeEnvelope(ctx context.Context, endpoint stri
 	if endpointURL.Scheme != "https" || endpointURL.Host == "" {
 		return nil, "", fmt.Errorf("native endpoint must be https")
 	}
-	effectiveUserAgent := firstNonEmpty(userAgent, nativeUserAgent(defaultWAAppVersion))
+	effectiveUserAgent := shared.FirstNonEmpty(userAgent, nativeUserAgent(defaultWAAppVersion))
 	logWASafeEnvelopeShape(endpointURL, envelope, effectiveUserAgent)
 	resp, err := c.postOrderedForm(ctx, endpointURL, envelope.Body, effectiveUserAgent, envelope.Authorization)
 	if err != nil {

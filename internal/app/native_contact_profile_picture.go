@@ -13,6 +13,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 const (
@@ -43,7 +44,7 @@ func (e *contactsService) ResolveContactProfilePicture(ctx context.Context, inpu
 func (e *contactsService) resolveContactProfilePictureWithSender(ctx context.Context, input EngineContactProfilePictureInput, sender chatdIQSender) EngineContactProfilePictureResult {
 	jid := normalizeWAJID(input.ContactJID)
 	if input.WAAccountID == "" || input.ClientProfileID == "" || input.RegisteredIdentityID == "" || jid == "" {
-		return EngineContactProfilePictureResult{Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "WA contact profile picture input is incomplete", false)}
+		return EngineContactProfilePictureResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "WA contact profile picture input is incomplete", false)}
 	}
 	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
@@ -81,7 +82,7 @@ func (e *contactsService) resolveContactProfilePictureWithSender(ctx context.Con
 	var lastErr error
 	for _, location := range locations {
 		if !contactProfilePictureLocationDownloadable(location) {
-			lastErr = NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)
+			lastErr = shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)
 			continue
 		}
 		if len(location.InlineData) > 0 {
@@ -100,13 +101,13 @@ func (e *contactsService) resolveContactProfilePictureWithSender(ctx context.Con
 	if err != nil {
 		return EngineContactProfilePictureResult{Err: err}
 	}
-	return EngineContactProfilePictureResult{Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)}
+	return EngineContactProfilePictureResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)}
 }
 
 func (e *contactsService) contactProfilePictureLocationsFromProfileIQ(ctx context.Context, sender chatdIQSender, state nativeState, input EngineContactProfilePictureInput, jid string) ([]contactProfilePictureLocation, chatdSessionUpdate, error) {
 	targets := contactProfilePictureTargets(jid, input.ContactPNJID)
 	if len(targets) == 0 {
-		return nil, chatdSessionUpdate{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "WA contact profile picture target is incomplete", false)
+		return nil, chatdSessionUpdate{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "WA contact profile picture target is incomplete", false)
 	}
 	locations := []contactProfilePictureLocation{}
 	var lastUpdate chatdSessionUpdate
@@ -134,7 +135,7 @@ func (e *contactsService) contactProfilePictureLocationsFromProfileIQ(ctx contex
 					continue
 				}
 				if !contactProfilePictureLocationDownloadable(location) {
-					lastErr = NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture download location not found", false)
+					lastErr = shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture download location not found", false)
 					logWAContactProfilePictureIQFailure(target, pictureType, pictureID != "", lastErr)
 					continue
 				}
@@ -150,7 +151,7 @@ func (e *contactsService) contactProfilePictureLocationsFromProfileIQ(ctx contex
 		return locations, lastUpdate, nil
 	}
 	if lastErr == nil {
-		lastErr = NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)
+		lastErr = shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)
 	}
 	return nil, lastUpdate, lastErr
 }
@@ -188,7 +189,7 @@ func contactProfilePictureRequestIDs(pictureID string) []string {
 }
 
 func buildContactProfilePictureIQ(id string, jid string, pictureType string, pictureID string, trustedContactToken []byte) chatdNode {
-	pictureType = firstNonEmpty(pictureType, profilePictureTypeImage)
+	pictureType = shared.FirstNonEmpty(pictureType, profilePictureTypeImage)
 	pictureAttrs := map[string]string{"type": pictureType}
 	if contactProfilePictureNeedsURLQuery(jid, pictureType) {
 		pictureAttrs["query"] = "url"
@@ -283,7 +284,7 @@ func contactProfilePictureTargetKind(jid string) string {
 
 func contactProfilePictureRequestID(value string) string {
 	value = strings.TrimSpace(value)
-	if value == "" || digitsOnly(value) != value || strings.TrimLeft(value, "0") == "" {
+	if value == "" || shared.DigitsOnly(value) != value || strings.TrimLeft(value, "0") == "" {
 		return ""
 	}
 	return value
@@ -295,7 +296,7 @@ func contactProfilePictureLocationFromIQ(response chatdNode) (contactProfilePict
 	}
 	picture, ok := findChatdNode(response, "picture")
 	if !ok {
-		return contactProfilePictureLocation{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)
+		return contactProfilePictureLocation{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)
 	}
 	return contactProfilePictureLocationFromPicture(picture)
 }
@@ -303,18 +304,18 @@ func contactProfilePictureLocationFromIQ(response chatdNode) (contactProfilePict
 func contactProfilePictureIQError(response chatdNode) error {
 	code := strings.TrimSpace(response.Attrs["code"])
 	if errorNode, ok := findChatdNode(response, "error"); ok {
-		code = firstNonEmpty(code, strings.TrimSpace(errorNode.Attrs["code"]))
+		code = shared.FirstNonEmpty(code, strings.TrimSpace(errorNode.Attrs["code"]))
 	}
 	if code == "404" || code == "410" {
-		return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)
+		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)
 	}
-	return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "WA profile picture request was rejected", false)
+	return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "WA profile picture request was rejected", false)
 }
 
 func contactProfilePictureLocationFromPicture(picture chatdNode) (contactProfilePictureLocation, error) {
 	status := strings.TrimSpace(picture.Attrs["status"])
 	if status != "" && status != "200" && status != "ok" {
-		return contactProfilePictureLocation{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)
+		return contactProfilePictureLocation{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)
 	}
 	location := contactProfilePictureLocation{
 		ID:         contactProfilePictureIDFromPicture(picture),
@@ -325,13 +326,13 @@ func contactProfilePictureLocationFromPicture(picture chatdNode) (contactProfile
 		location.InlineData = data
 	}
 	if len(location.InlineData) == 0 && location.DirectPath == "" && location.URL == "" {
-		return contactProfilePictureLocation{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)
+		return contactProfilePictureLocation{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)
 	}
 	return location, nil
 }
 
 func contactProfilePictureIDFromPicture(picture chatdNode) string {
-	return strings.TrimSpace(firstNonEmpty(picture.Attrs["id"], picture.Attrs["photo_id"], picture.Attrs["picture_id"]))
+	return strings.TrimSpace(shared.FirstNonEmpty(picture.Attrs["id"], picture.Attrs["photo_id"], picture.Attrs["picture_id"]))
 }
 
 func contactProfilePictureLocationDownloadable(location contactProfilePictureLocation) bool {
@@ -370,7 +371,7 @@ func (c *nativeHTTPClient) getProfilePicture(ctx context.Context, location conta
 		}
 	}
 	if lastErr == nil {
-		lastErr = NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)
+		lastErr = shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)
 	}
 	return nil, "", lastErr
 }
@@ -380,7 +381,7 @@ func (c *nativeHTTPClient) getProfilePictureOnce(ctx context.Context, endpoint s
 	if err != nil {
 		return nil, "", err
 	}
-	req.Header.Set("User-Agent", firstNonEmpty(userAgent, nativeUserAgent(defaultWAAppVersion)))
+	req.Header.Set("User-Agent", shared.FirstNonEmpty(userAgent, nativeUserAgent(defaultWAAppVersion)))
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, "", err
@@ -391,7 +392,7 @@ func (c *nativeHTTPClient) getProfilePictureOnce(ctx context.Context, endpoint s
 		return nil, "", err
 	}
 	if resp.StatusCode == http.StatusNotFound || resp.StatusCode == http.StatusGone {
-		return nil, "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)
+		return nil, "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)
 	}
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return nil, "", profilePictureHTTPError(resp.StatusCode)
@@ -480,7 +481,7 @@ func readLimitedProfilePicture(reader io.Reader) ([]byte, error) {
 	}
 	data := buf.Bytes()
 	if len(data) > profilePictureDownloadMaxBytes {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "WA profile picture is too large", false)
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "WA profile picture is too large", false)
 	}
 	return data, nil
 }
@@ -494,7 +495,7 @@ func profilePictureContentType(data []byte, header string) (string, error) {
 	if profilePictureContentTypeAllowed(detected) {
 		return detected, nil
 	}
-	return "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "WA profile picture content type is not supported", false)
+	return "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "WA profile picture content type is not supported", false)
 }
 
 func profilePictureContentTypeAllowed(contentType string) bool {
@@ -508,11 +509,11 @@ func profilePictureContentTypeAllowed(contentType string) bool {
 
 func profilePictureHTTPError(statusCode int) error {
 	retryable := statusCode == http.StatusTooManyRequests || statusCode >= http.StatusInternalServerError
-	return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_ROUTE_UNAVAILABLE, fmt.Sprintf("WA profile picture download failed with HTTP %d", statusCode), retryable)
+	return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_ROUTE_UNAVAILABLE, fmt.Sprintf("WA profile picture download failed with HTTP %d", statusCode), retryable)
 }
 
 func profilePictureDownloadRetryable(err error) bool {
-	appErr, ok := err.(*AppError)
+	appErr, ok := err.(*shared.AppError)
 	if !ok {
 		return true
 	}

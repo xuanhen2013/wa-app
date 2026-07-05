@@ -2,6 +2,8 @@ package app
 
 import (
 	"strings"
+
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 const (
@@ -21,7 +23,7 @@ type waProxyResolveRequest struct {
 // request: the shared WA_COMMON_PROXY when configured, otherwise a direct
 // connection. There is no per-account policy or dynamic lease.
 func (s *serverCore) resolveWAProxyRoute(req waProxyResolveRequest) (WAProxyRoute, bool) {
-	countryCode := normalizeProxyCountryCode(firstNonEmpty(req.CountryCode, proxyCountryCodeFromPayload(req.Payload)))
+	countryCode := normalizeProxyCountryCode(shared.FirstNonEmpty(req.CountryCode, proxyCountryCodeFromPayload(req.Payload)))
 	if route, ok := s.resolveSystemCommonProxyRoute(countryCode); ok {
 		return route, true
 	}
@@ -46,8 +48,8 @@ func waProxySummary(route WAProxyRoute, useProxy bool) map[string]any {
 	result := map[string]any{
 		"success":      true,
 		"accepted":     true,
-		"proxy_mode":   firstNonEmpty(route.ProxyMode, "PROXY"),
-		"country_code": firstNonEmpty(route.CountryCode, "UNKNOWN"),
+		"proxy_mode":   shared.FirstNonEmpty(route.ProxyMode, "PROXY"),
+		"country_code": shared.FirstNonEmpty(route.CountryCode, "UNKNOWN"),
 	}
 	if route.Source != "" {
 		result["source"] = route.Source

@@ -6,6 +6,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -225,7 +226,7 @@ func (r verificationRow) toProto() *waappv1.VerificationCodeRequestRecord {
 		DeliveryMethod:        waappv1.VerificationDeliveryMethod(waappv1.VerificationDeliveryMethod_value[r.method]),
 		Status:                waappv1.VerificationRequestStatus(waappv1.VerificationRequestStatus_value[r.status]),
 		ExpectedCodeLength:    r.length,
-		RetryAfter:            durationFromSeconds(r.retryAfterSeconds),
+		RetryAfter:            shared.DurationFromSeconds(r.retryAfterSeconds),
 		RequestedAt:           timestamppb.New(r.requestedAt.UTC()),
 		ExpiresAt:             sqlTime(r.expiresAt),
 		LastError:             protoError(r.errCode, r.errMessage, r.errRetryable),

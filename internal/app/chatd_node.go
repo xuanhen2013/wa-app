@@ -8,6 +8,8 @@ import (
 	"strconv"
 	"strings"
 	"time"
+
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 type chatdNode struct {
@@ -549,12 +551,12 @@ func iterEncPayloads(node chatdNode) []chatdEncPayload {
 			peerPN := firstChatdAttr(current.Attrs, "peer_recipient_pn", "peer_recipient_pn_jid", "recipient_pn", "recipient_pn_jid", "peer_pn", "peer_pn_jid")
 			contactLID := firstChatdAttr(current.Attrs, "contact_lid", "author_lid", "creator_lid", "caller_lid", "invitee_lid")
 			contactPN := firstChatdAttr(current.Attrs, "contact_pn", "contact_pn_jid", "author_pn", "author_pn_jid", "creator_pn", "creator_pn_jid", "caller_pn", "caller_pn_jid", "invitee_pn", "invitee_pn_jid")
-			refs.Contact = firstNonEmpty(firstChatdAttr(current.Attrs, "from"), peerLID, senderLID, firstChatdAttr(current.Attrs, "participant"), refs.Contact)
-			refs.Sender = firstNonEmpty(senderLID, contactLID, firstChatdAttr(current.Attrs, "participant", "from"), refs.Sender, refs.Contact)
-			refs.ContactPN = firstNonEmpty(firstChatdAttr(current.Attrs, "from_pn", "from_pn_jid", "pn_jid", "new_jid"), peerPN, contactPN, senderPN, refs.ContactPN)
-			refs.SenderPN = firstNonEmpty(firstChatdAttr(current.Attrs, "participant_pn", "participant_pn_jid", "sender_pn", "sender_pn_jid"), contactPN, firstChatdAttr(current.Attrs, "from_pn", "from_pn_jid", "pn_jid"), refs.SenderPN, refs.ContactPN)
-			refs.NotifyName = firstNonEmpty(firstChatdAttr(current.Attrs, "notify", "notify_name", "display_name", "contact_push_name"), refs.NotifyName)
-			refs.ParticipantUsername = firstNonEmpty(firstChatdAttr(current.Attrs, "participant_username", "peer_recipient_username", "contact_username", "username"), refs.ParticipantUsername)
+			refs.Contact = shared.FirstNonEmpty(firstChatdAttr(current.Attrs, "from"), peerLID, senderLID, firstChatdAttr(current.Attrs, "participant"), refs.Contact)
+			refs.Sender = shared.FirstNonEmpty(senderLID, contactLID, firstChatdAttr(current.Attrs, "participant", "from"), refs.Sender, refs.Contact)
+			refs.ContactPN = shared.FirstNonEmpty(firstChatdAttr(current.Attrs, "from_pn", "from_pn_jid", "pn_jid", "new_jid"), peerPN, contactPN, senderPN, refs.ContactPN)
+			refs.SenderPN = shared.FirstNonEmpty(firstChatdAttr(current.Attrs, "participant_pn", "participant_pn_jid", "sender_pn", "sender_pn_jid"), contactPN, firstChatdAttr(current.Attrs, "from_pn", "from_pn_jid", "pn_jid"), refs.SenderPN, refs.ContactPN)
+			refs.NotifyName = shared.FirstNonEmpty(firstChatdAttr(current.Attrs, "notify", "notify_name", "display_name", "contact_push_name"), refs.NotifyName)
+			refs.ParticipantUsername = shared.FirstNonEmpty(firstChatdAttr(current.Attrs, "participant_username", "peer_recipient_username", "contact_username", "username"), refs.ParticipantUsername)
 			refs.ContactHints = dedupeWAContactHints(append(refs.ContactHints, contactHintsFromChatdNode(current)...))
 		}
 		if current.Tag == "enc" {
@@ -569,7 +571,7 @@ func iterEncPayloads(node chatdNode) []chatdEncPayload {
 					NotifyName:          refs.NotifyName,
 					ParticipantUsername: refs.ParticipantUsername,
 					ContactHints:        refs.ContactHints,
-					EncType:             firstNonEmpty(current.Attrs["type"], current.Attrs["v"], "auto"),
+					EncType:             shared.FirstNonEmpty(current.Attrs["type"], current.Attrs["v"], "auto"),
 					Path:                strings.Join(currentPath, "/"),
 					Payload:             raw,
 				})
@@ -683,7 +685,7 @@ func controlNodeAttrSummary(attrs map[string]string) []string {
 }
 
 func payloadRefForEnc(accountID string, payload []byte) string {
-	return "native-enc:" + stableID(accountID+":"+hexKey(payload))
+	return "native-enc:" + shared.StableID(accountID+":"+hexKey(payload))
 }
 
 func timeNowMillis() int64 {

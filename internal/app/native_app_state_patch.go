@@ -14,6 +14,7 @@ import (
 	"strings"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"golang.org/x/crypto/hkdf"
 	"google.golang.org/protobuf/encoding/protowire"
 )
@@ -354,6 +355,6 @@ func nativeAppStateLTHashApply(hash []byte, item []byte, sign int) ([]byte, erro
 	return out, nil
 }
 
-func appStatePatchError(message string) *AppError {
-	return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, message, false)
+func appStatePatchError(message string) *shared.AppError {
+	return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, message, false)
 }

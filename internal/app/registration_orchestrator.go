@@ -7,19 +7,20 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 func (s *serverCore) StartRegistration(ctx context.Context, payload map[string]any) (map[string]any, error) {
 	if s == nil {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "wa-app service is not configured", false)
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "wa-app service is not configured", false)
 	}
 	if payload == nil {
 		payload = map[string]any{}
 	}
 	gateway := &actionGateway{server: s.facade}
 	basePayload := cloneActionPayload(payload)
-	basePayload["purpose"] = firstNonEmpty(textField(basePayload, "purpose"), "WA_REGISTRATION")
-	basePayload["proxy_session_mode"] = firstNonEmpty(textField(basePayload, "proxy_session_mode"), "STICKY")
+	basePayload["purpose"] = shared.FirstNonEmpty(textField(basePayload, "purpose"), "WA_REGISTRATION")
+	basePayload["proxy_session_mode"] = shared.FirstNonEmpty(textField(basePayload, "proxy_session_mode"), "STICKY")
 	method := registrationMethodFromPayload(basePayload)
 	authCodeContext := authCodeContextFromPayload(basePayload)
 	integrityMode := nativeIntegrityModeFromPayload(basePayload)
@@ -85,7 +86,7 @@ func (s *serverCore) StartRegistration(ctx context.Context, payload map[string]a
 		"delivery_method":         method.String(),
 		"method":                  registrationMethodName(method, "sms"),
 		"method_statuses":         methodStatusMaps(codeResult.MethodStatuses),
-		"registration_phase":      registrationPhase(true, verificationRequestID, durationFromProto(record.GetRetryAfter())),
+		"registration_phase":      registrationPhase(true, verificationRequestID, shared.DurationFromProto(record.GetRetryAfter())),
 		"fingerprint_persistence": "COMMITTED",
 		"persisted":               true,
 		"phone_status":            registrationCodeResultPhoneStatus(codeResult, method, false),
@@ -95,7 +96,7 @@ func (s *serverCore) StartRegistration(ctx context.Context, payload map[string]a
 		response["account_transfer_challenge"] = protoMap(challenge)
 		response["registration_phase"] = "ACCOUNT_TRANSFER_WAITING"
 	}
-	if seconds := durationSeconds(record.GetRetryAfter()); seconds > 0 {
+	if seconds := shared.DurationSeconds(record.GetRetryAfter()); seconds > 0 {
 		response["retry_after_seconds"] = seconds
 	}
 	return response, nil
@@ -133,13 +134,13 @@ func (g *actionGateway) saveRegistrationAttemptState(ctx context.Context, ref st
 }
 
 func registrationAttemptStateKey(phone *waappv1.PhoneTarget) string {
-	return "wa-register-state:" + stableID(firstNonEmpty(phone.GetE164Number(), fullPhoneKey(phoneCC(phone), phoneNational(phone))))
+	return "wa-register-state:" + shared.StableID(shared.FirstNonEmpty(phone.GetE164Number(), fullPhoneKey(shared.PhoneCC(phone), shared.PhoneNational(phone))))
 }
 
 func logRegistrationAttemptState(payload map[string]any, phone *waappv1.PhoneTarget, reused bool) {
 	phoneHash := ""
 	if phone != nil && phone.GetE164Number() != "" {
-		phoneHash = stableID(phone.GetE164Number())
+		phoneHash = shared.StableID(phone.GetE164Number())
 	}
 	log.Printf(
 		"wa_registration_attempt_state correlation=%s phone_hash=%s reused=%t ttl_seconds=%d",
@@ -153,9 +154,9 @@ func logRegistrationAttemptState(payload map[string]any, phone *waappv1.PhoneTar
 func logRegistrationCodeResult(payload map[string]any, phone *waappv1.PhoneTarget, route WAProxyRoute, method waappv1.VerificationDeliveryMethod, result EngineCodeResult) {
 	phoneHash := ""
 	if phone != nil && phone.GetE164Number() != "" {
-		phoneHash = stableID(phone.GetE164Number())
+		phoneHash = shared.StableID(phone.GetE164Number())
 	}
-	protoErr := ToProtoError(result.Err)
+	protoErr := shared.ToProtoError(result.Err)
 	log.Printf(
 		"wa_registration_code_result correlation=%s phone_hash=%s proxy_account=%s route_id=%s accepted=%t method=%s status=%s raw_status=%s raw_reason=%s retry_after_seconds=%d method_status_count=%d error=%s",
 		probeLogValue(actionContext(payload).GetCorrelationId()),
@@ -176,9 +177,9 @@ func logRegistrationCodeResult(payload map[string]any, phone *waappv1.PhoneTarge
 func logRegistrationProbeResult(payload map[string]any, phone *waappv1.PhoneTarget, route WAProxyRoute, method waappv1.VerificationDeliveryMethod, result EngineProbeResult) {
 	phoneHash := ""
 	if phone != nil && phone.GetE164Number() != "" {
-		phoneHash = stableID(phone.GetE164Number())
+		phoneHash = shared.StableID(phone.GetE164Number())
 	}
-	protoErr := ToProtoError(result.Err)
+	protoErr := shared.ToProtoError(result.Err)
 	log.Printf(
 		"wa_registration_probe_result correlation=%s phone_hash=%s proxy_account=%s route_id=%s allowed=%t method=%s account_flow=%s account_status=%s raw_status=%s raw_reason=%s sms_available=%t sms_wait_seconds=%d method_status_count=%d error=%s",
 		probeLogValue(actionContext(payload).GetCorrelationId()),
@@ -199,7 +200,7 @@ func logRegistrationProbeResult(payload map[string]any, phone *waappv1.PhoneTarg
 }
 
 func authCodeContextFromPayload(payload map[string]any) string {
-	return firstNonEmpty(
+	return shared.FirstNonEmpty(
 		textField(payload, "auth_code_context"),
 		textField(payload, "authCodeContext"),
 		textField(payload, "code_entrypoint"),
@@ -207,7 +208,7 @@ func authCodeContextFromPayload(payload map[string]any) string {
 }
 
 func registrationMethodFromPayload(payload map[string]any) waappv1.VerificationDeliveryMethod {
-	method := verificationMethodFromName(firstNonEmpty(
+	method := verificationMethodFromName(shared.FirstNonEmpty(
 		textField(payload, "delivery_method"),
 		textField(payload, "verification_method"),
 		textField(payload, "method"),
@@ -379,13 +380,13 @@ func registrationRequestFailureMap(result EngineCodeResult, method waappv1.Verif
 	if err == nil {
 		err = registrationCodeRequestError(result)
 	}
-	protoErr := ToProtoError(err)
+	protoErr := shared.ToProtoError(err)
 	seconds := int64(result.RetryAfter / time.Second)
 	accountFlow := registrationCodeRequestFlow(result, protoErr)
 	response := map[string]any{
 		"success":         false,
 		"request_failed":  true,
-		"status":          firstNonEmpty(result.Status.String(), "VERIFICATION_REQUEST_STATUS_REJECTED"),
+		"status":          shared.FirstNonEmpty(result.Status.String(), "VERIFICATION_REQUEST_STATUS_REJECTED"),
 		"error":           protoMap(protoErr),
 		"error_message":   protoErr.GetMessage(),
 		"reject_reason":   registrationRejectReason(protoErr.GetMessage()),
@@ -415,17 +416,17 @@ func registrationRequestFailureMap(result EngineCodeResult, method waappv1.Verif
 func registrationCodeRequestError(result EngineCodeResult) error {
 	switch {
 	case result.RetryAfter > 0 || existRateLimitedReason(result.RawReason):
-		return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_RATE_LIMITED, "verification request is cooling down", true)
+		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_RATE_LIMITED, "verification request is cooling down", true)
 	case existInvalidNumberReason(result.RawReason):
-		return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "verification request rejected: phone format is invalid", false)
+		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "verification request rejected: phone format is invalid", false)
 	case strings.EqualFold(result.RawReason, "no_routes") || strings.EqualFold(result.RawStatus, "no_routes"):
-		return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_ROUTE_UNAVAILABLE, "no_routes: verification route is unavailable", false)
+		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_ROUTE_UNAVAILABLE, "no_routes: verification route is unavailable", false)
 	case strings.TrimSpace(result.RawReason) != "":
-		return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "verification request was rejected: reason="+result.RawReason, false)
+		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "verification request was rejected: reason="+result.RawReason, false)
 	case strings.TrimSpace(result.RawStatus) != "":
-		return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "verification request was rejected: status="+result.RawStatus, false)
+		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "verification request was rejected: status="+result.RawStatus, false)
 	default:
-		return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "verification request was rejected", false)
+		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "verification request was rejected", false)
 	}
 }
 
@@ -448,10 +449,10 @@ func registrationProbeFailureMap(result EngineProbeResult, route WAProxyRoute, m
 	if err == nil {
 		err = registrationProbeError(result)
 	}
-	protoErr := ToProtoError(err)
+	protoErr := shared.ToProtoError(err)
 	response := map[string]any{
 		"success":         false,
-		"status":          firstNonEmpty(result.Status.String(), "ACCOUNT_PROBE_STATUS_UNREACHABLE"),
+		"status":          shared.FirstNonEmpty(result.Status.String(), "ACCOUNT_PROBE_STATUS_UNREACHABLE"),
 		"error":           protoMap(protoErr),
 		"error_message":   protoErr.GetMessage(),
 		"method_statuses": methodStatusMaps(result.MethodStatuses),
@@ -480,17 +481,17 @@ func registrationProbeFailureMap(result EngineProbeResult, route WAProxyRoute, m
 func registrationProbeError(result EngineProbeResult) error {
 	switch {
 	case result.SMSWaitSeconds > 0 || result.AccountFlow == accountProbeFlowRateLimited:
-		return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_RATE_LIMITED, "verification request is cooling down", true)
+		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_RATE_LIMITED, "verification request is cooling down", true)
 	case result.Blocked:
-		return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "number is blocked", false)
+		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "number is blocked", false)
 	case result.AccountFlow == accountProbeFlowConsentRequired:
-		return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "registration requires consent before a code can be requested", false)
+		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "registration requires consent before a code can be requested", false)
 	case result.AccountFlow == accountProbeFlowChallengeRequired:
-		return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "registration requires challenge verification before a code can be requested", false)
+		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "registration requires challenge verification before a code can be requested", false)
 	case result.Status != waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REACHABLE:
-		return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "account probe is not reachable", false)
+		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "account probe is not reachable", false)
 	default:
-		return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_ROUTE_UNAVAILABLE, "verification route unavailable", true)
+		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_ROUTE_UNAVAILABLE, "verification route unavailable", true)
 	}
 }
 
@@ -578,19 +579,19 @@ func (g *actionGateway) discardRejectedRegistration(ctx context.Context, basePay
 	if boolField(result, "success") {
 		return nil
 	}
-	return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, firstNonEmpty(textField(result, "error_message"), "discard rejected WA registration failed"), false)
+	return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, shared.FirstNonEmpty(textField(result, "error_message"), "discard rejected WA registration failed"), false)
 }
 
 func rejectedRegistrationResult(basePayload map[string]any, requested map[string]any) map[string]any {
-	errorMessage := firstNonEmpty(textField(requested, "error_message"), textField(objectField(requested, "error"), "message"), "WA registration request was rejected")
+	errorMessage := shared.FirstNonEmpty(textField(requested, "error_message"), textField(objectField(requested, "error"), "message"), "WA registration request was rejected")
 	response := map[string]any{
 		"success":                 false,
-		"status":                  firstNonEmpty(textField(requested, "status"), "OTP_REQUEST_REJECTED"),
+		"status":                  shared.FirstNonEmpty(textField(requested, "status"), "OTP_REQUEST_REJECTED"),
 		"error":                   objectField(requested, "error"),
 		"error_message":           errorMessage,
 		"reject_reason":           registrationRejectReason(errorMessage),
 		"phone":                   objectField(basePayload, "phone"),
-		"registration_phase":      firstNonEmpty(textField(requested, "registration_phase"), "OTP_REQUEST_REJECTED"),
+		"registration_phase":      shared.FirstNonEmpty(textField(requested, "registration_phase"), "OTP_REQUEST_REJECTED"),
 		"fingerprint_persistence": "DISCARDED",
 		"persisted":               false,
 		"phone_status":            objectField(requested, "phone_status"),
@@ -629,7 +630,7 @@ func registrationRejectReason(errorMessage string) string {
 }
 
 func registrationOrchestratorProxySummary(proxy map[string]any) map[string]any {
-	mode := firstNonEmpty(textField(proxy, "proxy_mode"), "DIRECT")
-	countryCode := firstNonEmpty(textField(proxy, "country_code"), "LOCAL")
+	mode := shared.FirstNonEmpty(textField(proxy, "proxy_mode"), "DIRECT")
+	countryCode := shared.FirstNonEmpty(textField(proxy, "country_code"), "LOCAL")
 	return map[string]any{"proxy_mode": mode, "country_code": countryCode}
 }

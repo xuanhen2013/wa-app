@@ -9,6 +9,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -272,7 +273,7 @@ func (m *LongConnectionManager) seedRevokedEntry(loginState *waappv1.LoginState)
 	}
 	lastErr := loginState.GetLastError()
 	if lastErr == nil {
-		lastErr = ToProtoError(accountLoggedOutError(""))
+		lastErr = shared.ToProtoError(accountLoggedOutError(""))
 	}
 	m.entries[key] = &longConnectionEntry{
 		revoked: true,
@@ -439,7 +440,7 @@ func (m *LongConnectionManager) runEntry(ctx context.Context, loginState *waappv
 				break
 			}
 			if resp.GetError() != nil {
-				respErr := errorFromProto(resp.GetError())
+				respErr := shared.ErrorFromProto(resp.GetError())
 				lastErr = respErr
 				m.recordLoopError(key, reconnects, respErr)
 				terminal = longConnectionTerminalError(respErr) || isAccountTakeoverError(respErr)
@@ -499,7 +500,7 @@ func longConnectionTerminalError(err error) bool {
 	if err == nil {
 		return false
 	}
-	protoErr := ToProtoError(err)
+	protoErr := shared.ToProtoError(err)
 	if protoErr.GetRetryable() {
 		return false
 	}
@@ -520,7 +521,7 @@ func isAccountTakeoverError(err error) bool {
 	if err == nil {
 		return false
 	}
-	protoErr := ToProtoError(err)
+	protoErr := shared.ToProtoError(err)
 	return protoErr.GetCode() == waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT &&
 		strings.Contains(protoErr.GetMessage(), chatdAccountTakeoverMarker)
 }
@@ -544,7 +545,7 @@ func (m *LongConnectionManager) openSession(ctx context.Context, loginState *waa
 		return nil, err
 	}
 	if resp.GetError() != nil {
-		return nil, errorFromProto(resp.GetError())
+		return nil, shared.ErrorFromProto(resp.GetError())
 	}
 	return resp.GetSession(), nil
 }
@@ -578,7 +579,7 @@ func (m *LongConnectionManager) decryptReceivedMessages(ctx context.Context, ses
 }
 
 func (m *LongConnectionManager) recordLoopError(key string, reconnects int32, err error) {
-	protoErr := ToProtoError(err)
+	protoErr := shared.ToProtoError(err)
 	m.update(key, func(snapshot *waappv1.LongConnectionState) {
 		snapshot.Status = waappv1.LongConnectionStatus_LONG_CONNECTION_STATUS_RECONNECTING
 		snapshot.ReconnectCount = reconnects
@@ -624,10 +625,10 @@ func (m *LongConnectionManager) Revoke(registeredIdentityID string, cause error)
 	entry.cancel = nil
 	if entry.snapshot != nil {
 		entry.snapshot.Status = waappv1.LongConnectionStatus_LONG_CONNECTION_STATUS_STOPPED
-		entry.snapshot.LastError = ToProtoError(cause)
+		entry.snapshot.LastError = shared.ToProtoError(cause)
 	}
 	m.mu.Unlock()
-	log.Printf("WA long connection revoked: registered_identity=%s reason=%s", registeredIdentityID, longConnectionLogErrorMessage(ToProtoError(cause).GetMessage()))
+	log.Printf("WA long connection revoked: registered_identity=%s reason=%s", registeredIdentityID, longConnectionLogErrorMessage(shared.ToProtoError(cause).GetMessage()))
 	if cancel != nil {
 		cancel()
 	}
@@ -702,7 +703,7 @@ func (s *serverCore) markLoginTransferredOut(ctx context.Context, loginState *wa
 		loginState.Audit = &waappv1.AuditStamp{CreatedAt: timestamppb.New(now)}
 	}
 	loginState.Status = waappv1.LoginStateStatus_LOGIN_STATE_STATUS_REVOKED
-	loginState.LastError = ToProtoError(cause)
+	loginState.LastError = shared.ToProtoError(cause)
 	loginState.Audit.UpdatedAt = timestamppb.New(now)
 	if err := s.store.SaveLoginState(ctx, loginState, "native-db:"+loginState.GetClientProfileId()); err != nil {
 		log.Printf("WA long connection persist transferred-out failed: registered_identity=%s error=%v", registeredIdentityID, sanitizeLogError(err))
@@ -735,7 +736,7 @@ func longConnectionEngineInput(session *waappv1.MessageSession) EngineMessageInp
 }
 
 func longConnectionKey(loginState *waappv1.LoginState) string {
-	return firstNonEmpty(loginState.GetRegisteredIdentityId(), loginState.GetLoginStateId())
+	return shared.FirstNonEmpty(loginState.GetRegisteredIdentityId(), loginState.GetLoginStateId())
 }
 
 func nextBackoff(current time.Duration) time.Duration {

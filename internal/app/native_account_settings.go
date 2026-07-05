@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 type accountSettingsIQSender interface {
@@ -34,7 +35,7 @@ func (e *accountSettingsService) applyAccountSettingsWithSender(ctx context.Cont
 	}
 	request := buildAccountSettingsIQ(e.ids.NewID("waiq_"), input)
 	if request.Tag == "" {
-		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "account settings operation is not supported", false)}
+		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "account settings operation is not supported", false)}
 	}
 	response, update, err := sender.sendIQ(ctx, state, input.RegisteredIdentityID, input.AppVersion, request, accountSettingsIQTimeoutMessage)
 	if applyChatdSessionUpdateState(&state, update) {
@@ -49,7 +50,7 @@ func (e *accountSettingsService) applyAccountSettingsWithSender(ctx context.Cont
 func (e *accountSettingsService) applyAccountProfileName(ctx context.Context, input EngineAccountSettingsInput, state nativeState, sender accountSettingsIQSender) EngineAccountSettingsResult {
 	state.PushName = input.DisplayName
 	if err := e.saveState(ctx, input.ClientProfileID, state); err != nil {
-		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native account profile name could not be saved", true)}
+		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native account profile name could not be saved", true)}
 	}
 	timestampMS := e.clock.Now().UnixMilli()
 	if timestampMS < 0 {
@@ -84,7 +85,7 @@ func (e *accountSettingsService) applyAccountProfileName(ctx context.Context, in
 }
 
 func isNativePushNamePatchOptionalError(err error) bool {
-	var appErr *AppError
+	var appErr *shared.AppError
 	if !errors.As(err, &appErr) {
 		return false
 	}
@@ -111,7 +112,7 @@ func buildAccountSettingsIQ(id string, input EngineAccountSettingsInput) chatdNo
 	case waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_EMAIL_SET:
 		return buildSetAccountEmailIQ(id, input.EmailAddress, input.GoogleIDToken)
 	case waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_EMAIL_OTP_REQUEST:
-		return buildRequestAccountEmailOtpIQ(id, firstNonEmpty(input.LocaleLanguage, "en"), firstNonEmpty(input.LocaleCountry, "US"))
+		return buildRequestAccountEmailOtpIQ(id, shared.FirstNonEmpty(input.LocaleLanguage, "en"), shared.FirstNonEmpty(input.LocaleCountry, "US"))
 	case waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_EMAIL_OTP_VERIFY:
 		return buildVerifyAccountEmailOtpIQ(id, input.Code)
 	case waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_PROFILE_PICTURE_SET:
@@ -260,7 +261,7 @@ func emailSetResultFromIQ(node chatdNode, emailAddress string) EngineAccountSett
 		status.EmailConfirmed = chatdNodeBool(emailNode, "confirmed")
 		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_VERIFIED, TwoFactorStatus: status}
 	}
-	return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "WA set email was not accepted for verification", false)}
+	return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "WA set email was not accepted for verification", false)}
 }
 
 func emailOtpRequestResultFromIQ(node chatdNode) EngineAccountSettingsResult {
@@ -292,14 +293,14 @@ func emailOtpVerifyResultFromIQ(node chatdNode) EngineAccountSettingsResult {
 }
 
 func malformedAccountSettingsResult(message string) EngineAccountSettingsResult {
-	return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, message, false)}
+	return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, message, false)}
 }
 
 func accountSettingsRequestError(err error) error {
 	if accountSettingsTimeoutError(err) {
-		return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, accountSettingsRequestTimeoutMessage, true)
+		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, accountSettingsRequestTimeoutMessage, true)
 	}
-	return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "native account settings request failed", isRetryableTransportError(err))
+	return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "native account settings request failed", isRetryableTransportError(err))
 }
 
 func accountSettingsTimeoutError(err error) bool {

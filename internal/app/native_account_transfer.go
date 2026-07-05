@@ -6,6 +6,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -38,7 +39,7 @@ func newNativeAccountTransferState(phone *waappv1.PhoneTarget, codes []string, n
 		EncryptionAccountHash:  b64u(randomBytes(32)),
 		EncryptionKeySalt:      b64u(randomBytes(32)),
 		DeeplinkBase:           accountTransferDeeplinkBase,
-		AccountPhoneNumber:     fullPhoneKey(phoneCC(phone), phoneNational(phone)),
+		AccountPhoneNumber:     fullPhoneKey(shared.PhoneCC(phone), shared.PhoneNational(phone)),
 		LastChallengeIssuedSec: now.UTC().Unix(),
 	}
 }
@@ -90,7 +91,7 @@ func (s nativeAccountTransferState) expiresAt() time.Time {
 
 func (s *nativeAccountTransferState) currentCode(now time.Time) (string, int, error) {
 	if s == nil || len(s.Codes) == 0 {
-		return "", 0, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_EXPIRED, "account transfer challenge is not available", false)
+		return "", 0, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_EXPIRED, "account transfer challenge is not available", false)
 	}
 	requestedAt := s.RequestedAtUnix
 	if requestedAt <= 0 {
@@ -106,7 +107,7 @@ func (s *nativeAccountTransferState) currentCode(now time.Time) (string, int, er
 		index = 1
 	}
 	if index > len(s.Codes) {
-		return "", index, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_EXPIRED, "account transfer challenge expired", false)
+		return "", index, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_EXPIRED, "account transfer challenge expired", false)
 	}
 	s.CurrentIndex = index
 	s.LastChallengeIssuedSec = now.UTC().Unix()
@@ -135,7 +136,7 @@ func (s *nativeAccountTransferState) challenge(verificationRequestID string, now
 }
 
 func (s nativeAccountTransferState) deeplink(code string) string {
-	base := firstNonEmpty(s.DeeplinkBase, accountTransferDeeplinkBase)
+	base := shared.FirstNonEmpty(s.DeeplinkBase, accountTransferDeeplinkBase)
 	values := []struct {
 		key   string
 		value string
@@ -152,7 +153,7 @@ func (s nativeAccountTransferState) deeplink(code string) string {
 		{"ssidPw", ""},
 		{"otpCode", code},
 		{"port", accountTransferDeeplinkPort},
-		{"encKeyVer", firstNonEmpty(s.EncryptionKeyVersion, accountTransferEncKeyVersion)},
+		{"encKeyVer", shared.FirstNonEmpty(s.EncryptionKeyVersion, accountTransferEncKeyVersion)},
 		{"encKeyAccHash", s.EncryptionAccountHash},
 		{"encKeySalt", s.EncryptionKeySalt},
 		{"phoneNumber", s.AccountPhoneNumber},

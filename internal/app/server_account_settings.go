@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"google.golang.org/protobuf/types/known/durationpb"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
@@ -17,19 +18,19 @@ const (
 )
 
 func (s *accountSettingsHandler) GetTwoFactorAuthStatus(ctx context.Context, req *waappv1.GetTwoFactorAuthStatusRequest) (*waappv1.GetTwoFactorAuthStatusResponse, error) {
-	if err := validateContext(req.GetContext()); err != nil {
-		return &waappv1.GetTwoFactorAuthStatusResponse{Error: ToProtoError(err)}, nil
+	if err := shared.ValidateContext(req.GetContext()); err != nil {
+		return &waappv1.GetTwoFactorAuthStatusResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	if !req.GetRemoteRefresh() {
 		status, err := s.cachedTwoFactorAuthStatus(ctx, req.GetSelector())
 		if err != nil {
-			return &waappv1.GetTwoFactorAuthStatusResponse{Error: ToProtoError(err)}, nil
+			return &waappv1.GetTwoFactorAuthStatusResponse{Error: shared.ToProtoError(err)}, nil
 		}
 		return &waappv1.GetTwoFactorAuthStatusResponse{Status: status}, nil
 	}
 	status, appErr, err := s.refreshTwoFactorAuthStatus(ctx, req.GetContext(), req.GetSelector())
 	if err != nil {
-		return &waappv1.GetTwoFactorAuthStatusResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.GetTwoFactorAuthStatusResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	if appErr != nil {
 		return &waappv1.GetTwoFactorAuthStatusResponse{Error: appErr}, nil
@@ -38,45 +39,45 @@ func (s *accountSettingsHandler) GetTwoFactorAuthStatus(ctx context.Context, req
 }
 
 func (s *accountSettingsHandler) SetTwoFactorAuthSettings(ctx context.Context, req *waappv1.SetTwoFactorAuthSettingsRequest) (*waappv1.SetTwoFactorAuthSettingsResponse, error) {
-	if err := validateContext(req.GetContext()); err != nil {
-		return &waappv1.SetTwoFactorAuthSettingsResponse{Error: ToProtoError(err)}, nil
+	if err := shared.ValidateContext(req.GetContext()); err != nil {
+		return &waappv1.SetTwoFactorAuthSettingsResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	pin, err := accountSettingsSensitiveValue(req.GetPin(), "pin", true)
 	if err != nil {
-		return &waappv1.SetTwoFactorAuthSettingsResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.SetTwoFactorAuthSettingsResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	pin, err = requireSixDigits(pin, "pin")
 	if err != nil {
-		return &waappv1.SetTwoFactorAuthSettingsResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.SetTwoFactorAuthSettingsResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	op, err := s.applyAccountSettings(ctx, req.GetContext(), req.GetSelector(), waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_TWO_FACTOR_AUTH_SETTINGS, func(input EngineAccountSettingsInput) EngineAccountSettingsInput {
 		input.Pin = pin
 		return input
 	})
 	if err != nil {
-		return &waappv1.SetTwoFactorAuthSettingsResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.SetTwoFactorAuthSettingsResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	if op.GetError() == nil {
 		if err := s.patchTwoFactorAuthStatus(ctx, op.GetWaAccountId(), accountSettingsCompletedAt(op, s.clock.Now()), func(status *waappv1.TwoFactorAuthStatus) {
 			status.Configured = true
 		}); err != nil {
-			return &waappv1.SetTwoFactorAuthSettingsResponse{Operation: op, Error: ToProtoError(err)}, nil
+			return &waappv1.SetTwoFactorAuthSettingsResponse{Operation: op, Error: shared.ToProtoError(err)}, nil
 		}
 	}
 	return &waappv1.SetTwoFactorAuthSettingsResponse{Operation: op, Error: op.GetError()}, nil
 }
 
 func (s *accountSettingsHandler) SetAccountEmail(ctx context.Context, req *waappv1.SetAccountEmailRequest) (*waappv1.SetAccountEmailResponse, error) {
-	if err := validateContext(req.GetContext()); err != nil {
-		return &waappv1.SetAccountEmailResponse{Error: ToProtoError(err)}, nil
+	if err := shared.ValidateContext(req.GetContext()); err != nil {
+		return &waappv1.SetAccountEmailResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	emailAddress, err := requiredEmailAddress(req.GetEmailAddress(), "email_address")
 	if err != nil {
-		return &waappv1.SetAccountEmailResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.SetAccountEmailResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	googleIDToken, err := accountSettingsSensitiveValue(req.GetGoogleIdToken(), "google_id_token", false)
 	if err != nil {
-		return &waappv1.SetAccountEmailResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.SetAccountEmailResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	op, result, err := s.applyAccountSettingsResult(ctx, req.GetContext(), req.GetSelector(), waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_EMAIL_SET, func(input EngineAccountSettingsInput) EngineAccountSettingsInput {
 		input.EmailAddress = emailAddress
@@ -84,7 +85,7 @@ func (s *accountSettingsHandler) SetAccountEmail(ctx context.Context, req *waapp
 		return input
 	})
 	if err != nil {
-		return &waappv1.SetAccountEmailResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.SetAccountEmailResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	if op.GetError() == nil {
 		if err := s.patchTwoFactorAuthStatus(ctx, op.GetWaAccountId(), accountSettingsCompletedAt(op, s.clock.Now()), func(status *waappv1.TwoFactorAuthStatus) {
@@ -94,15 +95,15 @@ func (s *accountSettingsHandler) SetAccountEmail(ctx context.Context, req *waapp
 			}
 			status.EmailConfigured = status.GetEmailConfigured() || status.GetEmailAddress() != ""
 		}); err != nil {
-			return &waappv1.SetAccountEmailResponse{Operation: op, Error: ToProtoError(err)}, nil
+			return &waappv1.SetAccountEmailResponse{Operation: op, Error: shared.ToProtoError(err)}, nil
 		}
 	}
 	return &waappv1.SetAccountEmailResponse{Operation: op, Error: op.GetError()}, nil
 }
 
 func (s *accountSettingsHandler) RequestAccountEmailOtp(ctx context.Context, req *waappv1.RequestAccountEmailOtpRequest) (*waappv1.RequestAccountEmailOtpResponse, error) {
-	if err := validateContext(req.GetContext()); err != nil {
-		return &waappv1.RequestAccountEmailOtpResponse{Error: ToProtoError(err)}, nil
+	if err := shared.ValidateContext(req.GetContext()); err != nil {
+		return &waappv1.RequestAccountEmailOtpResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	op, err := s.applyAccountSettings(ctx, req.GetContext(), req.GetSelector(), waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_EMAIL_OTP_REQUEST, func(input EngineAccountSettingsInput) EngineAccountSettingsInput {
 		input.LocaleLanguage = accountSettingsLocale(req.GetLocaleLanguage(), "en")
@@ -110,70 +111,70 @@ func (s *accountSettingsHandler) RequestAccountEmailOtp(ctx context.Context, req
 		return input
 	})
 	if err != nil {
-		return &waappv1.RequestAccountEmailOtpResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.RequestAccountEmailOtpResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	return &waappv1.RequestAccountEmailOtpResponse{Operation: op, Error: op.GetError()}, nil
 }
 
 func (s *accountSettingsHandler) VerifyAccountEmailOtp(ctx context.Context, req *waappv1.VerifyAccountEmailOtpRequest) (*waappv1.VerifyAccountEmailOtpResponse, error) {
-	if err := validateContext(req.GetContext()); err != nil {
-		return &waappv1.VerifyAccountEmailOtpResponse{Error: ToProtoError(err)}, nil
+	if err := shared.ValidateContext(req.GetContext()); err != nil {
+		return &waappv1.VerifyAccountEmailOtpResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	code, err := accountSettingsSensitiveValue(req.GetCode(), "code", true)
 	if err != nil {
-		return &waappv1.VerifyAccountEmailOtpResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.VerifyAccountEmailOtpResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	code, err = requireSixDigits(code, "code")
 	if err != nil {
-		return &waappv1.VerifyAccountEmailOtpResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.VerifyAccountEmailOtpResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	op, err := s.applyAccountSettings(ctx, req.GetContext(), req.GetSelector(), waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_EMAIL_OTP_VERIFY, func(input EngineAccountSettingsInput) EngineAccountSettingsInput {
 		input.Code = code
 		return input
 	})
 	if err != nil {
-		return &waappv1.VerifyAccountEmailOtpResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.VerifyAccountEmailOtpResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	if op.GetError() == nil && op.GetStatus() == waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_VERIFIED {
 		if err := s.patchTwoFactorAuthStatus(ctx, op.GetWaAccountId(), accountSettingsCompletedAt(op, s.clock.Now()), func(status *waappv1.TwoFactorAuthStatus) {
 			mergeTwoFactorAuthStatus(status, &waappv1.TwoFactorAuthStatus{EmailConfigured: true, EmailVerified: true})
 		}); err != nil {
-			return &waappv1.VerifyAccountEmailOtpResponse{Operation: op, Error: ToProtoError(err)}, nil
+			return &waappv1.VerifyAccountEmailOtpResponse{Operation: op, Error: shared.ToProtoError(err)}, nil
 		}
 	}
 	return &waappv1.VerifyAccountEmailOtpResponse{Operation: op, Error: op.GetError()}, nil
 }
 
 func (s *accountSettingsHandler) SetAccountProfileName(ctx context.Context, req *waappv1.SetAccountProfileNameRequest) (*waappv1.SetAccountProfileNameResponse, error) {
-	if err := validateContext(req.GetContext()); err != nil {
-		return &waappv1.SetAccountProfileNameResponse{Error: ToProtoError(err)}, nil
+	if err := shared.ValidateContext(req.GetContext()); err != nil {
+		return &waappv1.SetAccountProfileNameResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	displayName, err := requiredAccountProfileName(req.GetDisplayName())
 	if err != nil {
-		return &waappv1.SetAccountProfileNameResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.SetAccountProfileNameResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	op, err := s.applyAccountSettings(ctx, req.GetContext(), req.GetSelector(), waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_PROFILE_NAME_SET, func(input EngineAccountSettingsInput) EngineAccountSettingsInput {
 		input.DisplayName = displayName
 		return input
 	})
 	if err != nil {
-		return &waappv1.SetAccountProfileNameResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.SetAccountProfileNameResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	if op.GetError() == nil {
 		if err := s.saveAccountDisplayName(ctx, op.GetWaAccountId(), displayName, accountSettingsCompletedAt(op, s.clock.Now())); err != nil {
-			return &waappv1.SetAccountProfileNameResponse{Operation: op, Error: ToProtoError(err)}, nil
+			return &waappv1.SetAccountProfileNameResponse{Operation: op, Error: shared.ToProtoError(err)}, nil
 		}
 	}
 	return &waappv1.SetAccountProfileNameResponse{Operation: op, Error: op.GetError()}, nil
 }
 
 func (s *accountSettingsHandler) SetAccountProfilePicture(ctx context.Context, req *waappv1.SetAccountProfilePictureRequest) (*waappv1.SetAccountProfilePictureResponse, error) {
-	if err := validateContext(req.GetContext()); err != nil {
-		return &waappv1.SetAccountProfilePictureResponse{Error: ToProtoError(err)}, nil
+	if err := shared.ValidateContext(req.GetContext()); err != nil {
+		return &waappv1.SetAccountProfilePictureResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	image, err := requiredAccountProfilePicture(req.GetImage(), req.GetContentType())
 	if err != nil {
-		return &waappv1.SetAccountProfilePictureResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.SetAccountProfilePictureResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	contentType, _ := profilePictureContentType(image, req.GetContentType())
 	op, result, err := s.applyAccountSettingsResult(ctx, req.GetContext(), req.GetSelector(), waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_PROFILE_PICTURE_SET, func(input EngineAccountSettingsInput) EngineAccountSettingsInput {
@@ -181,7 +182,7 @@ func (s *accountSettingsHandler) SetAccountProfilePicture(ctx context.Context, r
 		return input
 	})
 	if err != nil {
-		return &waappv1.SetAccountProfilePictureResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.SetAccountProfilePictureResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	if op.GetError() == nil {
 		s.cacheWAAccountProfilePicture(ctx, op.GetWaAccountId(), WAContactProfilePicture{ProfilePictureID: result.ProfilePictureID, ContentType: contentType, Data: image})
@@ -190,12 +191,12 @@ func (s *accountSettingsHandler) SetAccountProfilePicture(ctx context.Context, r
 }
 
 func (s *accountSettingsHandler) RemoveAccountProfilePicture(ctx context.Context, req *waappv1.RemoveAccountProfilePictureRequest) (*waappv1.RemoveAccountProfilePictureResponse, error) {
-	if err := validateContext(req.GetContext()); err != nil {
-		return &waappv1.RemoveAccountProfilePictureResponse{Error: ToProtoError(err)}, nil
+	if err := shared.ValidateContext(req.GetContext()); err != nil {
+		return &waappv1.RemoveAccountProfilePictureResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	op, err := s.applyAccountSettings(ctx, req.GetContext(), req.GetSelector(), waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_PROFILE_PICTURE_REMOVE, nil)
 	if err != nil {
-		return &waappv1.RemoveAccountProfilePictureResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.RemoveAccountProfilePictureResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	if op.GetError() == nil {
 		s.deleteWAAccountProfilePictureCache(ctx, op.GetWaAccountId())
@@ -242,7 +243,7 @@ func (s *serverCore) applyAccountSettingsResult(ctx context.Context, requestCont
 		Kind:                       kind,
 		Status:                     accountSettingsStatus(kind, result),
 		CompletedAt:                timestamppb.New(completedAt),
-		Error:                      ToProtoError(result.Err),
+		Error:                      shared.ToProtoError(result.Err),
 	}
 	if result.WaitTime > 0 {
 		op.WaitTime = durationpb.New(result.WaitTime)
@@ -271,7 +272,7 @@ func (s *serverCore) refreshTwoFactorAuthStatus(ctx context.Context, requestCont
 		Kind:                 waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_TWO_FACTOR_AUTH_STATUS_GET,
 	})
 	if result.Err != nil {
-		return nil, ToProtoError(result.Err), nil
+		return nil, shared.ToProtoError(result.Err), nil
 	}
 	status := cloneTwoFactorAuthStatus(result.TwoFactorStatus)
 	if status == nil {
@@ -430,7 +431,7 @@ func (s *serverCore) accountSettingsLoginState(ctx context.Context, selector *wa
 	}
 	accountID, err := requireWAAccountID(selector.GetWaAccountId())
 	if err != nil {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "login_state_id, registered_identity_id, or wa_account_id is required", false)
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "login_state_id, registered_identity_id, or wa_account_id is required", false)
 	}
 	if selector.GetClientProfileId() != "" {
 		return requireActiveLoginState(func() (*waappv1.LoginState, error) {
@@ -447,7 +448,7 @@ func (s *serverCore) accountSettingsLoginState(ctx context.Context, selector *wa
 			return loginState, nil
 		}
 	}
-	return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REGISTRATION_NOT_FOUND, "active login state not found", false)
+	return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REGISTRATION_NOT_FOUND, "active login state not found", false)
 }
 
 func requireActiveLoginState(load func() (*waappv1.LoginState, error)) (*waappv1.LoginState, error) {
@@ -456,7 +457,7 @@ func requireActiveLoginState(load func() (*waappv1.LoginState, error)) (*waappv1
 		return nil, err
 	}
 	if loginState.GetStatus() != waappv1.LoginStateStatus_LOGIN_STATE_STATUS_ACTIVE {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, "login state is not active", false)
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, "login state is not active", false)
 	}
 	return loginState, nil
 }
@@ -480,18 +481,18 @@ func accountSettingsSensitiveValue(value *waappv1.SensitiveText, label string, r
 		return plain, nil
 	}
 	if strings.TrimSpace(value.GetSecretRef()) != "" {
-		return "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, label+" secret_ref is not supported by native account settings", false)
+		return "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, label+" secret_ref is not supported by native account settings", false)
 	}
 	if required {
-		return "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, label+" is required", false)
+		return "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, label+" is required", false)
 	}
 	return "", nil
 }
 
 func requireSixDigits(value string, label string) (string, error) {
 	trimmed := strings.TrimSpace(value)
-	if len(trimmed) != 6 || digitsOnly(trimmed) != trimmed {
-		return "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, label+" must be 6 digits", false)
+	if len(trimmed) != 6 || shared.DigitsOnly(trimmed) != trimmed {
+		return "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, label+" must be 6 digits", false)
 	}
 	return trimmed, nil
 }
@@ -502,7 +503,7 @@ func requiredEmailAddress(value string, label string) (string, error) {
 		return "", err
 	}
 	if trimmed == "" {
-		return "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, label+" is required", false)
+		return "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, label+" is required", false)
 	}
 	return trimmed, nil
 }
@@ -514,7 +515,7 @@ func optionalEmailAddress(value string, label string) (string, error) {
 	}
 	address, err := mail.ParseAddress(trimmed)
 	if err != nil || address.Address != trimmed {
-		return "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, label+" is invalid", false)
+		return "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, label+" is invalid", false)
 	}
 	return trimmed, nil
 }
@@ -530,20 +531,20 @@ func accountSettingsLocale(value string, fallback string) string {
 func requiredAccountProfileName(value string) (string, error) {
 	trimmed := strings.TrimSpace(value)
 	if trimmed == "" {
-		return "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "display_name is required", false)
+		return "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "display_name is required", false)
 	}
 	if utf8.RuneCountInString(trimmed) > accountProfileNameMaxRunes {
-		return "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "display_name is too long", false)
+		return "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "display_name is too long", false)
 	}
 	return trimmed, nil
 }
 
 func requiredAccountProfilePicture(image []byte, contentType string) ([]byte, error) {
 	if len(image) == 0 {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "image is required", false)
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "image is required", false)
 	}
 	if len(image) > profilePictureDownloadMaxBytes {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "WA profile picture is too large", false)
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "WA profile picture is too large", false)
 	}
 	if _, err := profilePictureContentType(image, contentType); err != nil {
 		return nil, err

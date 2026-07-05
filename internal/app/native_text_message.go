@@ -11,6 +11,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 const defaultTextMessageSendTimeout = 20 * time.Second
@@ -25,7 +26,7 @@ type chatdTextMessageSendResult struct {
 
 func (e *messagingService) SendTextMessage(ctx context.Context, input EngineTextMessageInput) EngineTextMessageResult {
 	if e == nil {
-		return EngineTextMessageResult{Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native engine is required", false)}
+		return EngineTextMessageResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native engine is required", false)}
 	}
 	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
@@ -58,7 +59,7 @@ func (e *longConnectionNativeEngine) SendTextMessage(ctx context.Context, input 
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.closed {
-		return EngineTextMessageResult{Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, "WA long connection runner is closed", true)}
+		return EngineTextMessageResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, "WA long connection runner is closed", true)}
 	}
 	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
@@ -122,10 +123,10 @@ func (e *messagingService) applyTextMessageSendUpdate(ctx context.Context, clien
 
 func (e *longConnectionNativeEngine) textMessageReceiveInput(input EngineTextMessageInput) EngineMessageInput {
 	messageInput := e.input
-	messageInput.WAAccountID = firstNonEmpty(messageInput.WAAccountID, input.WAAccountID)
-	messageInput.ClientProfileID = firstNonEmpty(messageInput.ClientProfileID, input.ClientProfileID)
-	messageInput.RegisteredIdentityID = firstNonEmpty(messageInput.RegisteredIdentityID, input.RegisteredIdentityID)
-	messageInput.AppVersion = firstNonEmpty(messageInput.AppVersion, input.AppVersion)
+	messageInput.WAAccountID = shared.FirstNonEmpty(messageInput.WAAccountID, input.WAAccountID)
+	messageInput.ClientProfileID = shared.FirstNonEmpty(messageInput.ClientProfileID, input.ClientProfileID)
+	messageInput.RegisteredIdentityID = shared.FirstNonEmpty(messageInput.RegisteredIdentityID, input.RegisteredIdentityID)
+	messageInput.AppVersion = shared.FirstNonEmpty(messageInput.AppVersion, input.AppVersion)
 	return messageInput
 }
 
@@ -133,10 +134,10 @@ func buildNativeTextMessageNode(state *nativeState, input EngineTextMessageInput
 	contactJID := normalizeWAJID(input.ContactJID)
 	text := strings.TrimSpace(input.Text)
 	if contactJID == "" {
-		return chatdNode{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "contact_ref is required", false)
+		return chatdNode{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "contact_ref is required", false)
 	}
 	if text == "" {
-		return chatdNode{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "text is required", false)
+		return chatdNode{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "text is required", false)
 	}
 	ciphertext, err := encryptNativeTextSignalMessage(state, contactJID, text)
 	if err != nil {
@@ -157,7 +158,7 @@ func encryptNativeTextSignalMessage(state *nativeState, contactJID string, text 
 	state.ensureMaps()
 	key, session, ok := exactSignalSession(state.Signal.Sessions, contactJID)
 	if !ok {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "WA text send requires an existing Signal session for this contact", false)
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "WA text send requires an existing Signal session for this contact", false)
 	}
 	if err := ensureOutboundSignalChain(&session); err != nil {
 		return nil, err
@@ -185,7 +186,7 @@ func ensureOutboundSignalChain(session *nativeSignalSession) error {
 		return nil
 	}
 	if session.RootKey == "" {
-		return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "WA text send requires a learned Signal root key", false)
+		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "WA text send requires a learned Signal root key", false)
 	}
 	remoteRatchet, err := latestReceiverRatchetKey(*session)
 	if err != nil {
@@ -220,7 +221,7 @@ func ensureOutboundSignalChain(session *nativeSignalSession) error {
 
 func latestReceiverRatchetKey(session nativeSignalSession) ([]byte, error) {
 	if len(session.ReceiverChains) == 0 {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "WA text send requires a learned receiver chain", false)
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "WA text send requires a learned receiver chain", false)
 	}
 	keys := make([]string, 0, len(session.ReceiverChains))
 	for key := range session.ReceiverChains {
@@ -244,7 +245,7 @@ func latestReceiverRatchetKey(session nativeSignalSession) ([]byte, error) {
 			return raw, nil
 		}
 	}
-	return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "WA text send receiver ratchet is unavailable", false)
+	return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "WA text send receiver ratchet is unavailable", false)
 }
 
 func encryptSignalPlaintext(state *nativeState, session *nativeSignalSession, plaintext []byte) ([]byte, error) {
@@ -255,7 +256,7 @@ func encryptSignalPlaintext(state *nativeState, session *nativeSignalSession, pl
 	if err != nil {
 		return nil, err
 	}
-	ratchetPublic, err := decodeB64Any(firstNonEmpty(session.SenderChain.RatchetKey, session.SenderRatchetPublic))
+	ratchetPublic, err := decodeB64Any(shared.FirstNonEmpty(session.SenderChain.RatchetKey, session.SenderRatchetPublic))
 	if err != nil {
 		return nil, err
 	}
@@ -402,11 +403,11 @@ func chatdSendError(err error) error {
 	} else {
 		message = chatdFailureMessage(message, err)
 	}
-	return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, message, true)
+	return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, message, true)
 }
 
 func isChatdSendError(err error) bool {
-	var appErr *AppError
+	var appErr *shared.AppError
 	return errors.As(err, &appErr) && strings.HasPrefix(appErr.Message, "native chatd send failed")
 }
 

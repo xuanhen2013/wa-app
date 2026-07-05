@@ -5,6 +5,7 @@ import (
 	"strings"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 const defaultContactResolveLimit = 50
@@ -14,53 +15,53 @@ type waContactResolver interface {
 }
 
 func (s *contactHandler) ListWAContacts(ctx context.Context, req *waappv1.ListWAContactsRequest) (*waappv1.ListWAContactsResponse, error) {
-	if err := validateContext(req.GetContext()); err != nil {
-		return &waappv1.ListWAContactsResponse{Error: ToProtoError(err)}, nil
+	if err := shared.ValidateContext(req.GetContext()); err != nil {
+		return &waappv1.ListWAContactsResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	accountID, err := requireWAAccountID(req.GetWaAccountId())
 	if err != nil {
-		return &waappv1.ListWAContactsResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.ListWAContactsResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	if _, err := s.getWAAccount(ctx, accountID); err != nil {
-		return &waappv1.ListWAContactsResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.ListWAContactsResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	contacts, nextCursor, err := s.store.ListWAContacts(ctx, accountID, req.GetCursor(), int(req.GetLimit()))
 	if err != nil {
-		return &waappv1.ListWAContactsResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.ListWAContactsResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	return &waappv1.ListWAContactsResponse{Contacts: contacts, NextCursor: nextCursor}, nil
 }
 
 func (s *contactHandler) ResolveWAContacts(ctx context.Context, req *waappv1.ResolveWAContactsRequest) (*waappv1.ResolveWAContactsResponse, error) {
-	if err := validateContext(req.GetContext()); err != nil {
-		return &waappv1.ResolveWAContactsResponse{Error: ToProtoError(err)}, nil
+	if err := shared.ValidateContext(req.GetContext()); err != nil {
+		return &waappv1.ResolveWAContactsResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	accountID, err := requireWAAccountID(req.GetWaAccountId())
 	if err != nil {
-		return &waappv1.ResolveWAContactsResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.ResolveWAContactsResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	if _, err := s.getWAAccount(ctx, accountID); err != nil {
-		return &waappv1.ResolveWAContactsResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.ResolveWAContactsResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	jids, err := s.resolveContactJIDs(ctx, accountID, req.GetJids(), int(req.GetLimit()))
 	if err != nil {
-		return &waappv1.ResolveWAContactsResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.ResolveWAContactsResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	if len(jids) == 0 {
 		return &waappv1.ResolveWAContactsResponse{}, nil
 	}
 	loginState, err := s.activeContactResolveLoginState(ctx, accountID)
 	if err != nil {
-		return &waappv1.ResolveWAContactsResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.ResolveWAContactsResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	runner, release, err := s.contactResolverRunner(loginState)
 	if err != nil {
-		return &waappv1.ResolveWAContactsResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.ResolveWAContactsResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	defer release()
 	resolver, ok := runner.(waContactResolver)
 	if !ok {
-		return &waappv1.ResolveWAContactsResponse{Error: ToProtoError(NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "WA contact resolver is not configured", false))}, nil
+		return &waappv1.ResolveWAContactsResponse{Error: shared.ToProtoError(shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "WA contact resolver is not configured", false))}, nil
 	}
 	result := resolver.ResolveContacts(ctx, EngineContactResolveInput{
 		WAAccountID:          accountID,
@@ -74,30 +75,30 @@ func (s *contactHandler) ResolveWAContacts(ctx context.Context, req *waappv1.Res
 		_ = s.store.SaveWAContacts(ctx, result.Contacts)
 	}
 	if result.Err != nil {
-		return &waappv1.ResolveWAContactsResponse{Contacts: result.Contacts, QueriedCount: int32(result.Queried), ResolvedCount: int32(result.Resolved), Error: ToProtoError(result.Err)}, nil
+		return &waappv1.ResolveWAContactsResponse{Contacts: result.Contacts, QueriedCount: int32(result.Queried), ResolvedCount: int32(result.Resolved), Error: shared.ToProtoError(result.Err)}, nil
 	}
 	return &waappv1.ResolveWAContactsResponse{Contacts: result.Contacts, QueriedCount: int32(result.Queried), ResolvedCount: int32(result.Resolved)}, nil
 }
 
 func (s *contactHandler) DeleteWAContact(ctx context.Context, req *waappv1.DeleteWAContactRequest) (*waappv1.DeleteWAContactResponse, error) {
-	if err := validateContext(req.GetContext()); err != nil {
-		return &waappv1.DeleteWAContactResponse{Error: ToProtoError(err)}, nil
+	if err := shared.ValidateContext(req.GetContext()); err != nil {
+		return &waappv1.DeleteWAContactResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	accountID, err := requireWAAccountID(req.GetWaAccountId())
 	if err != nil {
-		return &waappv1.DeleteWAContactResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.DeleteWAContactResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	if _, err := s.getWAAccount(ctx, accountID); err != nil {
-		return &waappv1.DeleteWAContactResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.DeleteWAContactResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	contactRef := strings.TrimSpace(req.GetContactRef())
 	if contactRef == "" {
-		return &waappv1.DeleteWAContactResponse{Error: ToProtoError(NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "contact_ref is required", false))}, nil
+		return &waappv1.DeleteWAContactResponse{Error: shared.ToProtoError(shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "contact_ref is required", false))}, nil
 	}
 	contactRefs := s.resolveContactActionRefs(ctx, accountID, contactRef)
 	result, err := s.store.DeleteWAContact(ctx, accountID, contactRefs, s.clock.Now())
 	if err != nil {
-		return &waappv1.DeleteWAContactResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.DeleteWAContactResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	return &waappv1.DeleteWAContactResponse{Deleted: result.Deleted, DeletedMessageCount: int32(result.DeletedMessageCount)}, nil
 }
@@ -147,7 +148,7 @@ func (s *serverCore) activeContactResolveLoginState(ctx context.Context, account
 			return loginState, nil
 		}
 	}
-	return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REGISTRATION_NOT_FOUND, "active login state not found", false)
+	return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REGISTRATION_NOT_FOUND, "active login state not found", false)
 }
 
 // contactResolverRunner 优先复用该账号已建立的长连接 runner,让 usync 走同一条 chatd 连接

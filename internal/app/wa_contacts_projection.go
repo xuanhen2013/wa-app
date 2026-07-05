@@ -8,6 +8,7 @@ import (
 	"unicode/utf8"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -56,7 +57,7 @@ func contactFromRef(accountID string, ref string, seenAt time.Time, now time.Tim
 		updatedAt = now
 	}
 	return &waappv1.WAContact{
-		ContactId:      "wact_" + stableID(accountID+":"+jid),
+		ContactId:      "wact_" + shared.StableID(accountID+":"+jid),
 		WaAccountId:    accountID,
 		Jid:            jid,
 		Number:         contactNumberForJID(jid),
@@ -118,8 +119,8 @@ func contactFromContactHint(accountID string, hint waContactHint, seenAt time.Ti
 		return nil
 	}
 	contact.Number = contactNumberForJID(hint.PNJID)
-	contact.DisplayName = firstNonEmpty(hint.DisplayName, hint.VerifiedName, hint.WAName, hint.Username, fallbackWAContactDisplayName(contact.GetKind(), contact.GetJid(), contact.GetNumber()))
-	contact.WaName = firstNonEmpty(hint.WAName, hint.Username)
+	contact.DisplayName = shared.FirstNonEmpty(hint.DisplayName, hint.VerifiedName, hint.WAName, hint.Username, fallbackWAContactDisplayName(contact.GetKind(), contact.GetJid(), contact.GetNumber()))
+	contact.WaName = shared.FirstNonEmpty(hint.WAName, hint.Username)
 	contact.VerifiedName = hint.VerifiedName
 	if hint.VerifiedName != "" {
 		contact.Kind = waappv1.WAContactKind_WA_CONTACT_KIND_BUSINESS
@@ -136,7 +137,7 @@ func normalizeWAJID(ref string) string {
 	if strings.Contains(value, "@") {
 		return value
 	}
-	digits := digitsOnly(value)
+	digits := shared.DigitsOnly(value)
 	if digits != "" && digits == value {
 		return digits + "@s.whatsapp.net"
 	}
@@ -148,7 +149,7 @@ func contactNumberForJID(jid string) string {
 	if !ok || domain != "s.whatsapp.net" {
 		return ""
 	}
-	return digitsOnly(local)
+	return shared.DigitsOnly(local)
 }
 
 func contactKindForJID(jid string) waappv1.WAContactKind {
@@ -244,7 +245,7 @@ func looksLikeVerificationCodeOnlyMessage(text string) bool {
 	if value == "" || utf8.RuneCountInString(value) > 32 {
 		return false
 	}
-	digits := digitsOnly(value)
+	digits := shared.DigitsOnly(value)
 	if len(digits) < 4 || len(digits) > 10 {
 		return false
 	}

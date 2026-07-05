@@ -5,6 +5,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/jackc/pgx/v5"
 )
 
@@ -69,12 +70,12 @@ func (s *PostgresStore) GetWAContactByRef(ctx context.Context, waAccountIDValue 
 }
 
 func (s *PostgresStore) ListWAContacts(ctx context.Context, waAccountIDValue string, cursorValue string, limit int) ([]*waappv1.WAContact, string, error) {
-	cursor, err := decodeKeysetCursor(cursorValue)
+	cursor, err := shared.DecodeKeysetCursor(cursorValue)
 	if err != nil {
-		return nil, "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, err.Error(), false)
+		return nil, "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, err.Error(), false)
 	}
-	limit = normalizePageLimit(limit)
-	rows, err := s.queryContactPage(ctx, waAccountIDValue, cursor, keysetLookaheadLimit(limit))
+	limit = shared.NormalizePageLimit(limit)
+	rows, err := s.queryContactPage(ctx, waAccountIDValue, cursor, shared.KeysetLookaheadLimit(limit))
 	if err != nil {
 		return nil, "", err
 	}
@@ -90,8 +91,8 @@ func (s *PostgresStore) ListWAContacts(ctx context.Context, waAccountIDValue str
 	if err := rows.Err(); err != nil {
 		return nil, "", err
 	}
-	items, nextCursor := newKeysetPage(items, limit, func(contact *waappv1.WAContact) keysetCursor {
-		return keysetCursorValue(timeFromProto(contact.GetAudit().GetUpdatedAt()), contact.GetContactId())
+	items, nextCursor := shared.NewKeysetPage(items, limit, func(contact *waappv1.WAContact) shared.KeysetCursor {
+		return shared.KeysetCursorValue(timeFromProto(contact.GetAudit().GetUpdatedAt()), contact.GetContactId())
 	})
 	return items, nextCursor, nil
 }
@@ -149,8 +150,8 @@ WHERE wa_account_id=$1
 	}, nil
 }
 
-func (s *PostgresStore) queryContactPage(ctx context.Context, waAccountIDValue string, cursor keysetCursor, limit int) (pgx.Rows, error) {
-	if !hasKeysetCursor(cursor) {
+func (s *PostgresStore) queryContactPage(ctx context.Context, waAccountIDValue string, cursor shared.KeysetCursor, limit int) (pgx.Rows, error) {
+	if !shared.HasKeysetCursor(cursor) {
 		return s.pool.Query(ctx, contactSelectSQL+` WHERE c.wa_account_id=$1 ORDER BY COALESCE(stats.last_message_at,c.updated_at) DESC, c.contact_id DESC LIMIT $2`, waAccountIDValue, limit)
 	}
 	return s.pool.Query(ctx, contactSelectSQL+` WHERE c.wa_account_id=$1 AND (COALESCE(stats.last_message_at,c.updated_at), c.contact_id) < ($2, $3) ORDER BY COALESCE(stats.last_message_at,c.updated_at) DESC, c.contact_id DESC LIMIT $4`, waAccountIDValue, cursor.UpdatedAt, cursor.ID, limit)

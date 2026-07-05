@@ -9,6 +9,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 const (
@@ -352,12 +353,12 @@ func buildContactUsyncIQ(id string, sid string, refs []contactUsyncRef, variant 
 		"index":   "0",
 		"last":    "true",
 		"mode":    "query",
-		"context": firstNonEmpty(variant.Context, "interactive"),
+		"context": shared.FirstNonEmpty(variant.Context, "interactive"),
 	}
 	for key, value := range variant.UsyncExtraAttrs {
 		attrs[key] = value
 	}
-	userContainer := firstNonEmpty(variant.UserContainer, "list")
+	userContainer := shared.FirstNonEmpty(variant.UserContainer, "list")
 	content := []chatdNode{
 		{Tag: "query", Content: variant.Query},
 		{Tag: userContainer, Content: users},
@@ -429,7 +430,7 @@ func contactsFromContactUsyncList(accountID string, listNode chatdNode, now time
 func contactFromContactUsyncUser(accountID string, userNode chatdNode, now time.Time, fallbackLID string) *waappv1.WAContact {
 	jid := normalizeWAJID(userNode.Attrs["jid"])
 	contactNode, _ := chatdChild(userNode, "contact")
-	pnJID := normalizeWAJID(firstNonEmpty(
+	pnJID := normalizeWAJID(shared.FirstNonEmpty(
 		userNode.Attrs["pn_jid"],
 		userNode.Attrs["new_jid"],
 		contactNode.Attrs["pn_jid"],
@@ -441,15 +442,15 @@ func contactFromContactUsyncUser(accountID string, userNode chatdNode, now time.
 	case strings.HasSuffix(jid, "@lid"):
 		lidJID = jid
 	case strings.HasSuffix(jid, "@s.whatsapp.net"):
-		pnJID = firstNonEmpty(pnJID, jid)
+		pnJID = shared.FirstNonEmpty(pnJID, jid)
 	}
 	if lidNode, ok := chatdChild(userNode, "lid"); ok {
-		lidJID = firstNonEmpty(lidJID, normalizeWAJID(firstNonEmpty(lidNode.Attrs["val"], lidNode.Attrs["jid"], chatdNodeText(lidNode))))
+		lidJID = shared.FirstNonEmpty(lidJID, normalizeWAJID(shared.FirstNonEmpty(lidNode.Attrs["val"], lidNode.Attrs["jid"], chatdNodeText(lidNode))))
 	}
 	if businessNode, ok := chatdChild(userNode, "business"); ok {
-		pnJID = firstNonEmpty(pnJID, normalizeWAJID(businessNode.Attrs["pn_jid"]), firstPNJIDInNode(businessNode))
+		pnJID = shared.FirstNonEmpty(pnJID, normalizeWAJID(businessNode.Attrs["pn_jid"]), firstPNJIDInNode(businessNode))
 	}
-	lidJID = firstNonEmpty(lidJID, firstLIDJIDInNode(userNode), normalizeContactUsyncFallbackLID(fallbackLID))
+	lidJID = shared.FirstNonEmpty(lidJID, firstLIDJIDInNode(userNode), normalizeContactUsyncFallbackLID(fallbackLID))
 	if lidJID == "" {
 		return nil
 	}
@@ -457,9 +458,9 @@ func contactFromContactUsyncUser(accountID string, userNode chatdNode, now time.
 	if contact == nil {
 		return nil
 	}
-	contact.Number = firstNonEmpty(contactNumberForJID(pnJID), contactUsyncPhoneNumber(userNode))
+	contact.Number = shared.FirstNonEmpty(contactNumberForJID(pnJID), contactUsyncPhoneNumber(userNode))
 	displayName, waName, verifiedName, business := contactUsyncNames(userNode)
-	contact.DisplayName = firstNonEmpty(displayName, verifiedName, waName, fallbackWAContactDisplayName(contact.GetKind(), contact.GetJid(), contact.GetNumber()))
+	contact.DisplayName = shared.FirstNonEmpty(displayName, verifiedName, waName, fallbackWAContactDisplayName(contact.GetKind(), contact.GetJid(), contact.GetNumber()))
 	contact.WaName = waName
 	contact.VerifiedName = verifiedName
 	contact.ProfilePictureId = contactProfilePictureID(userNode)
@@ -483,7 +484,7 @@ func contactUsyncNames(userNode chatdNode) (string, string, string, bool) {
 	usernameNode, hasUsername := chatdChild(userNode, "username")
 	businessNode, hasBusiness := chatdChild(userNode, "business")
 	businessProfileNode, hasBusinessProfile := findChatdNode(userNode, "business_profile")
-	displayName := waContactName(firstNonEmpty(
+	displayName := waContactName(shared.FirstNonEmpty(
 		userNode.Attrs["display_name"],
 		userNode.Attrs["notify"],
 		contactNode.Attrs["display_name"],
@@ -493,22 +494,22 @@ func contactUsyncNames(userNode chatdNode) (string, string, string, bool) {
 	))
 	username := ""
 	if hasUsername {
-		username = waContactName(firstNonEmpty(firstUsernameInNode(usernameNode), chatdNodeText(usernameNode), usernameNode.Attrs["username"], usernameNode.Attrs["value"], usernameNode.Attrs["id"]))
+		username = waContactName(shared.FirstNonEmpty(firstUsernameInNode(usernameNode), chatdNodeText(usernameNode), usernameNode.Attrs["username"], usernameNode.Attrs["value"], usernameNode.Attrs["id"]))
 	}
-	username = waContactName(firstNonEmpty(username, firstUsernameInNode(userNode), userNode.Attrs["username"], contactNode.Attrs["username"]))
+	username = waContactName(shared.FirstNonEmpty(username, firstUsernameInNode(userNode), userNode.Attrs["username"], contactNode.Attrs["username"]))
 	verifiedName := ""
 	if hasBusiness {
 		if verifiedNode, ok := chatdChild(businessNode, "verified_name"); ok {
-			verifiedName = firstNonEmpty(verifiedName, businessNodeName(verifiedNode))
+			verifiedName = shared.FirstNonEmpty(verifiedName, businessNodeName(verifiedNode))
 		}
 		if profileNode, ok := chatdChild(businessNode, "profile"); ok {
-			verifiedName = firstNonEmpty(verifiedName, businessVerifiedNodeName(profileNode))
-			displayName = firstNonEmpty(displayName, businessNodeName(profileNode))
+			verifiedName = shared.FirstNonEmpty(verifiedName, businessVerifiedNodeName(profileNode))
+			displayName = shared.FirstNonEmpty(displayName, businessNodeName(profileNode))
 		}
 	}
 	if hasBusinessProfile {
-		displayName = firstNonEmpty(displayName, businessNodeName(businessProfileNode), businessProfileNodeName(businessProfileNode))
-		verifiedName = firstNonEmpty(verifiedName, businessVerifiedNodeName(businessProfileNode))
+		displayName = shared.FirstNonEmpty(displayName, businessNodeName(businessProfileNode), businessProfileNodeName(businessProfileNode))
+		verifiedName = shared.FirstNonEmpty(verifiedName, businessVerifiedNodeName(businessProfileNode))
 	}
 	return displayName, username, verifiedName, hasBusiness || hasBusinessProfile
 }
@@ -771,7 +772,7 @@ func contactsFromBusinessProfileIQ(accountID string, response chatdNode, now tim
 }
 
 func contactFromBusinessNode(accountID string, node chatdNode, now time.Time, ref contactUsyncRef) *waappv1.WAContact {
-	lidJID := firstNonEmpty(firstLIDJIDInNode(node), normalizeContactUsyncFallbackLID(ref.FallbackLID))
+	lidJID := shared.FirstNonEmpty(firstLIDJIDInNode(node), normalizeContactUsyncFallbackLID(ref.FallbackLID))
 	if lidJID == "" {
 		return nil
 	}
@@ -779,14 +780,14 @@ func contactFromBusinessNode(accountID string, node chatdNode, now time.Time, re
 	if contact == nil {
 		return nil
 	}
-	pnJID := firstNonEmpty(firstPNJIDInNode(node), normalizePNQueryJID(ref.QueryJID))
+	pnJID := shared.FirstNonEmpty(firstPNJIDInNode(node), normalizePNQueryJID(ref.QueryJID))
 	contact.Number = contactNumberForJID(pnJID)
 	displayName := businessProfileNodeName(node)
 	verifiedName := businessVerifiedNodeName(node)
 	if node.Tag == "verified_name" {
-		verifiedName = firstNonEmpty(verifiedName, businessNodeName(node))
+		verifiedName = shared.FirstNonEmpty(verifiedName, businessNodeName(node))
 	}
-	displayName = firstNonEmpty(displayName, verifiedName)
+	displayName = shared.FirstNonEmpty(displayName, verifiedName)
 	if displayName == "" {
 		return nil
 	}
@@ -809,13 +810,13 @@ func normalizePNQueryJID(jid string) string {
 
 func contactUsyncPhoneNumber(node chatdNode) string {
 	for _, key := range []string{"number", "phone", "phone_number", "business_phone_number", "pn", "wa_id"} {
-		if number := digitsOnly(node.Attrs[key]); number != "" {
+		if number := shared.DigitsOnly(node.Attrs[key]); number != "" {
 			return number
 		}
 	}
 	switch node.Tag {
 	case "number", "phone", "phone_number", "business_phone_number":
-		if number := digitsOnly(chatdNodeText(node)); number != "" {
+		if number := shared.DigitsOnly(chatdNodeText(node)); number != "" {
 			return number
 		}
 	}
@@ -832,7 +833,7 @@ func contactProfilePictureID(node chatdNode) string {
 	if !ok {
 		return ""
 	}
-	return strings.TrimSpace(firstNonEmpty(pictureNode.Attrs["id"], pictureNode.Attrs["photo_id"], pictureNode.Attrs["picture_id"]))
+	return strings.TrimSpace(shared.FirstNonEmpty(pictureNode.Attrs["id"], pictureNode.Attrs["photo_id"], pictureNode.Attrs["picture_id"]))
 }
 
 func normalizeContactUsyncJIDs(values []string) []string {
@@ -881,11 +882,11 @@ func dedupeWAContacts(contacts []*waappv1.WAContact) []*waappv1.WAContact {
 			order = append(order, key)
 			continue
 		}
-		current.Number = firstNonEmpty(current.GetNumber(), contact.GetNumber())
+		current.Number = shared.FirstNonEmpty(current.GetNumber(), contact.GetNumber())
 		current.DisplayName = betterWAContactDisplayName(current, contact.GetDisplayName())
-		current.WaName = firstNonEmpty(current.GetWaName(), contact.GetWaName())
-		current.VerifiedName = firstNonEmpty(current.GetVerifiedName(), contact.GetVerifiedName())
-		current.ProfilePictureId = firstNonEmpty(current.GetProfilePictureId(), contact.GetProfilePictureId())
+		current.WaName = shared.FirstNonEmpty(current.GetWaName(), contact.GetWaName())
+		current.VerifiedName = shared.FirstNonEmpty(current.GetVerifiedName(), contact.GetVerifiedName())
+		current.ProfilePictureId = shared.FirstNonEmpty(current.GetProfilePictureId(), contact.GetProfilePictureId())
 		if current.GetKind() == waappv1.WAContactKind_WA_CONTACT_KIND_USER && contact.GetKind() != waappv1.WAContactKind_WA_CONTACT_KIND_UNSPECIFIED {
 			current.Kind = contact.GetKind()
 		}
@@ -981,7 +982,7 @@ func chunkStrings(values []string, size int) [][]string {
 
 func contactUsyncError(err error) error {
 	message := chatdFailureMessage("native contact usync failed", err)
-	return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, message, isRetryableTransportError(err))
+	return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, message, isRetryableTransportError(err))
 }
 
 func contactUsyncOptionalRemoteFailure(err error) bool {
@@ -1094,7 +1095,7 @@ func countContactUsyncUsers(usync chatdNode, listTag string, shape *contactUsync
 			shape.LIDHints++
 		}
 		displayName, waName, verifiedName, _ := contactUsyncNames(userNode)
-		if firstNonEmpty(displayName, waName, verifiedName) != "" {
+		if shared.FirstNonEmpty(displayName, waName, verifiedName) != "" {
 			shape.NameHints++
 		}
 	}

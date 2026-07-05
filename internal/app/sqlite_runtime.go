@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	_ "modernc.org/sqlite"
 )
 
@@ -142,7 +143,7 @@ func (r *SQLiteRuntime) ClaimLease(ctx context.Context, key string, holder strin
 		return false, err
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO wa_sqlite_runtime_state (kind,key,value,expires_at) VALUES (?,?,?,?)
-ON CONFLICT(kind,key) DO UPDATE SET value=excluded.value, expires_at=excluded.expires_at`, "lease", key, []byte(holder), sqliteTimeValue(now.Add(normalizeLeaseTTL(ttl))))
+ON CONFLICT(kind,key) DO UPDATE SET value=excluded.value, expires_at=excluded.expires_at`, "lease", key, []byte(holder), sqliteTimeValue(now.Add(shared.NormalizeLeaseTTL(ttl))))
 	if err != nil {
 		return false, err
 	}
@@ -158,7 +159,7 @@ func (r *SQLiteRuntime) RenewLease(ctx context.Context, key string, holder strin
 	now := time.Now().UTC()
 	result, err := r.db.ExecContext(ctx, `UPDATE wa_sqlite_runtime_state
 SET expires_at=?
-WHERE kind=? AND key=? AND value=? AND expires_at>?`, sqliteTimeValue(now.Add(normalizeLeaseTTL(ttl))), "lease", key, []byte(holder), sqliteTimeValue(now))
+WHERE kind=? AND key=? AND value=? AND expires_at>?`, sqliteTimeValue(now.Add(shared.NormalizeLeaseTTL(ttl))), "lease", key, []byte(holder), sqliteTimeValue(now))
 	if err != nil {
 		return false, err
 	}

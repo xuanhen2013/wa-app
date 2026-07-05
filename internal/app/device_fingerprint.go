@@ -6,6 +6,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -51,7 +52,7 @@ func deviceFingerprintFromState(state nativeState) *waappv1.DeviceFingerprint {
 		fields["network_radio_type"],
 	}
 	return &waappv1.DeviceFingerprint{
-		FingerprintId:     "wafp_" + stableID(strings.Join(fingerprintSource, ":")),
+		FingerprintId:     "wafp_" + shared.StableID(strings.Join(fingerprintSource, ":")),
 		DeviceVendor:      profile.DeviceVendor,
 		DeviceModel:       profile.DeviceModel,
 		AndroidVersion:    profile.AndroidVersion,

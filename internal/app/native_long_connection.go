@@ -8,6 +8,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 const (
@@ -76,7 +77,7 @@ func (e *longConnectionNativeEngine) ReceiveMessageBatch(ctx context.Context, in
 		return EngineMessageBatchResult{Err: err}
 	}
 	if e.closed {
-		return EngineMessageBatchResult{Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, "WA long connection runner is closed", true)}
+		return EngineMessageBatchResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, "WA long connection runner is closed", true)}
 	}
 	if input.MessageSessionID != "" {
 		e.input = input
@@ -130,14 +131,14 @@ func (e *longConnectionNativeEngine) ReceiveMessageBatch(ctx context.Context, in
 
 func (e *longConnectionNativeEngine) ResolveContactProfilePicture(ctx context.Context, input EngineContactProfilePictureInput) EngineContactProfilePictureResult {
 	if e == nil || e.NativeEngine == nil {
-		return EngineContactProfilePictureResult{Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native engine is required", false)}
+		return EngineContactProfilePictureResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native engine is required", false)}
 	}
 	return e.NativeEngine.resolveContactProfilePictureWithSender(ctx, input, e)
 }
 
 func (e *longConnectionNativeEngine) ApplyAccountSettings(ctx context.Context, input EngineAccountSettingsInput) EngineAccountSettingsResult {
 	if e == nil || e.NativeEngine == nil {
-		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native engine is required", false)}
+		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native engine is required", false)}
 	}
 	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
@@ -154,7 +155,7 @@ func (e *longConnectionNativeEngine) ApplyAccountSettings(ctx context.Context, i
 // 从而不再自我触发服务端 <conflict type="replaced">。
 func (e *longConnectionNativeEngine) ResolveContacts(ctx context.Context, input EngineContactResolveInput) EngineContactResolveResult {
 	if e == nil || e.NativeEngine == nil {
-		return EngineContactResolveResult{Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native engine is required", false)}
+		return EngineContactResolveResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native engine is required", false)}
 	}
 	return e.NativeEngine.resolveContactsWithSender(ctx, input, e)
 }
@@ -165,7 +166,7 @@ func (e *longConnectionNativeEngine) sendIQ(ctx context.Context, state nativeSta
 	}
 	defer e.unlockInteractiveIQLocked()
 	if e.closed {
-		return chatdNode{}, chatdSessionUpdate{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, "WA long connection runner is closed", true)
+		return chatdNode{}, chatdSessionUpdate{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, "WA long connection runner is closed", true)
 	}
 	input := e.input
 	if input.RegisteredIdentityID == "" {
@@ -300,7 +301,7 @@ func (e *longConnectionNativeEngine) waitForInteractiveIQLocked(ctx context.Cont
 			return err
 		}
 		if e.closed {
-			return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, "WA long connection runner is closed", true)
+			return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, "WA long connection runner is closed", true)
 		}
 		e.conditionLocked().Wait()
 	}
@@ -331,7 +332,7 @@ func (e *longConnectionNativeEngine) lockInteractiveIQLocked(ctx context.Context
 			e.broadcastLocked()
 			e.mu.Unlock()
 			stop()
-			return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, "WA long connection runner is closed", true)
+			return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, "WA long connection runner is closed", true)
 		}
 		if e.activeRead != nil {
 			read := e.activeRead
@@ -439,7 +440,7 @@ func (e *longConnectionNativeEngine) ensureSessionLocked(ctx context.Context, in
 
 func (e *longConnectionNativeEngine) openSessionWithEngine(ctx context.Context, engine *NativeEngine, input EngineMessageInput, state nativeState) (*chatdSession, error) {
 	if engine == nil {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native engine is required", false)
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native engine is required", false)
 	}
 	proxyURL, err := engine.proxyURL()
 	if err != nil {

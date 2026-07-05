@@ -11,6 +11,7 @@ import (
 	"unicode/utf8"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -35,8 +36,8 @@ type engineCore struct {
 	stateStore     NativeStateStore
 	activeProxyURL string
 	http           *nativeHTTPClient
-	clock          Clock
-	ids            IDGenerator
+	clock          shared.Clock
+	ids            shared.IDGenerator
 	wamsys         wamsysMaterialProvider
 }
 
@@ -79,15 +80,15 @@ func newNativeEngine(core *engineCore) *NativeEngine {
 	}
 }
 
-func NewNativeEngine(stateStore NativeStateStore, clock Clock, ids IDGenerator) (*NativeEngine, error) {
+func NewNativeEngine(stateStore NativeStateStore, clock shared.Clock, ids shared.IDGenerator) (*NativeEngine, error) {
 	if stateStore == nil {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native state store is required", false)
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native state store is required", false)
 	}
 	if clock == nil {
-		clock = SystemClock{}
+		clock = shared.SystemClock{}
 	}
 	if ids == nil {
-		ids = RandomIDGenerator{}
+		ids = shared.RandomIDGenerator{}
 	}
 	hc, err := newNativeHTTPClient("")
 	if err != nil {
@@ -296,7 +297,7 @@ func (e *registrationService) requestVerificationCodeWithState(ctx context.Conte
 func (e *registrationService) prepareAccountTransferChallenge(phone *waappv1.PhoneTarget, state *nativeState, data map[string]any, now time.Time) (*waappv1.AccountTransferChallenge, error) {
 	codes := accountTransferCodesFromResponse(data)
 	if len(codes) == 0 {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "account transfer code list is missing", false)
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "account transfer code list is missing", false)
 	}
 	state.AccountTransfer = newNativeAccountTransferState(phone, codes, now)
 	return state.AccountTransfer.challenge("", now)
@@ -308,7 +309,7 @@ func (e *registrationService) RefreshAccountTransferChallenge(ctx context.Contex
 		return EngineAccountTransferChallengeResult{Err: err}
 	}
 	if state.AccountTransfer.empty() {
-		return EngineAccountTransferChallengeResult{Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_EXPIRED, "account transfer challenge is not available", false)}
+		return EngineAccountTransferChallengeResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_EXPIRED, "account transfer challenge is not available", false)}
 	}
 	challenge, err := state.AccountTransfer.challenge(input.VerificationRequestID, e.clock.Now())
 	if err != nil {
@@ -334,7 +335,7 @@ func (e *registrationService) SubmitVerificationCode(ctx context.Context, input 
 		}
 	}
 	if code == "" {
-		return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "verification code is required", false)}
+		return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "verification code is required", false)}
 	}
 	params, rawKeys := e.registerParams(input.Phone, input.DeliveryMethod, code, state, input.AuthCodeContext)
 	logNativeRegistrationMapShape("register", input.Phone, input.DeliveryMethod, params, rawKeys)
@@ -358,7 +359,7 @@ func (e *registrationService) SubmitVerificationCode(ctx context.Context, input 
 	if status := responseStatus(data); status != "ok" && status != "registered" {
 		if input.DeliveryMethod == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_ACCOUNT_TRANSFER && !accountTransferRegisterTerminalFailure(data) {
 			_ = e.saveState(ctx, input.ClientProfileID, state)
-			return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_SUBMITTED, Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, "account transfer confirmation is pending", true)}
+			return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_SUBMITTED, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, "account transfer confirmation is pending", true)}
 		}
 		if input.DeliveryMethod == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_ACCOUNT_TRANSFER {
 			state.AccountTransfer = nativeAccountTransferState{}
@@ -366,8 +367,8 @@ func (e *registrationService) SubmitVerificationCode(ctx context.Context, input 
 		_ = e.saveState(ctx, input.ClientProfileID, state)
 		return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: waProtocolError(data, "registration was rejected")}
 	}
-	login := firstNonEmpty(jsonString(data["login"]), jsonString(data["jid"]), jsonString(data["registration_jid"]), state.CC+state.Phone)
-	lid := firstNonEmpty(jsonString(data["lid"]), login)
+	login := shared.FirstNonEmpty(jsonString(data["login"]), jsonString(data["jid"]), jsonString(data["registration_jid"]), state.CC+state.Phone)
+	lid := shared.FirstNonEmpty(jsonString(data["lid"]), login)
 	if login != "" {
 		state.RegistrationJID = normalizeJID(login)
 	}
@@ -376,7 +377,7 @@ func (e *registrationService) SubmitVerificationCode(ctx context.Context, input 
 	}
 	_ = e.saveState(ctx, input.ClientProfileID, state)
 	completedAt := e.clock.Now()
-	return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REGISTERED, RegisteredID: "waid_" + stableID(login), ServiceAccountID: lid, ServiceLoginID: login, CompletedAt: completedAt}
+	return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REGISTERED, RegisteredID: "waid_" + shared.StableID(login), ServiceAccountID: lid, ServiceLoginID: login, CompletedAt: completedAt}
 }
 
 func postRegisterWithRetry(ctx context.Context, client *nativeHTTPClient, plain string, userAgent string, attestation nativeSoftwareAttestation) (map[string]any, string, error) {
@@ -457,7 +458,7 @@ func (e *registrationService) CheckLoginState(ctx context.Context, input EngineL
 	if err != nil {
 		status := loginCheckStatusForError(err)
 		message := chatdFailureMessage("login state remote check failed", err)
-		return EngineLoginCheckResult{Status: status, Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, message, status == waappv1.LoginStateCheckStatus_LOGIN_STATE_CHECK_STATUS_UNREACHABLE)}
+		return EngineLoginCheckResult{Status: status, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, message, status == waappv1.LoginStateCheckStatus_LOGIN_STATE_CHECK_STATUS_UNREACHABLE)}
 	}
 	return EngineLoginCheckResult{Status: waappv1.LoginStateCheckStatus_LOGIN_STATE_CHECK_STATUS_ACTIVE}
 }
@@ -618,9 +619,9 @@ func chatdReceiveError(err error) error {
 	// 账号被接管(device_removed/replaced)是不可重试的登出终态(号码已在其他设备注册),透传为
 	// CONFLICT 并保留标记,使长连接据此持久化"已转出"而非无限重连;其余 chatd 收包失败仍为可重试 REJECTED。
 	if isAccountTakeoverError(err) {
-		return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, chatdAccountTakeoverMarker+" "+message, false)
+		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, chatdAccountTakeoverMarker+" "+message, false)
 	}
-	return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, message, true)
+	return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, message, true)
 }
 
 func chatdSafeFailureMessage(err error) string {
@@ -732,7 +733,7 @@ func (e *messagingService) DecryptMessage(ctx context.Context, input EngineDecry
 	if strings.HasPrefix(input.PayloadRef, "plaintext:") {
 		plain := strings.TrimPrefix(input.PayloadRef, "plaintext:")
 		decryptedID := e.ids.NewID("wadec_")
-		text := &waappv1.SensitiveText{RedactedValue: redacted(plain), SecretRef: "plaintext:" + decryptedID}
+		text := &waappv1.SensitiveText{RedactedValue: shared.Redacted(plain), SecretRef: "plaintext:" + decryptedID}
 		if input.IncludePlaintextText {
 			text.Value = plain
 		}
@@ -746,12 +747,12 @@ func (e *messagingService) DecryptMessage(ctx context.Context, input EngineDecry
 		}
 		payload, ok := state.MessagePayloads[input.PayloadRef]
 		if !ok {
-			return EngineDecryptResult{Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "encrypted message payload ref not found", false)}
+			return EngineDecryptResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "encrypted message payload ref not found", false)}
 		}
 		commit := input.SessionCommitPolicy == waappv1.SessionCommitPolicy_SESSION_COMMIT_POLICY_COMMIT_LEARNED_STATE
 		output, err := decryptNativeSignalPayload(&state, payload, commit)
 		if err != nil {
-			return EngineDecryptResult{Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_DECRYPTION_FAILED, "native Signal message decryption failed", true)}
+			return EngineDecryptResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_DECRYPTION_FAILED, "native Signal message decryption failed", true)}
 		}
 		if commit {
 			_ = applyNativeAppStateKeys(&state, output.plaintext)
@@ -759,7 +760,7 @@ func (e *messagingService) DecryptMessage(ctx context.Context, input EngineDecry
 		}
 		decryptedID := e.ids.NewID("wadec_")
 		plain := nativePlaintextText(output.plaintext)
-		text := &waappv1.SensitiveText{RedactedValue: redacted(plain), SecretRef: "native-plain:" + decryptedID}
+		text := &waappv1.SensitiveText{RedactedValue: shared.Redacted(plain), SecretRef: "native-plain:" + decryptedID}
 		if input.IncludePlaintextText {
 			text.Value = plain
 		}
@@ -769,7 +770,7 @@ func (e *messagingService) DecryptMessage(ctx context.Context, input EngineDecry
 		contactHints = append(contactHints, contactHintsFromNativePayloadMetadata(payload)...)
 		return EngineDecryptResult{DecryptedMessage: msg, Candidates: extractCandidates(input.MessageID, decryptedID, plain, input.IncludePlaintextText, e.clock.Now(), e.ids), ContactHints: dedupeWAContactHints(contactHints)}
 	}
-	return EngineDecryptResult{Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "payload ref scheme is not supported by native decryptor", false)}
+	return EngineDecryptResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "payload ref scheme is not supported by native decryptor", false)}
 }
 
 func nativePlaintextText(raw []byte) string {
@@ -841,27 +842,27 @@ func omitEmptyNativeOperatorField(key string, value string) bool {
 }
 
 func (e *engineCore) registerParams(phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, code string, state nativeState, authCodeContext string) (map[string]string, map[string]struct{}) {
-	methodName := firstNonEmpty(state.LastCodeParams["method"], registrationMethodName(method, "sms"))
+	methodName := shared.FirstNonEmpty(state.LastCodeParams["method"], registrationMethodName(method, "sms"))
 	lg, lc := registrationLocale(phone)
 	params := map[string]string{
-		"cc":                phoneCC(phone),
-		"in":                phoneNational(phone),
+		"cc":                shared.PhoneCC(phone),
+		"in":                shared.PhoneNational(phone),
 		"method":            methodName,
-		"lg":                firstNonEmpty(state.LastCodeParams["lg"], lg),
-		"lc":                firstNonEmpty(state.LastCodeParams["lc"], lc),
-		"fdid":              firstNonEmpty(state.LastCodeParams["fdid"], state.Profile.FDID),
-		"expid":             firstNonEmpty(state.LastCodeParams["expid"], state.Profile.ExpID),
-		"access_session_id": firstNonEmpty(state.LastCodeParams["access_session_id"], state.Profile.AccessSessionID),
+		"lg":                shared.FirstNonEmpty(state.LastCodeParams["lg"], lg),
+		"lc":                shared.FirstNonEmpty(state.LastCodeParams["lc"], lc),
+		"fdid":              shared.FirstNonEmpty(state.LastCodeParams["fdid"], state.Profile.FDID),
+		"expid":             shared.FirstNonEmpty(state.LastCodeParams["expid"], state.Profile.ExpID),
+		"access_session_id": shared.FirstNonEmpty(state.LastCodeParams["access_session_id"], state.Profile.AccessSessionID),
 		"id":                nativeRegistrationRequestID(state),
-		"backup_token":      firstNonEmpty(state.LastCodeParams["backup_token"], state.Profile.BackupToken),
+		"backup_token":      shared.FirstNonEmpty(state.LastCodeParams["backup_token"], state.Profile.BackupToken),
 		"code":              code,
-		"authkey":           firstNonEmpty(state.LastCodeParams["authkey"], state.AuthKey),
-		"e_ident":           firstNonEmpty(state.LastCodeParams["e_ident"], state.KeyBundle.IdentityPublic),
-		"e_keytype":         firstNonEmpty(state.LastCodeParams["e_keytype"], state.KeyBundle.KeyType),
-		"e_regid":           firstNonEmpty(state.LastCodeParams["e_regid"], state.KeyBundle.RegID),
-		"e_skey_id":         firstNonEmpty(state.LastCodeParams["e_skey_id"], state.KeyBundle.SignedKeyID),
-		"e_skey_val":        firstNonEmpty(state.LastCodeParams["e_skey_val"], state.KeyBundle.SignedKeyValue),
-		"e_skey_sig":        firstNonEmpty(state.LastCodeParams["e_skey_sig"], state.KeyBundle.SignedKeySig),
+		"authkey":           shared.FirstNonEmpty(state.LastCodeParams["authkey"], state.AuthKey),
+		"e_ident":           shared.FirstNonEmpty(state.LastCodeParams["e_ident"], state.KeyBundle.IdentityPublic),
+		"e_keytype":         shared.FirstNonEmpty(state.LastCodeParams["e_keytype"], state.KeyBundle.KeyType),
+		"e_regid":           shared.FirstNonEmpty(state.LastCodeParams["e_regid"], state.KeyBundle.RegID),
+		"e_skey_id":         shared.FirstNonEmpty(state.LastCodeParams["e_skey_id"], state.KeyBundle.SignedKeyID),
+		"e_skey_val":        shared.FirstNonEmpty(state.LastCodeParams["e_skey_val"], state.KeyBundle.SignedKeyValue),
+		"e_skey_sig":        shared.FirstNonEmpty(state.LastCodeParams["e_skey_sig"], state.KeyBundle.SignedKeySig),
 	}
 	if nativeRegistrationMethodUsesToken(methodName) {
 		if token := e.registrationToken(phone, state); token != "" {
@@ -869,7 +870,7 @@ func (e *engineCore) registerParams(phone *waappv1.PhoneTarget, method waappv1.V
 		}
 	}
 	if nativeRegistrationMethodUsesAuthContext(methodName) {
-		if contextValue := firstNonEmpty(authCodeContext, state.LastCodeParams["context"]); contextValue != "" {
+		if contextValue := shared.FirstNonEmpty(authCodeContext, state.LastCodeParams["context"]); contextValue != "" {
 			params["context"] = contextValue
 		}
 	}
@@ -894,7 +895,7 @@ func applyRegisterCodeResultParams(params map[string]string, state nativeState) 
 func (e *engineCore) loadState(ctx context.Context, clientProfileID string) (nativeState, error) {
 	state, err := e.stateStore.GetNativeState(ctx, clientProfileID)
 	if err != nil {
-		return nativeState{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_PROFILE_NOT_FOUND, "native client profile state not found", false)
+		return nativeState{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_PROFILE_NOT_FOUND, "native client profile state not found", false)
 	}
 	return state, nil
 }
@@ -974,13 +975,13 @@ func classifyHTTPError(data map[string]any, err error) error {
 	status := responseStatus(data)
 	switch status {
 	case "no_routes":
-		return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_ROUTE_UNAVAILABLE, "no_routes: verification route is unavailable", false)
+		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_ROUTE_UNAVAILABLE, "no_routes: verification route is unavailable", false)
 	case "too_recent":
-		return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_RATE_LIMITED, "verification request is too recent", true)
+		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_RATE_LIMITED, "verification request is too recent", true)
 	case "blocked", "rejected":
-		return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, status+": request was rejected", false)
+		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, status+": request was rejected", false)
 	}
-	return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, upstreamFailureMessage(data, err), true)
+	return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, upstreamFailureMessage(data, err), true)
 }
 
 func jsonString(value any) string {
@@ -1038,7 +1039,7 @@ func jsonNumber(value any) int {
 	}
 }
 
-func extractCandidates(messageID string, decryptedID string, text string, includeValue bool, now time.Time, ids IDGenerator) []*waappv1.ExtractedCandidate {
+func extractCandidates(messageID string, decryptedID string, text string, includeValue bool, now time.Time, ids shared.IDGenerator) []*waappv1.ExtractedCandidate {
 	if strings.TrimSpace(text) == "" {
 		return nil
 	}
@@ -1048,8 +1049,8 @@ func extractCandidates(messageID string, decryptedID string, text string, includ
 		normalize func(string) string
 	}{
 		{kind: waappv1.CandidateKind_CANDIDATE_KIND_FLAG, re: regexp.MustCompile(`(?i)(flag|ctf)\{[^\s}]{1,120}\}`)},
-		{kind: waappv1.CandidateKind_CANDIDATE_KIND_OTP, re: regexp.MustCompile(`\b\d{4,8}\b`), normalize: digitsOnly},
-		{kind: waappv1.CandidateKind_CANDIDATE_KIND_OTP, re: regexp.MustCompile(`\b\d{3}[-\s]\d{3}\b`), normalize: digitsOnly},
+		{kind: waappv1.CandidateKind_CANDIDATE_KIND_OTP, re: regexp.MustCompile(`\b\d{4,8}\b`), normalize: shared.DigitsOnly},
+		{kind: waappv1.CandidateKind_CANDIDATE_KIND_OTP, re: regexp.MustCompile(`\b\d{3}[-\s]\d{3}\b`), normalize: shared.DigitsOnly},
 	}
 	out := []*waappv1.ExtractedCandidate{}
 	seen := map[string]struct{}{}
@@ -1068,7 +1069,7 @@ func extractCandidates(messageID string, decryptedID string, text string, includ
 			}
 			seen[key] = struct{}{}
 			candidateID := ids.NewID("wacand_")
-			sensitive := &waappv1.SensitiveText{RedactedValue: redacted(value), SecretRef: "candidate:" + candidateID}
+			sensitive := &waappv1.SensitiveText{RedactedValue: shared.Redacted(value), SecretRef: "candidate:" + candidateID}
 			if includeValue {
 				sensitive.Value = value
 			}

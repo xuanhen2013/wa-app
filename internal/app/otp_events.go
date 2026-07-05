@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -36,7 +37,7 @@ func (s *serverCore) publishOTPCandidates(ctx context.Context, msg *waappv1.Inbo
 			CandidateId:          candidate.GetCandidateId(),
 			Source:               source,
 			SourceParty:          sourceParty,
-			Otp:                  &waappv1.SensitiveText{Value: otp, RedactedValue: redacted(otp), SecretRef: "candidate:" + candidate.GetCandidateId()},
+			Otp:                  &waappv1.SensitiveText{Value: otp, RedactedValue: shared.Redacted(otp), SecretRef: "candidate:" + candidate.GetCandidateId()},
 			ReceivedAt:           receivedAtTS,
 		}
 		if err := s.store.SaveOTPMessage(ctx, otpMessage); err != nil && ctx.Err() == nil {
@@ -46,7 +47,7 @@ func (s *serverCore) publishOTPCandidates(ctx context.Context, msg *waappv1.Inbo
 }
 
 func stableOTPMessageID(accountID string, sourceParty string, otp string) string {
-	return "waotp_" + stableID(strings.Join([]string{accountID, sourceParty, otp}, ":"))
+	return "waotp_" + shared.StableID(strings.Join([]string{accountID, sourceParty, otp}, ":"))
 }
 
 func firstTimestamp(values ...*timestamppb.Timestamp) *timestamppb.Timestamp {
@@ -62,5 +63,5 @@ func sanitizeLogError(err error) error {
 	if err == nil {
 		return nil
 	}
-	return fmt.Errorf("%s", safeInternalErrorMessage(err))
+	return fmt.Errorf("%s", shared.SafeInternalErrorMessage(err))
 }

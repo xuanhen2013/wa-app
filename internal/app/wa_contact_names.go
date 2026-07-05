@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"google.golang.org/protobuf/proto"
 )
 
@@ -55,8 +56,8 @@ func knownWAContactAliasName(contact *waappv1.WAContact) string {
 		return ""
 	}
 	jid := normalizeWAJID(contact.GetJid())
-	number := digitsOnly(contact.GetNumber())
-	businessIDs := uniqueNonEmptyStrings(digitsOnly(contact.GetDisplayName()), digitsOnly(contact.GetWaName()), digitsOnly(contact.GetVerifiedName()))
+	number := shared.DigitsOnly(contact.GetNumber())
+	businessIDs := uniqueNonEmptyStrings(shared.DigitsOnly(contact.GetDisplayName()), shared.DigitsOnly(contact.GetWaName()), shared.DigitsOnly(contact.GetVerifiedName()))
 	for _, alias := range waKnownContactAliases {
 		if stringInSlice(jid, alias.JIDs) || stringInSlice(number, alias.Numbers) {
 			return alias.Name
@@ -90,8 +91,8 @@ func contactNameNeedsResolution(name string, number string) bool {
 	case isNumericWAContactName(name):
 		return true
 	}
-	number = digitsOnly(number)
-	return number != "" && (name == "+"+number || digitsOnly(name) == number)
+	number = shared.DigitsOnly(number)
+	return number != "" && (name == "+"+number || shared.DigitsOnly(name) == number)
 }
 
 func isNumericWAContactName(value string) bool {

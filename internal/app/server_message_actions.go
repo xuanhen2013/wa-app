@@ -6,6 +6,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 const maxMessageActionBatchSize = 100
@@ -20,25 +21,25 @@ type messageActionRecord struct {
 }
 
 func (s *messagingHandler) MarkAccountMessagesRead(ctx context.Context, req *waappv1.MarkAccountMessagesReadRequest) (*waappv1.MarkAccountMessagesReadResponse, error) {
-	if err := validateContext(req.GetContext()); err != nil {
-		return &waappv1.MarkAccountMessagesReadResponse{Error: ToProtoError(err)}, nil
+	if err := shared.ValidateContext(req.GetContext()); err != nil {
+		return &waappv1.MarkAccountMessagesReadResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	accountID, err := requireWAAccountID(req.GetWaAccountId())
 	if err != nil {
-		return &waappv1.MarkAccountMessagesReadResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.MarkAccountMessagesReadResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	if _, err := s.getWAAccount(ctx, accountID); err != nil {
-		return &waappv1.MarkAccountMessagesReadResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.MarkAccountMessagesReadResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	records, err := s.loadMessageReadRecords(ctx, accountID, req.GetAccountMessageIds(), req.GetContactRef())
 	if err != nil {
-		return &waappv1.MarkAccountMessagesReadResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.MarkAccountMessagesReadResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	now := s.clock.Now()
 	changed := markMessagesRead(records, now)
 	if changed > 0 {
 		if err := s.store.SaveInboundMessages(ctx, actionRecordMessages(records)); err != nil {
-			return &waappv1.MarkAccountMessagesReadResponse{Error: ToProtoError(err)}, nil
+			return &waappv1.MarkAccountMessagesReadResponse{Error: shared.ToProtoError(err)}, nil
 		}
 	}
 	resp := &waappv1.MarkAccountMessagesReadResponse{UpdatedCount: int32(changed)}
@@ -48,40 +49,40 @@ func (s *messagingHandler) MarkAccountMessagesRead(ctx context.Context, req *waa
 	sent, sendErr := s.sendReadReceipts(ctx, req.GetContext(), accountID, records)
 	resp.ReceiptSentCount = int32(sent)
 	if sendErr != nil {
-		resp.ReceiptError = ToProtoError(sendErr)
+		resp.ReceiptError = shared.ToProtoError(sendErr)
 	}
 	return resp, nil
 }
 
 func (s *messagingHandler) DeleteAccountMessages(ctx context.Context, req *waappv1.DeleteAccountMessagesRequest) (*waappv1.DeleteAccountMessagesResponse, error) {
-	if err := validateContext(req.GetContext()); err != nil {
-		return &waappv1.DeleteAccountMessagesResponse{Error: ToProtoError(err)}, nil
+	if err := shared.ValidateContext(req.GetContext()); err != nil {
+		return &waappv1.DeleteAccountMessagesResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	accountID, err := requireWAAccountID(req.GetWaAccountId())
 	if err != nil {
-		return &waappv1.DeleteAccountMessagesResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.DeleteAccountMessagesResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	if _, err := s.getWAAccount(ctx, accountID); err != nil {
-		return &waappv1.DeleteAccountMessagesResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.DeleteAccountMessagesResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	mode := req.GetMode()
 	if mode == waappv1.AccountMessageDeleteMode_ACCOUNT_MESSAGE_DELETE_MODE_UNSPECIFIED {
 		mode = waappv1.AccountMessageDeleteMode_ACCOUNT_MESSAGE_DELETE_MODE_FOR_ME
 	}
 	if mode == waappv1.AccountMessageDeleteMode_ACCOUNT_MESSAGE_DELETE_MODE_FOR_EVERYONE {
-		return &waappv1.DeleteAccountMessagesResponse{Error: ToProtoError(NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "WA revoke requires the E2E send pipeline and is not enabled yet", false))}, nil
+		return &waappv1.DeleteAccountMessagesResponse{Error: shared.ToProtoError(shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "WA revoke requires the E2E send pipeline and is not enabled yet", false))}, nil
 	}
 	if mode != waappv1.AccountMessageDeleteMode_ACCOUNT_MESSAGE_DELETE_MODE_FOR_ME {
-		return &waappv1.DeleteAccountMessagesResponse{Error: ToProtoError(NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "unsupported delete mode", false))}, nil
+		return &waappv1.DeleteAccountMessagesResponse{Error: shared.ToProtoError(shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "unsupported delete mode", false))}, nil
 	}
 	records, err := s.loadMessageActionRecords(ctx, accountID, req.GetAccountMessageIds())
 	if err != nil {
-		return &waappv1.DeleteAccountMessagesResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.DeleteAccountMessagesResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	changed := markMessagesDeletedForMe(records, s.clock.Now())
 	if changed > 0 {
 		if err := s.store.SaveInboundMessages(ctx, actionRecordMessages(records)); err != nil {
-			return &waappv1.DeleteAccountMessagesResponse{Error: ToProtoError(err)}, nil
+			return &waappv1.DeleteAccountMessagesResponse{Error: shared.ToProtoError(err)}, nil
 		}
 	}
 	return &waappv1.DeleteAccountMessagesResponse{UpdatedCount: int32(changed)}, nil
@@ -93,7 +94,7 @@ func (s *serverCore) loadMessageReadRecords(ctx context.Context, accountID strin
 	}
 	contactRef = strings.TrimSpace(contactRef)
 	if contactRef == "" {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "account_message_ids or contact_ref is required", false)
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "account_message_ids or contact_ref is required", false)
 	}
 	messages, err := s.store.ListUnreadInboundMessagesByContactRefs(ctx, accountID, s.resolveContactActionRefs(ctx, accountID, contactRef), maxMessageActionBatchSize)
 	if err != nil {
@@ -109,7 +110,7 @@ func (s *serverCore) loadMessageReadRecords(ctx context.Context, accountID strin
 func (s *serverCore) loadMessageActionRecords(ctx context.Context, accountID string, requestedIDs []string) ([]messageActionRecord, error) {
 	ids := normalizeActionMessageIDs(requestedIDs)
 	if len(ids) == 0 {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "account_message_ids is required", false)
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "account_message_ids is required", false)
 	}
 	records := make([]messageActionRecord, 0, len(ids))
 	for _, id := range ids {
@@ -122,7 +123,7 @@ func (s *serverCore) loadMessageActionRecords(ctx context.Context, accountID str
 			return nil, err
 		}
 		if session.GetWaAccountId() != accountID {
-			return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "message does not belong to WA account", false)
+			return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "message does not belong to WA account", false)
 		}
 		records = append(records, messageActionRecord{message: msg, session: session})
 	}
@@ -156,7 +157,7 @@ func markMessagesRead(records []messageActionRecord, at time.Time) int {
 		if msg == nil || msg.GetDeleteStatus() == waappv1.MessageDeleteStatus_MESSAGE_DELETE_STATUS_DELETED_FOR_ME || msg.GetReadAt() != nil {
 			continue
 		}
-		msg.ReadAt = timestamp(at)
+		msg.ReadAt = shared.ProtoTimestamp(at)
 		changed++
 	}
 	return changed
@@ -170,7 +171,7 @@ func markMessagesDeletedForMe(records []messageActionRecord, at time.Time) int {
 			continue
 		}
 		msg.DeleteStatus = waappv1.MessageDeleteStatus_MESSAGE_DELETE_STATUS_DELETED_FOR_ME
-		msg.DeletedAt = timestamp(at)
+		msg.DeletedAt = shared.ProtoTimestamp(at)
 		changed++
 	}
 	return changed
@@ -202,7 +203,7 @@ func (s *serverCore) sendReadReceipts(ctx context.Context, requestContext *waapp
 	defer release()
 	sender, ok := runner.(waMessageReadReceiptSender)
 	if !ok {
-		return 0, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "WA read receipt sender is not configured", false)
+		return 0, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "WA read receipt sender is not configured", false)
 	}
 	result := sender.SendReadReceipts(ctx, EngineMessageReadReceiptInput{
 		WAAccountID:          accountID,

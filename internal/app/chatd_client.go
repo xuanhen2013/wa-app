@@ -15,6 +15,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -340,10 +341,10 @@ func (s *chatdSession) consumeIncomingNode(input EngineMessageInput, node chatdN
 		if node.Tag != "message" {
 			return update, items, nil
 		}
-		contact := firstNonEmpty(node.Attrs["from"], node.Attrs["participant"])
-		sender := firstNonEmpty(node.Attrs["participant"], node.Attrs["from"])
+		contact := shared.FirstNonEmpty(node.Attrs["from"], node.Attrs["participant"])
+		sender := shared.FirstNonEmpty(node.Attrs["participant"], node.Attrs["from"])
 		payloadSummary := nodePayloadSummary(node)
-		message := &waappv1.InboundMessage{MessageId: inboundMessageID(input.WAAccountID, node.Attrs["id"], node.Tag, sender, payloadSummary), MessageSessionId: input.MessageSessionID, Kind: inboundKind(node.Tag), EncryptionState: waappv1.MessageEncryptionState_MESSAGE_ENCRYPTION_STATE_PLAINTEXT, AckStatus: ackStatusForNode(node), ContactRef: contact, SenderRef: sender, PayloadRef: "node:" + redacted(payloadSummary), ProviderMessageId: node.Attrs["id"], ProviderTimestamp: chatdProviderTimestamp(node.Attrs["t"]), DeleteStatus: waappv1.MessageDeleteStatus_MESSAGE_DELETE_STATUS_NOT_DELETED, ReceivedAt: timestamppb.New(now)}
+		message := &waappv1.InboundMessage{MessageId: inboundMessageID(input.WAAccountID, node.Attrs["id"], node.Tag, sender, payloadSummary), MessageSessionId: input.MessageSessionID, Kind: inboundKind(node.Tag), EncryptionState: waappv1.MessageEncryptionState_MESSAGE_ENCRYPTION_STATE_PLAINTEXT, AckStatus: ackStatusForNode(node), ContactRef: contact, SenderRef: sender, PayloadRef: "node:" + shared.Redacted(payloadSummary), ProviderMessageId: node.Attrs["id"], ProviderTimestamp: chatdProviderTimestamp(node.Attrs["t"]), DeleteStatus: waappv1.MessageDeleteStatus_MESSAGE_DELETE_STATUS_NOT_DELETED, ReceivedAt: timestamppb.New(now)}
 		return update, append(items, chatdReceivedItem{message: message}), nil
 	}
 	for _, enc := range encs {
@@ -402,7 +403,7 @@ func chatdProviderTimestamp(value string) *timestamppb.Timestamp {
 }
 
 func inboundMessageID(accountID string, stanzaID string, tag string, sender string, fingerprint string) string {
-	return "wamsg_" + stableID(strings.Join([]string{accountID, stanzaID, tag, sender, fingerprint}, ":"))
+	return "wamsg_" + shared.StableID(strings.Join([]string{accountID, stanzaID, tag, sender, fingerprint}, ":"))
 }
 
 func (c *chatdClient) checkLoginState(ctx context.Context, state nativeState, input EngineLoginCheckInput, appVersion string) (chatdSessionUpdate, error) {

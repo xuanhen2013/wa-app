@@ -10,6 +10,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/jackc/pgx/v5"
 	"github.com/jackc/pgx/v5/pgxpool"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -155,12 +156,12 @@ func (s *PostgresStore) FindWAAccountByPhone(ctx context.Context, e164 string) (
 }
 
 func (s *PostgresStore) ListWAAccounts(ctx context.Context, cursorValue string, limit int) ([]*waappv1.WAAccount, string, error) {
-	cursor, err := decodeKeysetCursor(cursorValue)
+	cursor, err := shared.DecodeKeysetCursor(cursorValue)
 	if err != nil {
-		return nil, "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, err.Error(), false)
+		return nil, "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, err.Error(), false)
 	}
-	limit = normalizePageLimit(limit)
-	rows, err := s.queryWAAccountPage(ctx, cursor, keysetLookaheadLimit(limit))
+	limit = shared.NormalizePageLimit(limit)
+	rows, err := s.queryWAAccountPage(ctx, cursor, shared.KeysetLookaheadLimit(limit))
 	if err != nil {
 		return nil, "", err
 	}
@@ -176,15 +177,15 @@ func (s *PostgresStore) ListWAAccounts(ctx context.Context, cursorValue string, 
 	if err := rows.Err(); err != nil {
 		return nil, "", err
 	}
-	items, nextCursor := newKeysetPage(accounts, limit, func(account *waappv1.WAAccount) keysetCursor {
-		return keysetCursorValue(waAccountUpdatedAt(account), waAccountID(account))
+	items, nextCursor := shared.NewKeysetPage(accounts, limit, func(account *waappv1.WAAccount) shared.KeysetCursor {
+		return shared.KeysetCursorValue(waAccountUpdatedAt(account), waAccountID(account))
 	})
 	return items, nextCursor, nil
 }
 
-func (s *PostgresStore) queryWAAccountPage(ctx context.Context, cursor keysetCursor, limit int) (pgx.Rows, error) {
+func (s *PostgresStore) queryWAAccountPage(ctx context.Context, cursor shared.KeysetCursor, limit int) (pgx.Rows, error) {
 	const base = `SELECT wa_account_id,display_name,e164_number,country_calling_code,national_number,country_iso2,status,two_factor_auth_configured,two_factor_email_configured,two_factor_email_address,two_factor_email_verified,two_factor_email_confirmed,created_at,updated_at FROM wa_accounts`
-	if !hasKeysetCursor(cursor) {
+	if !shared.HasKeysetCursor(cursor) {
 		return s.pool.Query(ctx, base+` ORDER BY updated_at DESC, wa_account_id DESC LIMIT $1`, limit)
 	}
 	return s.pool.Query(ctx, base+` WHERE (updated_at, wa_account_id) < ($1, $2) ORDER BY updated_at DESC, wa_account_id DESC LIMIT $3`, cursor.UpdatedAt, cursor.ID, limit)
@@ -200,7 +201,7 @@ func (s *PostgresStore) getWAAccount(ctx context.Context, where string, args ...
 }
 
 func (s *PostgresStore) SaveClientProfile(ctx context.Context, profile *waappv1.ClientProfile) error {
-	appErr := errorFromProto(profile.GetLastError())
+	appErr := shared.ErrorFromProto(profile.GetLastError())
 	_, err := s.pool.Exec(ctx, `INSERT INTO wa_client_profiles (client_profile_id, wa_account_id, protocol_profile_id, status, registration_key_state, messaging_key_state, last_error_code, last_error_message, last_error_retryable, last_used_at, created_at, updated_at)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
 ON CONFLICT (client_profile_id) DO UPDATE SET status=EXCLUDED.status, registration_key_state=EXCLUDED.registration_key_state, messaging_key_state=EXCLUDED.messaging_key_state, last_error_code=EXCLUDED.last_error_code, last_error_message=EXCLUDED.last_error_message, last_error_retryable=EXCLUDED.last_error_retryable, last_used_at=EXCLUDED.last_used_at, updated_at=EXCLUDED.updated_at`,
@@ -218,12 +219,12 @@ func (s *PostgresStore) GetClientProfile(ctx context.Context, id string) (*waapp
 }
 
 func (s *PostgresStore) ListClientProfiles(ctx context.Context, waAccountIDValue string, cursorValue string, limit int) ([]*waappv1.ClientProfile, string, error) {
-	cursor, err := decodeKeysetCursor(cursorValue)
+	cursor, err := shared.DecodeKeysetCursor(cursorValue)
 	if err != nil {
-		return nil, "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, err.Error(), false)
+		return nil, "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, err.Error(), false)
 	}
-	limit = normalizePageLimit(limit)
-	rows, err := s.queryClientProfilePage(ctx, waAccountIDValue, cursor, keysetLookaheadLimit(limit))
+	limit = shared.NormalizePageLimit(limit)
+	rows, err := s.queryClientProfilePage(ctx, waAccountIDValue, cursor, shared.KeysetLookaheadLimit(limit))
 	if err != nil {
 		return nil, "", err
 	}
@@ -239,15 +240,15 @@ func (s *PostgresStore) ListClientProfiles(ctx context.Context, waAccountIDValue
 	if err := rows.Err(); err != nil {
 		return nil, "", err
 	}
-	items, nextCursor := newKeysetPage(items, limit, func(profile *waappv1.ClientProfile) keysetCursor {
-		return keysetCursorValue(timeFromProto(profile.GetAudit().GetUpdatedAt()), profile.GetClientProfileId())
+	items, nextCursor := shared.NewKeysetPage(items, limit, func(profile *waappv1.ClientProfile) shared.KeysetCursor {
+		return shared.KeysetCursorValue(timeFromProto(profile.GetAudit().GetUpdatedAt()), profile.GetClientProfileId())
 	})
 	return items, nextCursor, nil
 }
 
-func (s *PostgresStore) queryClientProfilePage(ctx context.Context, waAccountIDValue string, cursor keysetCursor, limit int) (pgx.Rows, error) {
+func (s *PostgresStore) queryClientProfilePage(ctx context.Context, waAccountIDValue string, cursor shared.KeysetCursor, limit int) (pgx.Rows, error) {
 	const base = `SELECT client_profile_id,wa_account_id,protocol_profile_id,status,registration_key_state,messaging_key_state,last_error_code,last_error_message,last_error_retryable,last_used_at,created_at,updated_at FROM wa_client_profiles WHERE wa_account_id=$1`
-	if !hasKeysetCursor(cursor) {
+	if !shared.HasKeysetCursor(cursor) {
 		return s.pool.Query(ctx, base+` ORDER BY updated_at DESC, client_profile_id DESC LIMIT $2`, waAccountIDValue, limit)
 	}
 	return s.pool.Query(ctx, base+` AND (updated_at, client_profile_id) < ($2, $3) ORDER BY updated_at DESC, client_profile_id DESC LIMIT $4`, waAccountIDValue, cursor.UpdatedAt, cursor.ID, limit)
@@ -274,7 +275,7 @@ func (s *PostgresStore) GetNativeState(ctx context.Context, clientProfileID stri
 }
 
 func (s *PostgresStore) SaveAccountProbe(ctx context.Context, probe *waappv1.AccountProbe) error {
-	appErr := errorFromProto(probe.GetLastError())
+	appErr := shared.ErrorFromProto(probe.GetLastError())
 	_, err := s.pool.Exec(ctx, `INSERT INTO wa_account_probes (account_probe_id, wa_account_id, client_profile_id, status, supported_methods, last_error_code, last_error_message, last_error_retryable, probed_at)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9)
 ON CONFLICT (account_probe_id) DO UPDATE SET status=EXCLUDED.status, supported_methods=EXCLUDED.supported_methods, last_error_code=EXCLUDED.last_error_code, last_error_message=EXCLUDED.last_error_message, last_error_retryable=EXCLUDED.last_error_retryable, probed_at=EXCLUDED.probed_at`,
@@ -283,11 +284,11 @@ ON CONFLICT (account_probe_id) DO UPDATE SET status=EXCLUDED.status, supported_m
 }
 
 func (s *PostgresStore) SaveVerificationRequest(ctx context.Context, record *waappv1.VerificationCodeRequestRecord) error {
-	appErr := errorFromProto(record.GetLastError())
+	appErr := shared.ErrorFromProto(record.GetLastError())
 	_, err := s.pool.Exec(ctx, `INSERT INTO wa_verification_requests (verification_request_id, wa_account_id, client_profile_id, delivery_method, status, expected_code_length, retry_after_seconds, last_error_code, last_error_message, last_error_retryable, requested_at, expires_at)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
 ON CONFLICT (verification_request_id) DO UPDATE SET status=EXCLUDED.status, expected_code_length=EXCLUDED.expected_code_length, retry_after_seconds=EXCLUDED.retry_after_seconds, last_error_code=EXCLUDED.last_error_code, last_error_message=EXCLUDED.last_error_message, last_error_retryable=EXCLUDED.last_error_retryable, expires_at=EXCLUDED.expires_at`,
-		record.GetVerificationRequestId(), record.GetWaAccountId(), record.GetClientProfileId(), record.GetDeliveryMethod().String(), record.GetStatus().String(), record.GetExpectedCodeLength(), durationSeconds(record.GetRetryAfter()), errCode(appErr), errMessage(appErr), errRetryable(appErr), timeFromProto(record.GetRequestedAt()), nullableProtoTime(record.GetExpiresAt()))
+		record.GetVerificationRequestId(), record.GetWaAccountId(), record.GetClientProfileId(), record.GetDeliveryMethod().String(), record.GetStatus().String(), record.GetExpectedCodeLength(), shared.DurationSeconds(record.GetRetryAfter()), errCode(appErr), errMessage(appErr), errRetryable(appErr), timeFromProto(record.GetRequestedAt()), nullableProtoTime(record.GetExpiresAt()))
 	return err
 }
 
@@ -301,7 +302,7 @@ func (s *PostgresStore) GetVerificationRequest(ctx context.Context, id string) (
 }
 
 func (s *PostgresStore) SaveRegistration(ctx context.Context, record *waappv1.RegistrationRecord) error {
-	appErr := errorFromProto(record.GetLastError())
+	appErr := shared.ErrorFromProto(record.GetLastError())
 	identity := record.GetIdentity()
 	_, err := s.pool.Exec(ctx, `INSERT INTO wa_registrations (registration_id, verification_request_id, wa_account_id, client_profile_id, status, registered_identity_id, service_account_id, service_login_id, last_error_code, last_error_message, last_error_retryable, submitted_at, completed_at)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13)
@@ -320,7 +321,7 @@ func (s *PostgresStore) GetRegistration(ctx context.Context, id string) (*waappv
 }
 
 func (s *PostgresStore) SaveLoginState(ctx context.Context, state *waappv1.LoginState, stateRef string) error {
-	appErr := errorFromProto(state.GetLastError())
+	appErr := shared.ErrorFromProto(state.GetLastError())
 	_, err := s.pool.Exec(ctx, `INSERT INTO wa_login_states (login_state_id, registration_id, wa_account_id, client_profile_id, registered_identity_id, service_account_id, service_login_id, status, state_ref, last_error_code, last_error_message, last_error_retryable, registered_at, last_verified_at, created_at, updated_at)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16)
 ON CONFLICT (login_state_id) DO UPDATE SET status=EXCLUDED.status, service_account_id=EXCLUDED.service_account_id, service_login_id=EXCLUDED.service_login_id, state_ref=EXCLUDED.state_ref, last_error_code=EXCLUDED.last_error_code, last_error_message=EXCLUDED.last_error_message, last_error_retryable=EXCLUDED.last_error_retryable, last_verified_at=EXCLUDED.last_verified_at, updated_at=EXCLUDED.updated_at`,
@@ -385,7 +386,7 @@ func (s *PostgresStore) getLoginState(ctx context.Context, where string, args ..
 }
 
 func (s *PostgresStore) SaveMessageSession(ctx context.Context, session *waappv1.MessageSession) error {
-	appErr := errorFromProto(session.GetLastError())
+	appErr := shared.ErrorFromProto(session.GetLastError())
 	_, err := s.pool.Exec(ctx, `INSERT INTO wa_message_sessions (message_session_id, wa_account_id, client_profile_id, registered_identity_id, protocol_profile_id, status, last_error_code, last_error_message, last_error_retryable, opened_at, last_seen_at, closed_at)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12)
 ON CONFLICT (message_session_id) DO UPDATE SET status=EXCLUDED.status, last_error_code=EXCLUDED.last_error_code, last_error_message=EXCLUDED.last_error_message, last_error_retryable=EXCLUDED.last_error_retryable, last_seen_at=EXCLUDED.last_seen_at, closed_at=EXCLUDED.closed_at`,
@@ -424,7 +425,7 @@ func (s *PostgresStore) SaveInboundMessages(ctx context.Context, messages []*waa
 	}
 	batch := &pgx.Batch{}
 	for _, msg := range messages {
-		appErr := errorFromProto(msg.GetLastError())
+		appErr := shared.ErrorFromProto(msg.GetLastError())
 		batch.Queue(`INSERT INTO wa_inbound_messages (message_id, message_session_id, kind, encryption_state, ack_status, direction, source, contact_ref, sender_ref, payload_ref, provider_message_id, provider_timestamp, read_at, delete_status, deleted_at, last_error_code, last_error_message, last_error_retryable, received_at)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18,$19)
 ON CONFLICT (message_id) DO UPDATE SET encryption_state=EXCLUDED.encryption_state, ack_status=EXCLUDED.ack_status, direction=EXCLUDED.direction, source=EXCLUDED.source, contact_ref=EXCLUDED.contact_ref, sender_ref=EXCLUDED.sender_ref, payload_ref=EXCLUDED.payload_ref, provider_message_id=COALESCE(NULLIF(EXCLUDED.provider_message_id,''), wa_inbound_messages.provider_message_id), provider_timestamp=COALESCE(EXCLUDED.provider_timestamp, wa_inbound_messages.provider_timestamp), read_at=COALESCE(EXCLUDED.read_at, wa_inbound_messages.read_at), delete_status=CASE WHEN wa_inbound_messages.delete_status='MESSAGE_DELETE_STATUS_DELETED_FOR_ME' AND EXCLUDED.delete_status='MESSAGE_DELETE_STATUS_NOT_DELETED' THEN wa_inbound_messages.delete_status ELSE EXCLUDED.delete_status END, deleted_at=COALESCE(EXCLUDED.deleted_at, wa_inbound_messages.deleted_at), last_error_code=EXCLUDED.last_error_code, last_error_message=EXCLUDED.last_error_message, last_error_retryable=EXCLUDED.last_error_retryable`,
@@ -491,7 +492,7 @@ LIMIT $3`, waAccountIDValue, clientProfileID, limit)
 }
 
 func (s *PostgresStore) SaveDecryptedMessage(ctx context.Context, msg *waappv1.DecryptedMessage) error {
-	appErr := errorFromProto(msg.GetLastError())
+	appErr := shared.ErrorFromProto(msg.GetLastError())
 	_, err := s.pool.Exec(ctx, `INSERT INTO wa_decrypted_messages (decrypted_message_id, message_id, status, plaintext_ref, plaintext_value, plaintext_redacted, plaintext_secret_ref, last_error_code, last_error_message, last_error_retryable, decrypted_at)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11)
 ON CONFLICT (decrypted_message_id) DO UPDATE SET status=EXCLUDED.status, plaintext_ref=EXCLUDED.plaintext_ref, plaintext_value=EXCLUDED.plaintext_value, plaintext_redacted=EXCLUDED.plaintext_redacted, plaintext_secret_ref=EXCLUDED.plaintext_secret_ref, last_error_code=EXCLUDED.last_error_code, last_error_message=EXCLUDED.last_error_message, last_error_retryable=EXCLUDED.last_error_retryable, decrypted_at=EXCLUDED.decrypted_at`,
@@ -537,9 +538,9 @@ func (s *PostgresStore) SaveOTPMessage(ctx context.Context, msg *waappv1.OtpMess
 	if source == "" || source == "WA_OTP_SOURCE_UNSPECIFIED" {
 		source = "WA_OTP_SOURCE_AUTO_EXTRACTION"
 	}
-	otpID := firstNonEmpty(msg.GetOtpMessageId(), stableOTPMessageID(msg.GetWaAccountId(), msg.GetSourceParty(), otpValue))
-	redactedValue := firstNonEmpty(msg.GetOtp().GetRedactedValue(), redacted(otpValue))
-	secretRef := firstNonEmpty(msg.GetOtp().GetSecretRef(), "wa-otp:"+stableID(otpID))
+	otpID := shared.FirstNonEmpty(msg.GetOtpMessageId(), stableOTPMessageID(msg.GetWaAccountId(), msg.GetSourceParty(), otpValue))
+	redactedValue := shared.FirstNonEmpty(msg.GetOtp().GetRedactedValue(), shared.Redacted(otpValue))
+	secretRef := shared.FirstNonEmpty(msg.GetOtp().GetSecretRef(), "wa-otp:"+shared.StableID(otpID))
 	_, err := s.pool.Exec(ctx, `INSERT INTO wa_otp_messages (otp_message_id, wa_account_id, client_profile_id, registered_identity_id, message_id, candidate_id, source, source_party, otp_value, otp_redacted, otp_secret_ref, received_at, expires_at, created_at, updated_at)
 VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,now(),now())
 ON CONFLICT (otp_message_id) DO UPDATE SET client_profile_id=EXCLUDED.client_profile_id, registered_identity_id=EXCLUDED.registered_identity_id, message_id=EXCLUDED.message_id, candidate_id=EXCLUDED.candidate_id, source=EXCLUDED.source, source_party=EXCLUDED.source_party, otp_value=EXCLUDED.otp_value, otp_redacted=EXCLUDED.otp_redacted, otp_secret_ref=EXCLUDED.otp_secret_ref, received_at=EXCLUDED.received_at, expires_at=EXCLUDED.expires_at, updated_at=EXCLUDED.updated_at`,
@@ -548,12 +549,12 @@ ON CONFLICT (otp_message_id) DO UPDATE SET client_profile_id=EXCLUDED.client_pro
 }
 
 func (s *PostgresStore) ListAccountOTPMessages(ctx context.Context, waAccountIDValue string, cursorValue string, limit int, includeSensitiveValues bool) ([]*waappv1.OtpMessage, string, error) {
-	cursor, err := decodeKeysetCursor(cursorValue)
+	cursor, err := shared.DecodeKeysetCursor(cursorValue)
 	if err != nil {
-		return nil, "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, err.Error(), false)
+		return nil, "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, err.Error(), false)
 	}
-	limit = normalizePageLimit(limit)
-	rows, err := s.queryOTPMessagePage(ctx, waAccountIDValue, cursor, keysetLookaheadLimit(limit))
+	limit = shared.NormalizePageLimit(limit)
+	rows, err := s.queryOTPMessagePage(ctx, waAccountIDValue, cursor, shared.KeysetLookaheadLimit(limit))
 	if err != nil {
 		return nil, "", err
 	}
@@ -569,20 +570,20 @@ func (s *PostgresStore) ListAccountOTPMessages(ctx context.Context, waAccountIDV
 	if err := rows.Err(); err != nil {
 		return nil, "", err
 	}
-	pageItems, nextCursor := newKeysetPage(items, limit, func(msg *waappv1.OtpMessage) keysetCursor {
-		return keysetCursorValue(timeFromProto(msg.GetReceivedAt()), msg.GetOtpMessageId())
+	pageItems, nextCursor := shared.NewKeysetPage(items, limit, func(msg *waappv1.OtpMessage) shared.KeysetCursor {
+		return shared.KeysetCursorValue(timeFromProto(msg.GetReceivedAt()), msg.GetOtpMessageId())
 	})
 	return pageItems, nextCursor, nil
 }
 
-func (s *PostgresStore) queryOTPMessagePage(ctx context.Context, waAccountIDValue string, cursor keysetCursor, limit int) (pgx.Rows, error) {
+func (s *PostgresStore) queryOTPMessagePage(ctx context.Context, waAccountIDValue string, cursor shared.KeysetCursor, limit int) (pgx.Rows, error) {
 	const base = `SELECT o.otp_message_id,o.wa_account_id,o.client_profile_id,o.registered_identity_id,o.message_id,o.candidate_id,o.source,o.source_party,o.otp_value,o.otp_redacted,o.otp_secret_ref,o.received_at,o.expires_at,o.created_at,o.updated_at
 FROM wa_otp_messages o
 WHERE o.wa_account_id=$1 AND NOT EXISTS (
   SELECT 1 FROM wa_inbound_messages m
   WHERE m.message_id=o.message_id AND COALESCE(m.delete_status,'MESSAGE_DELETE_STATUS_NOT_DELETED')='MESSAGE_DELETE_STATUS_DELETED_FOR_ME'
 )`
-	if !hasKeysetCursor(cursor) {
+	if !shared.HasKeysetCursor(cursor) {
 		return s.pool.Query(ctx, base+` ORDER BY o.received_at DESC, o.otp_message_id DESC LIMIT $2`, waAccountIDValue, limit)
 	}
 	return s.pool.Query(ctx, base+` AND (o.received_at, o.otp_message_id) < ($2, $3) ORDER BY o.received_at DESC, o.otp_message_id DESC LIMIT $4`, waAccountIDValue, cursor.UpdatedAt, cursor.ID, limit)
@@ -590,7 +591,7 @@ WHERE o.wa_account_id=$1 AND NOT EXISTS (
 
 func notFound(err error, code waappv1.WaErrorCode, message string) error {
 	if errors.Is(err, pgx.ErrNoRows) {
-		return NewError(code, message, false)
+		return shared.NewError(code, message, false)
 	}
 	return err
 }
@@ -620,21 +621,21 @@ func audit(createdAt time.Time, updatedAt time.Time) *waappv1.AuditStamp {
 	return &waappv1.AuditStamp{CreatedAt: timestamppb.New(createdAt.UTC()), UpdatedAt: timestamppb.New(updatedAt.UTC())}
 }
 
-func errCode(err *AppError) string {
+func errCode(err *shared.AppError) string {
 	if err == nil {
 		return ""
 	}
 	return err.Code.String()
 }
 
-func errMessage(err *AppError) string {
+func errMessage(err *shared.AppError) string {
 	if err == nil {
 		return ""
 	}
 	return err.Message
 }
 
-func errRetryable(err *AppError) bool {
+func errRetryable(err *shared.AppError) bool {
 	return err != nil && err.Retryable
 }
 

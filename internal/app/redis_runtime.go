@@ -7,6 +7,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/redis/go-redis/v9"
 )
 
@@ -85,7 +86,7 @@ func (r *RedisRuntime) ClaimLease(ctx context.Context, key string, holder string
 	if key == "" || holder == "" {
 		return true, nil
 	}
-	ttl = normalizeLeaseTTL(ttl)
+	ttl = shared.NormalizeLeaseTTL(ttl)
 	result, err := r.client.Eval(ctx, `
 local current = redis.call("GET", KEYS[1])
 if not current or current == ARGV[1] then
@@ -93,7 +94,7 @@ if not current or current == ARGV[1] then
   return 1
 end
 return 0
-`, []string{redisKey("lease", key)}, holder, leaseTTLMilliseconds(ttl)).Int()
+`, []string{redisKey("lease", key)}, holder, shared.LeaseTTLMilliseconds(ttl)).Int()
 	return result == 1, err
 }
 
@@ -103,14 +104,14 @@ func (r *RedisRuntime) RenewLease(ctx context.Context, key string, holder string
 	if key == "" || holder == "" {
 		return true, nil
 	}
-	ttl = normalizeLeaseTTL(ttl)
+	ttl = shared.NormalizeLeaseTTL(ttl)
 	result, err := r.client.Eval(ctx, `
 if redis.call("GET", KEYS[1]) == ARGV[1] then
   redis.call("PEXPIRE", KEYS[1], ARGV[2])
   return 1
 end
 return 0
-`, []string{redisKey("lease", key)}, holder, leaseTTLMilliseconds(ttl)).Int()
+`, []string{redisKey("lease", key)}, holder, shared.LeaseTTLMilliseconds(ttl)).Int()
 	return result == 1, err
 }
 

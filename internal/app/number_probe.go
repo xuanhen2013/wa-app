@@ -8,6 +8,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 const numberProbeMaxAttempts = 3
@@ -19,14 +20,14 @@ func (s *serverCore) ProbeNumberSMS(ctx context.Context, payload map[string]any)
 	ctxData := actionContext(payload)
 	phone := normalizePhone(phoneFromAction(payload))
 	if phone.GetE164Number() == "" {
-		err := NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "phone is required", false)
+		err := shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "phone is required", false)
 		result := numberProbeError(payload, err)
 		logNumberProbeResult(ctxData, phone, WAProxyRoute{}, result)
 		return result, nil
 	}
 	engine, ok := s.runner.(*NativeEngine)
 	if !ok {
-		err := NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "native engine is required", false)
+		err := shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "native engine is required", false)
 		result := numberProbeError(payload, err)
 		logNumberProbeResult(ctxData, phone, WAProxyRoute{}, result)
 		return result, nil
@@ -103,12 +104,12 @@ func (s *serverCore) numberProbeProxy(payload map[string]any) (WAProxyRoute, str
 }
 
 func buildNumberProbeResult(input map[string]any, proxy map[string]any, fingerprint map[string]any, account map[string]any, sms map[string]any) map[string]any {
-	accountStatus := firstNonEmpty(textField(account, "status"), textField(account, "account_status"), textField(objectField(account, "probe"), "status"), "UNKNOWN")
-	accountRawStatus := firstNonEmpty(textField(account, "raw_status"), textField(account, "rawStatus"), textField(account, "status_text"))
-	accountRawReason := firstNonEmpty(textField(account, "raw_reason"), textField(account, "reason"))
-	accountError := firstNonEmpty(textField(account, "error_message"), textField(objectField(account, "error"), "message"))
-	accountFlow := firstNonEmpty(textField(account, "account_flow"), accountProbeFlowUnknown)
-	smsStatus := firstNonEmpty(textField(sms, "status"), textField(sms, "sms_status"), textField(sms, "route_status"), "UNKNOWN")
+	accountStatus := shared.FirstNonEmpty(textField(account, "status"), textField(account, "account_status"), textField(objectField(account, "probe"), "status"), "UNKNOWN")
+	accountRawStatus := shared.FirstNonEmpty(textField(account, "raw_status"), textField(account, "rawStatus"), textField(account, "status_text"))
+	accountRawReason := shared.FirstNonEmpty(textField(account, "raw_reason"), textField(account, "reason"))
+	accountError := shared.FirstNonEmpty(textField(account, "error_message"), textField(objectField(account, "error"), "message"))
+	accountFlow := shared.FirstNonEmpty(textField(account, "account_flow"), accountProbeFlowUnknown)
+	smsStatus := shared.FirstNonEmpty(textField(sms, "status"), textField(sms, "sms_status"), textField(sms, "route_status"), "UNKNOWN")
 	methodStatuses := objectListField(account, "method_statuses")
 	registered, registeredKnown := optionalBoolField(account, "registered")
 	if statusIn(accountRawStatus, "exists", "registered", "account_exists") || statusIn(accountStatus, "registered", "exists") {
@@ -120,7 +121,7 @@ func buildNumberProbeResult(input map[string]any, proxy map[string]any, fingerpr
 	smsAvailable := boolField(sms, "can_send_sms") || boolField(sms, "sms_available") || statusIn(smsStatus, "available", "sms_available", "verification_request_status_sent", "sent", "waiting", "ok")
 	smsWaitSeconds := firstNumberValue(sms, "sms_wait_seconds", "wait_seconds", "retry_after_seconds", "cooldown_seconds", "remaining_seconds", "retry_after", "wait")
 	methodStatuses = numberProbeMethodStatuses(methodStatuses, smsAvailable, smsWaitSeconds)
-	smsWaitUntil := firstNonEmpty(textField(sms, "sms_wait_until"), textField(sms, "wait_until"), textField(sms, "retry_after_at"), textField(sms, "cooldown_until"))
+	smsWaitUntil := shared.FirstNonEmpty(textField(sms, "sms_wait_until"), textField(sms, "wait_until"), textField(sms, "retry_after_at"), textField(sms, "cooldown_until"))
 	proxyAccepted := boolField(proxy, "accepted")
 	if accountFlow == accountProbeFlowUnknown {
 		accountFlow = accountFlowFromRawReason(accountRawReason)
@@ -142,8 +143,8 @@ func buildNumberProbeResult(input map[string]any, proxy map[string]any, fingerpr
 		"error_message":           failureReason,
 		"reject_reason":           failureReason,
 		"phone":                   objectField(input, "phone"),
-		"proxy":                   map[string]any{"proxy_mode": firstNonEmpty(textField(proxy, "proxy_mode"), "US_ROTATING_DYNAMIC_IP"), "country_code": firstNonEmpty(textField(proxy, "country_code"), "US")},
-		"fingerprint_persistence": firstNonEmpty(textField(fingerprint, "fingerprint_persistence"), "RANDOM_NOT_COMMITTED"),
+		"proxy":                   map[string]any{"proxy_mode": shared.FirstNonEmpty(textField(proxy, "proxy_mode"), "US_ROTATING_DYNAMIC_IP"), "country_code": shared.FirstNonEmpty(textField(proxy, "country_code"), "US")},
+		"fingerprint_persistence": shared.FirstNonEmpty(textField(fingerprint, "fingerprint_persistence"), "RANDOM_NOT_COMMITTED"),
 		"fingerprint":             objectField(fingerprint, "fingerprint"),
 		"account_probe":           account,
 		"sms_probe":               sms,
@@ -256,9 +257,9 @@ func numberProbeFailureReason(proxyAccepted bool, accountStatus string, accountR
 		return "verification request is cooling down: " + rawReason
 	}
 	if accountStatus == "ACCOUNT_PROBE_STATUS_REJECTED" {
-		return "account probe request rejected: " + firstNonEmpty(accountRawReason, accountRawStatus, "UNKNOWN")
+		return "account probe request rejected: " + shared.FirstNonEmpty(accountRawReason, accountRawStatus, "UNKNOWN")
 	}
-	return "account probe request failed: " + firstNonEmpty(accountRawReason, accountRawStatus, accountStatus, "UNKNOWN")
+	return "account probe request failed: " + shared.FirstNonEmpty(accountRawReason, accountRawStatus, accountStatus, "UNKNOWN")
 }
 
 func canRegisterValue(requestSucceeded bool, accountReachable bool, smsAvailable bool, blocked bool, accountFlow string) bool {
@@ -318,7 +319,7 @@ func retryableNumberProbeTransportError(err error) bool {
 	if err == nil {
 		return false
 	}
-	var appErr *AppError
+	var appErr *shared.AppError
 	if errors.As(err, &appErr) {
 		switch appErr.Code {
 		case waappv1.WaErrorCode_WA_ERROR_CODE_RATE_LIMITED,
@@ -408,7 +409,7 @@ func logNumberProbeResult(ctxData *waappv1.RequestContext, phone *waappv1.PhoneT
 	phoneStatus := objectField(result, "phone_status")
 	phoneHash := ""
 	if phone != nil && phone.GetE164Number() != "" {
-		phoneHash = stableID(phone.GetE164Number())
+		phoneHash = shared.StableID(phone.GetE164Number())
 	}
 	log.Printf(
 		"wa_phone_probe_result correlation=%s phone_hash=%s proxy_account=%s route_id=%s request_failed=%t success=%t account_flow=%s account_status=%s raw_status=%s raw_reason=%s sms_status=%s sms_available=%t sms_wait_seconds=%v error=%s",
@@ -425,14 +426,14 @@ func logNumberProbeResult(ctxData *waappv1.RequestContext, phone *waappv1.PhoneT
 		probeLogValue(textField(phoneStatus, "sms_status")),
 		boolField(phoneStatus, "sms_available"),
 		firstNumberValue(phoneStatus, "sms_wait_seconds"),
-		probeLogValue(firstNonEmpty(textField(result, "error_message"), textField(phoneStatus, "account_error"))),
+		probeLogValue(shared.FirstNonEmpty(textField(result, "error_message"), textField(phoneStatus, "account_error"))),
 	)
 }
 
 func logNumberProbeRetry(ctxData *waappv1.RequestContext, phone *waappv1.PhoneTarget, route WAProxyRoute, attempt int, maxAttempts int, reason string) {
 	phoneHash := ""
 	if phone != nil && phone.GetE164Number() != "" {
-		phoneHash = stableID(phone.GetE164Number())
+		phoneHash = shared.StableID(phone.GetE164Number())
 	}
 	log.Printf(
 		"wa_phone_probe_retry correlation=%s phone_hash=%s proxy_account=%s route_id=%s attempt=%d max_attempts=%d reason=%s",
@@ -469,7 +470,7 @@ func probeResultMap(result EngineProbeResult) map[string]any {
 		"success":           result.Status == waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REACHABLE,
 		"status":            result.Status.String(),
 		"account_status":    result.Status.String(),
-		"account_flow":      firstNonEmpty(result.AccountFlow, accountProbeFlowUnknown),
+		"account_flow":      shared.FirstNonEmpty(result.AccountFlow, accountProbeFlowUnknown),
 		"raw_status":        result.RawStatus,
 		"raw_reason":        result.RawReason,
 		"blocked":           result.Blocked,
@@ -482,7 +483,7 @@ func probeResultMap(result EngineProbeResult) map[string]any {
 		out["registered"] = result.Registered
 	}
 	if result.Err != nil {
-		protoErr := ToProtoError(result.Err)
+		protoErr := shared.ToProtoError(result.Err)
 		out["success"] = false
 		out["error"] = protoMap(protoErr)
 		out["error_message"] = protoErr.GetMessage()
@@ -491,7 +492,7 @@ func probeResultMap(result EngineProbeResult) map[string]any {
 }
 
 func smsProbeMap(account map[string]any) map[string]any {
-	status := firstNonEmpty(textField(account, "account_status"), textField(account, "status"))
+	status := shared.FirstNonEmpty(textField(account, "account_status"), textField(account, "status"))
 	reachable := status == waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REACHABLE.String() || strings.EqualFold(status, "REACHABLE") || strings.EqualFold(status, "ok")
 	waitSeconds := firstNumberValue(account, "sms_wait_seconds")
 	if !reachable || !boolField(account, "can_send_sms") {
@@ -551,7 +552,7 @@ func protoMethodStatusMaps(statuses []*waappv1.VerificationMethodStatus) []map[s
 			"method":           method,
 			"delivery_method":  status.GetDeliveryMethod().String(),
 			"available":        status.GetAvailable(),
-			"cooldown_seconds": durationSeconds(status.GetCooldown()),
+			"cooldown_seconds": shared.DurationSeconds(status.GetCooldown()),
 		})
 	}
 	return out

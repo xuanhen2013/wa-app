@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 const pendingRegistrationCleanupPageLimit = 100
@@ -32,7 +33,7 @@ func (s *serverCore) markWAAccountTransferredOut(ctx context.Context, waAccountI
 
 func (s *serverCore) saveWAAccount(ctx context.Context, account *waappv1.WAAccount) (*waappv1.WAAccount, error) {
 	if account == nil {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "WA account is required", false)
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "WA account is required", false)
 	}
 	accountID, err := requireWAAccountID(account.GetWaAccountId())
 	if err != nil {
@@ -55,7 +56,7 @@ func (s *serverCore) getWAAccount(ctx context.Context, accountID string) (*waapp
 	}
 	account, err := s.store.GetWAAccount(ctx, accountID)
 	if isWAAccountNotFound(err) {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_WA_ACCOUNT_NOT_FOUND, "WA account not found", false)
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_WA_ACCOUNT_NOT_FOUND, "WA account not found", false)
 	}
 	return account, err
 }
@@ -122,6 +123,6 @@ func (s *serverCore) deleteRegistrationOTPWaitForAccount(ctx context.Context, ac
 }
 
 func isWAAccountNotFound(err error) bool {
-	var appErr *AppError
+	var appErr *shared.AppError
 	return errors.As(err, &appErr) && appErr.Code == waappv1.WaErrorCode_WA_ERROR_CODE_WA_ACCOUNT_NOT_FOUND
 }

@@ -1,6 +1,10 @@
 package app
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+)
 
 type nativeIntegrityMode string
 
@@ -10,7 +14,7 @@ const (
 )
 
 func nativeIntegrityModeFromPayload(payload map[string]any) nativeIntegrityMode {
-	mode := firstNonEmpty(
+	mode := shared.FirstNonEmpty(
 		textField(payload, "integrity_mode"),
 		textField(payload, "integrityMode"),
 		textField(payload, "gpia_mode"),

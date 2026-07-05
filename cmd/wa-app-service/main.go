@@ -12,6 +12,7 @@ import (
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/app"
 	"github.com/byte-v-forge/wa-app/internal/config"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
@@ -46,8 +47,8 @@ func main() {
 	}
 	defer func() { _ = runtime.Close() }()
 
-	clock := app.SystemClock{}
-	ids := app.RandomIDGenerator{}
+	clock := shared.SystemClock{}
+	ids := shared.RandomIDGenerator{}
 	engine, err := app.NewNativeEngine(store, clock, ids)
 	if err != nil {
 		log.Fatalf("initialize wa-app native engine: %v", err)

@@ -15,6 +15,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 const (
@@ -65,7 +66,7 @@ func newPlayIntegrityAPIClient(endpoint, token string) (*playIntegrityAPIClient,
 		return nil, nil
 	}
 	if endpoint == "" || token == "" {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "play integrity api url and token must be configured together", false)
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "play integrity api url and token must be configured together", false)
 	}
 	normalized, err := normalizePlayIntegrityAPIEndpoint(endpoint)
 	if err != nil {
@@ -81,10 +82,10 @@ func newPlayIntegrityAPIClient(endpoint, token string) (*playIntegrityAPIClient,
 func normalizePlayIntegrityAPIEndpoint(endpoint string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(endpoint))
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "play integrity api url must be an absolute http endpoint", false)
+		return "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "play integrity api url must be an absolute http endpoint", false)
 	}
 	if parsed.Scheme != "http" && parsed.Scheme != "https" {
-		return "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "play integrity api url scheme must be http or https", false)
+		return "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "play integrity api url scheme must be http or https", false)
 	}
 	if strings.Trim(parsed.Path, "/") == "" {
 		parsed.Path = defaultPlayIntegrityAPIRoute
@@ -95,7 +96,7 @@ func normalizePlayIntegrityAPIEndpoint(endpoint string) (string, error) {
 func normalizePlayIntegrityAPIStatusEndpoint(endpoint string) (string, error) {
 	parsed, err := url.Parse(strings.TrimSpace(endpoint))
 	if err != nil || parsed.Scheme == "" || parsed.Host == "" {
-		return "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "play integrity api status endpoint is invalid", false)
+		return "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "play integrity api status endpoint is invalid", false)
 	}
 	parsed.Path = defaultPlayIntegrityStatus
 	parsed.RawQuery = ""
@@ -169,11 +170,11 @@ func sanitizePlayIntegrityVMStatus(vm map[string]any) map[string]any {
 
 func (c *playIntegrityAPIClient) Issue(ctx context.Context, input wamsysMaterialInput) (string, error) {
 	if c == nil {
-		return "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "play integrity api is not configured", false)
+		return "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "play integrity api is not configured", false)
 	}
 	requestHash := nativeGPIARequestHash(input.State)
 	if requestHash == "" {
-		return "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "gpia request hash is unavailable", false)
+		return "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "gpia request hash is unavailable", false)
 	}
 	payload := playIntegrityTokenRequest{
 		RequestHash: requestHash,
@@ -188,7 +189,7 @@ func (c *playIntegrityAPIClient) Issue(ctx context.Context, input wamsysMaterial
 	}
 	body, err := json.Marshal(payload)
 	if err != nil {
-		return "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "build play integrity token request failed", false)
+		return "", shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "build play integrity token request failed", false)
 	}
 	requestID := playIntegrityAPIRequestID(input, requestHash)
 	var lastErr error
@@ -214,7 +215,7 @@ func (c *playIntegrityAPIClient) Issue(ctx context.Context, input wamsysMaterial
 func (c *playIntegrityAPIClient) issueOnce(ctx context.Context, body []byte, requestID string) (string, bool, error) {
 	req, err := http.NewRequestWithContext(ctx, http.MethodPost, c.endpoint, bytes.NewReader(body))
 	if err != nil {
-		return "", false, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "build play integrity api request failed", false)
+		return "", false, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "build play integrity api request failed", false)
 	}
 	req.Header.Set("Content-Type", "application/json")
 	req.Header.Set("Authorization", "Bearer "+c.token)
@@ -232,10 +233,10 @@ func (c *playIntegrityAPIClient) issueOnce(ctx context.Context, body []byte, req
 	}
 	var parsed playIntegrityTokenResponse
 	if err := json.NewDecoder(io.LimitReader(resp.Body, 1<<20)).Decode(&parsed); err != nil {
-		return "", false, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "decode play integrity token response failed", false)
+		return "", false, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "decode play integrity token response failed", false)
 	}
 	if strings.TrimSpace(parsed.Token) == "" {
-		return "", false, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "play integrity token response did not include token", false)
+		return "", false, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "play integrity token response did not include token", false)
 	}
 	return parsed.Token, false, nil
 }
@@ -245,24 +246,24 @@ func playIntegrityStatusRetryable(status int) bool {
 }
 
 func playIntegrityAPIRequestID(input wamsysMaterialInput, requestHash string) string {
-	seed := firstNonEmpty(input.Phone.GetE164Number(), requestHash)
+	seed := shared.FirstNonEmpty(input.Phone.GetE164Number(), requestHash)
 	if seed == "" {
 		return ""
 	}
-	return "wa-gpia-" + stableID(seed)
+	return "wa-gpia-" + shared.StableID(seed)
 }
 
 func nativeGMSHardwareProfile(input wamsysMaterialInput) map[string]any {
 	state := input.State
 	profile := normalizeNativePhoneProfile(state.Profile, "")
-	release := firstNonEmpty(profile.AndroidVersion, defaultNativeDeviceModel().Android)
+	release := shared.FirstNonEmpty(profile.AndroidVersion, defaultNativeDeviceModel().Android)
 	sdk := nativeAndroidSDKInt(release)
-	vendor := firstNonEmpty(profile.DeviceVendor, defaultNativeDeviceModel().Vendor)
-	model := firstNonEmpty(profile.DeviceModel, defaultNativeDeviceModel().Model)
-	display := firstNonEmpty(profile.BuildDisplayID, nativeBuildDisplayIDForModel(nativeDeviceModel{Vendor: vendor, Model: model, Android: release}))
+	vendor := shared.FirstNonEmpty(profile.DeviceVendor, defaultNativeDeviceModel().Vendor)
+	model := shared.FirstNonEmpty(profile.DeviceModel, defaultNativeDeviceModel().Model)
+	display := shared.FirstNonEmpty(profile.BuildDisplayID, nativeBuildDisplayIDForModel(nativeDeviceModel{Vendor: vendor, Model: model, Android: release}))
 	device := nativeGMSDeviceCode(vendor, model)
 	brand := nativeGMSBrand(vendor)
-	manufacturer := firstNonEmpty(vendor, brand)
+	manufacturer := shared.FirstNonEmpty(vendor, brand)
 	buildID := nativeGMSBuildID(display)
 	buildTimeMillis := nativeGMSBuildTimeMillis(display)
 	securityPatch := nativePlayIntegritySecurityPatch(sdk)

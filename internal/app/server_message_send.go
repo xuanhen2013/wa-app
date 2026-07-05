@@ -6,6 +6,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
@@ -14,36 +15,36 @@ type waTextMessageSender interface {
 }
 
 func (s *messagingHandler) SendTextMessage(ctx context.Context, req *waappv1.SendTextMessageRequest) (*waappv1.SendTextMessageResponse, error) {
-	if err := validateContext(req.GetContext()); err != nil {
-		return &waappv1.SendTextMessageResponse{Error: ToProtoError(err)}, nil
+	if err := shared.ValidateContext(req.GetContext()); err != nil {
+		return &waappv1.SendTextMessageResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	accountID, err := requireWAAccountID(req.GetWaAccountId())
 	if err != nil {
-		return &waappv1.SendTextMessageResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.SendTextMessageResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	if _, err := s.getWAAccount(ctx, accountID); err != nil {
-		return &waappv1.SendTextMessageResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.SendTextMessageResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	text := strings.TrimSpace(req.GetText().GetValue())
 	if text == "" {
-		return &waappv1.SendTextMessageResponse{Error: ToProtoError(NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "text is required", false))}, nil
+		return &waappv1.SendTextMessageResponse{Error: shared.ToProtoError(shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "text is required", false))}, nil
 	}
 	contactJID := s.textMessageContactJID(ctx, accountID, req.GetContactRef())
 	if contactJID == "" {
-		return &waappv1.SendTextMessageResponse{Error: ToProtoError(NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "contact_ref is required", false))}, nil
+		return &waappv1.SendTextMessageResponse{Error: shared.ToProtoError(shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "contact_ref is required", false))}, nil
 	}
 	loginState, err := s.activeContactResolveLoginState(ctx, accountID)
 	if err != nil {
-		return &waappv1.SendTextMessageResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.SendTextMessageResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	runner, release, err := s.textMessageRunner(ctx, req.GetContext(), loginState)
 	if err != nil {
-		return &waappv1.SendTextMessageResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.SendTextMessageResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	defer release()
 	sender, ok := runner.(waTextMessageSender)
 	if !ok {
-		return &waappv1.SendTextMessageResponse{Error: ToProtoError(NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "WA text message sender is not configured", false))}, nil
+		return &waappv1.SendTextMessageResponse{Error: shared.ToProtoError(shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "WA text message sender is not configured", false))}, nil
 	}
 	providerID := newTextProviderMessageID(req.GetClientMessageId())
 	result := sender.SendTextMessage(ctx, EngineTextMessageInput{
@@ -60,7 +61,7 @@ func (s *messagingHandler) SendTextMessage(ctx context.Context, req *waappv1.Sen
 		providerID = result.ProviderMessageID
 	}
 	if result.Err != nil {
-		return &waappv1.SendTextMessageResponse{ProviderMessageId: providerID, SentAt: timestamp(result.SentAt), Error: ToProtoError(result.Err)}, nil
+		return &waappv1.SendTextMessageResponse{ProviderMessageId: providerID, SentAt: shared.ProtoTimestamp(result.SentAt), Error: shared.ToProtoError(result.Err)}, nil
 	}
 	sentAt := result.SentAt
 	if sentAt.IsZero() {
@@ -71,7 +72,7 @@ func (s *messagingHandler) SendTextMessage(ctx context.Context, req *waappv1.Sen
 		ackStatus = waappv1.MessageAckStatus_MESSAGE_ACK_STATUS_PENDING
 	}
 	if err := s.saveOutboundTextMessage(ctx, loginState, contactJID, providerID, text, sentAt, ackStatus); err != nil {
-		return &waappv1.SendTextMessageResponse{ProviderMessageId: providerID, SentAt: timestamppb.New(sentAt.UTC()), Error: ToProtoError(err)}, nil
+		return &waappv1.SendTextMessageResponse{ProviderMessageId: providerID, SentAt: timestamppb.New(sentAt.UTC()), Error: shared.ToProtoError(err)}, nil
 	}
 	return &waappv1.SendTextMessageResponse{ProviderMessageId: providerID, SentAt: timestamppb.New(sentAt.UTC())}, nil
 }
@@ -127,7 +128,7 @@ func (s *serverCore) saveOutboundTextMessage(ctx context.Context, loginState *wa
 		return err
 	}
 	return s.store.SaveDecryptedMessage(ctx, &waappv1.DecryptedMessage{
-		DecryptedMessageId: "wadec_" + stableID(messageID+":outbound"),
+		DecryptedMessageId: "wadec_" + shared.StableID(messageID+":outbound"),
 		MessageId:          messageID,
 		Status:             waappv1.DecryptionStatus_DECRYPTION_STATUS_DECRYPTED,
 		PlaintextRef:       "outbound:" + messageID,
@@ -166,5 +167,5 @@ func (s *serverCore) outboundMessageSession(ctx context.Context, loginState *waa
 }
 
 func outboundMessageID(accountID string, providerID string) string {
-	return "wamsg_" + stableID(strings.Join([]string{accountID, providerID, "outbound"}, ":"))
+	return "wamsg_" + shared.StableID(strings.Join([]string{accountID, providerID, "outbound"}, ":"))
 }

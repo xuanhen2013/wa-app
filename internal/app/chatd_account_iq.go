@@ -10,6 +10,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 const (
@@ -94,7 +95,7 @@ func chatdIQError(node chatdNode) error {
 			message = message + chatdIQErrorCodeMessage(code)
 		}
 	}
-	return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, message, false)
+	return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, message, false)
 }
 
 func chatdIQErrorCodeMessage(code string) string {

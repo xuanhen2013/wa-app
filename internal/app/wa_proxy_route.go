@@ -1,6 +1,10 @@
 package app
 
-import "strings"
+import (
+	"strings"
+
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+)
 
 type WAProxyRoute struct {
 	AccountID   string
@@ -15,7 +19,7 @@ type WAProxyRoute struct {
 func proxyCountryCodeFromPayload(payload map[string]any) string {
 	phone := objectField(payload, "phone")
 	proxy := objectField(payload, "proxy")
-	value := firstNonEmpty(
+	value := shared.FirstNonEmpty(
 		textField(payload, "proxy_country_code"),
 		textField(proxy, "country_code"),
 		textField(proxy, "proxy_country_code"),
@@ -27,7 +31,7 @@ func proxyCountryCodeFromPayload(payload map[string]any) string {
 	if value != "" {
 		return normalizeProxyCountryCode(value)
 	}
-	callingCode := firstNonEmpty(
+	callingCode := shared.FirstNonEmpty(
 		textField(payload, "country_calling_code"),
 		textField(payload, "cc"),
 		textField(payload, "country_code"),

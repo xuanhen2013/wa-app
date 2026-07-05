@@ -7,6 +7,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
 type nativePreChatdABState struct {
@@ -105,8 +106,8 @@ func (e *engineCore) fetchPreChatdABProps(ctx context.Context, phone *waappv1.Ph
 func preChatdABPropParams(phone *waappv1.PhoneTarget, state nativeState) orderedParams {
 	lg, lc := registrationLocale(phone)
 	params := orderedParams{}
-	params.set("cc", phoneCC(phone), false)
-	params.set("in", phoneNational(phone), false)
+	params.set("cc", shared.PhoneCC(phone), false)
+	params.set("in", shared.PhoneNational(phone), false)
 	params.set("lg", lg, false)
 	params.set("lc", lc, false)
 	params.set("fdid", state.Profile.FDID, false)

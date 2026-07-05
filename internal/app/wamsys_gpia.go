@@ -8,6 +8,7 @@ import (
 	"strconv"
 	"strings"
 
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"golang.org/x/crypto/curve25519"
 )
 
@@ -141,7 +142,7 @@ func nativeGPIADeviceCompactFields(input wamsysMaterialInput, sourceDir string) 
 
 func nativeGPIADisplayID(state nativeState) string {
 	profile := normalizeNativePhoneProfile(state.Profile, "")
-	return firstNonEmpty(profile.BuildDisplayID, defaultNativeDeviceModel().BuildDisplayID)
+	return shared.FirstNonEmpty(profile.BuildDisplayID, defaultNativeDeviceModel().BuildDisplayID)
 }
 
 func nativeGPIASourceDir(input wamsysMaterialInput) string {

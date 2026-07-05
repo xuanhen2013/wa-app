@@ -20,6 +20,7 @@ import (
 	"strings"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"go.mozilla.org/pkcs7"
 	"golang.org/x/crypto/pbkdf2"
 )
@@ -42,97 +43,97 @@ type ProtocolTooling interface {
 }
 
 func (s *toolingHandler) GeneratePhoneFingerprintProfile(ctx context.Context, req *waappv1.GeneratePhoneFingerprintProfileRequest) (*waappv1.GeneratePhoneFingerprintProfileResponse, error) {
-	if err := validateContext(req.GetContext()); err != nil {
-		return &waappv1.GeneratePhoneFingerprintProfileResponse{Error: ToProtoError(err)}, nil
+	if err := shared.ValidateContext(req.GetContext()); err != nil {
+		return &waappv1.GeneratePhoneFingerprintProfileResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	tooling, err := s.tooling()
 	if err != nil {
-		return &waappv1.GeneratePhoneFingerprintProfileResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.GeneratePhoneFingerprintProfileResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	profile, err := tooling.GeneratePhoneFingerprintProfile(ctx, req)
-	return &waappv1.GeneratePhoneFingerprintProfileResponse{Profile: profile, Error: ToProtoError(err)}, nil
+	return &waappv1.GeneratePhoneFingerprintProfileResponse{Profile: profile, Error: shared.ToProtoError(err)}, nil
 }
 
 func (s *toolingHandler) ImportWamsysCapture(ctx context.Context, req *waappv1.ImportWamsysCaptureRequest) (*waappv1.ImportWamsysCaptureResponse, error) {
-	if err := validateContext(req.GetContext()); err != nil {
-		return &waappv1.ImportWamsysCaptureResponse{Error: ToProtoError(err)}, nil
+	if err := shared.ValidateContext(req.GetContext()); err != nil {
+		return &waappv1.ImportWamsysCaptureResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	tooling, err := s.tooling()
 	if err != nil {
-		return &waappv1.ImportWamsysCaptureResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.ImportWamsysCaptureResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	capture, err := tooling.ImportWamsysCapture(ctx, req)
-	return &waappv1.ImportWamsysCaptureResponse{Capture: capture, Error: ToProtoError(err)}, nil
+	return &waappv1.ImportWamsysCaptureResponse{Capture: capture, Error: shared.ToProtoError(err)}, nil
 }
 
 func (s *toolingHandler) BuildRegistrationRequest(ctx context.Context, req *waappv1.BuildRegistrationRequestRequest) (*waappv1.BuildRegistrationRequestResponse, error) {
-	if err := validateContext(req.GetContext()); err != nil {
-		return &waappv1.BuildRegistrationRequestResponse{Error: ToProtoError(err)}, nil
+	if err := shared.ValidateContext(req.GetContext()); err != nil {
+		return &waappv1.BuildRegistrationRequestResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	tooling, err := s.tooling()
 	if err != nil {
-		return &waappv1.BuildRegistrationRequestResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.BuildRegistrationRequestResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	resp, err := tooling.BuildRegistrationRequest(ctx, req)
 	if resp == nil {
 		resp = &waappv1.BuildRegistrationRequestResponse{}
 	}
-	resp.Error = ToProtoError(err)
+	resp.Error = shared.ToProtoError(err)
 	return resp, nil
 }
 
 func (s *toolingHandler) EncryptWASafeEnvelope(ctx context.Context, req *waappv1.EncryptWASafeEnvelopeRequest) (*waappv1.EncryptWASafeEnvelopeResponse, error) {
-	if err := validateContext(req.GetContext()); err != nil {
-		return &waappv1.EncryptWASafeEnvelopeResponse{Error: ToProtoError(err)}, nil
+	if err := shared.ValidateContext(req.GetContext()); err != nil {
+		return &waappv1.EncryptWASafeEnvelopeResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	tooling, err := s.tooling()
 	if err != nil {
-		return &waappv1.EncryptWASafeEnvelopeResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.EncryptWASafeEnvelopeResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	resp, err := tooling.EncryptWASafeEnvelope(ctx, req)
 	if resp == nil {
 		resp = &waappv1.EncryptWASafeEnvelopeResponse{}
 	}
-	resp.Error = ToProtoError(err)
+	resp.Error = shared.ToProtoError(err)
 	return resp, nil
 }
 
 func (s *toolingHandler) DeriveRegistrationToken(ctx context.Context, req *waappv1.DeriveRegistrationTokenRequest) (*waappv1.DeriveRegistrationTokenResponse, error) {
-	if err := validateContext(req.GetContext()); err != nil {
-		return &waappv1.DeriveRegistrationTokenResponse{Error: ToProtoError(err)}, nil
+	if err := shared.ValidateContext(req.GetContext()); err != nil {
+		return &waappv1.DeriveRegistrationTokenResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	tooling, err := s.tooling()
 	if err != nil {
-		return &waappv1.DeriveRegistrationTokenResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.DeriveRegistrationTokenResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	resp, err := tooling.DeriveRegistrationToken(ctx, req)
 	if resp == nil {
 		resp = &waappv1.DeriveRegistrationTokenResponse{}
 	}
-	resp.Error = ToProtoError(err)
+	resp.Error = shared.ToProtoError(err)
 	return resp, nil
 }
 
 func (s *toolingHandler) DeriveAuthKey(ctx context.Context, req *waappv1.DeriveAuthKeyRequest) (*waappv1.DeriveAuthKeyResponse, error) {
-	if err := validateContext(req.GetContext()); err != nil {
-		return &waappv1.DeriveAuthKeyResponse{Error: ToProtoError(err)}, nil
+	if err := shared.ValidateContext(req.GetContext()); err != nil {
+		return &waappv1.DeriveAuthKeyResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	tooling, err := s.tooling()
 	if err != nil {
-		return &waappv1.DeriveAuthKeyResponse{Error: ToProtoError(err)}, nil
+		return &waappv1.DeriveAuthKeyResponse{Error: shared.ToProtoError(err)}, nil
 	}
 	resp, err := tooling.DeriveAuthKey(ctx, req)
 	if resp == nil {
 		resp = &waappv1.DeriveAuthKeyResponse{}
 	}
-	resp.Error = ToProtoError(err)
+	resp.Error = shared.ToProtoError(err)
 	return resp, nil
 }
 
 func (s *serverCore) tooling() (ProtocolTooling, error) {
 	tooling, ok := s.runner.(ProtocolTooling)
 	if !ok {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "protocol tooling is not available", false)
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "protocol tooling is not available", false)
 	}
 	return tooling, nil
 }
@@ -140,8 +141,8 @@ func (s *serverCore) tooling() (ProtocolTooling, error) {
 func (e *toolingService) GeneratePhoneFingerprintProfile(ctx context.Context, req *waappv1.GeneratePhoneFingerprintProfileRequest) (*waappv1.PhoneFingerprintProfile, error) {
 	_ = ctx
 	phone := normalizePhone(req.GetPhone())
-	if phone.GetE164Number() == "" && phoneCC(phone) == "" {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "phone is required", false)
+	if phone.GetE164Number() == "" && shared.PhoneCC(phone) == "" {
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "phone is required", false)
 	}
 	profile := buildNativePhoneProfile(phone)
 	return phoneProfileToProto(phone, profile), nil
@@ -151,7 +152,7 @@ func (e *toolingService) ImportWamsysCapture(ctx context.Context, req *waappv1.I
 	_ = ctx
 	capture, err := parseWamsysJSON(req.GetJsonText())
 	if err != nil {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "invalid WAMSYS capture", false)
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "invalid WAMSYS capture", false)
 	}
 	return capture, nil
 }
@@ -170,14 +171,14 @@ func (e *toolingService) BuildRegistrationRequest(ctx context.Context, req *waap
 		state = loaded
 		state.ensureMaps()
 		hasState = true
-		phone.CountryCallingCode = firstNonEmpty(phone.GetCountryCallingCode(), state.CC)
-		phone.NationalNumber = firstNonEmpty(phone.GetNationalNumber(), state.Phone)
+		phone.CountryCallingCode = shared.FirstNonEmpty(phone.GetCountryCallingCode(), state.CC)
+		phone.NationalNumber = shared.FirstNonEmpty(phone.GetNationalNumber(), state.Phone)
 		if phone.E164Number == "" && phone.CountryCallingCode != "" && phone.NationalNumber != "" {
 			phone.E164Number = "+" + phone.CountryCallingCode + phone.NationalNumber
 		}
 	}
-	if phoneCC(phone) == "" && phoneNational(phone) == "" {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "phone is required", false)
+	if shared.PhoneCC(phone) == "" && shared.PhoneNational(phone) == "" {
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "phone is required", false)
 	}
 	kind := req.GetKind()
 	if kind == waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_UNSPECIFIED {
@@ -192,16 +193,16 @@ func (e *toolingService) BuildRegistrationRequest(ctx context.Context, req *waap
 	}
 	method := verificationMethodFromName(req.GetMethod())
 	methodName := registrationMethodName(method, "sms")
-	language := firstNonEmpty(req.GetLanguage(), "en")
-	locale := firstNonEmpty(req.GetLocale(), "US")
+	language := shared.FirstNonEmpty(req.GetLanguage(), "en")
+	locale := shared.FirstNonEmpty(req.GetLocale(), "US")
 	switch kind {
 	case waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_EXIST:
 		if hasState {
 			base, raw := e.existParams(phone, state)
 			params.merge(base, raw)
 		} else {
-			params.set("cc", phoneCC(phone), false)
-			params.set("in", phoneNational(phone), false)
+			params.set("cc", shared.PhoneCC(phone), false)
+			params.set("in", shared.PhoneNational(phone), false)
 			params.set("lg", language, false)
 			params.set("lc", locale, false)
 			applyNativeProfileParams(&params, rawKeys, state.Profile, false, true)
@@ -209,14 +210,14 @@ func (e *toolingService) BuildRegistrationRequest(ctx context.Context, req *waap
 		}
 	case waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_REGISTER:
 		if strings.TrimSpace(req.GetVerificationCode()) == "" {
-			return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "verification_code is required", false)
+			return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "verification_code is required", false)
 		}
 		if hasState {
 			base, raw := e.registerParams(phone, method, req.GetVerificationCode(), state, "")
 			params.merge(base, raw)
 		} else {
-			params.set("cc", phoneCC(phone), false)
-			params.set("in", phoneNational(phone), false)
+			params.set("cc", shared.PhoneCC(phone), false)
+			params.set("in", shared.PhoneNational(phone), false)
 			params.set("method", methodName, false)
 			params.set("code", req.GetVerificationCode(), false)
 			applyNativeProfileParams(&params, rawKeys, state.Profile, false, true)
@@ -230,8 +231,8 @@ func (e *toolingService) BuildRegistrationRequest(ctx context.Context, req *waap
 			}
 			params = built
 		} else {
-			params.set("cc", phoneCC(phone), false)
-			params.set("in", phoneNational(phone), false)
+			params.set("cc", shared.PhoneCC(phone), false)
+			params.set("in", shared.PhoneNational(phone), false)
 			params.set("method", methodName, false)
 			params.set("lg", language, false)
 			params.set("lc", locale, false)
@@ -240,7 +241,7 @@ func (e *toolingService) BuildRegistrationRequest(ctx context.Context, req *waap
 		}
 	}
 	if kind != waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_EXIST {
-		params.set("method", firstNonEmpty(params.get("method"), methodName), false)
+		params.set("method", shared.FirstNonEmpty(params.get("method"), methodName), false)
 	}
 	wamsysCapture, err := e.wamsysProvider().RegistrationMaterial(ctx, wamsysMaterialInput{Capture: req.GetWamsysCapture(), Kind: kind, Phone: phone, State: state, AppVersion: defaultWAAppVersion, IntegrityMode: nativeIntegrityModeErrorCode, Now: e.clock.Now()})
 	if err != nil {
@@ -284,9 +285,9 @@ func (e *toolingService) EncryptWASafeEnvelope(ctx context.Context, req *waappv1
 	_ = ctx
 	plain := sensitiveInput(req.GetPlaintext())
 	if plain == "" {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "plaintext is required", false)
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "plaintext is required", false)
 	}
-	enc, err := encryptWASafe([]byte(plain), firstNonEmpty(req.GetServerPublicKeyHex(), defaultWASafeServerPublicKeyHex))
+	enc, err := encryptWASafe([]byte(plain), shared.FirstNonEmpty(req.GetServerPublicKeyHex(), defaultWASafeServerPublicKeyHex))
 	if err != nil {
 		return nil, err
 	}
@@ -295,9 +296,9 @@ func (e *toolingService) EncryptWASafeEnvelope(ctx context.Context, req *waappv1
 
 func (e *toolingService) DeriveRegistrationToken(ctx context.Context, req *waappv1.DeriveRegistrationTokenRequest) (*waappv1.DeriveRegistrationTokenResponse, error) {
 	_ = ctx
-	token, err := deriveRegistrationTokenFromAPK(req.GetApk(), phoneNational(normalizePhone(req.GetPhone())), firstNonEmpty(req.GetPackageName(), "com.whatsapp"))
+	token, err := deriveRegistrationTokenFromAPK(req.GetApk(), shared.PhoneNational(normalizePhone(req.GetPhone())), shared.FirstNonEmpty(req.GetPackageName(), "com.whatsapp"))
 	if err != nil {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "registration token derivation failed", false)
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "registration token derivation failed", false)
 	}
 	return &waappv1.DeriveRegistrationTokenResponse{Token: sensitiveOutput(token, "registration-token", req.GetIncludeSensitiveValues())}, nil
 }
@@ -306,7 +307,7 @@ func (e *toolingService) DeriveAuthKey(ctx context.Context, req *waappv1.DeriveA
 	_ = ctx
 	authkey, err := deriveAuthKeyFromKeystoreXML(req.GetKeystoreXml())
 	if err != nil {
-		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "authkey derivation failed", false)
+		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "authkey derivation failed", false)
 	}
 	return &waappv1.DeriveAuthKeyResponse{Authkey: sensitiveOutput(authkey, "authkey", req.GetIncludeSensitiveValues())}, nil
 }
@@ -743,11 +744,11 @@ func sensitiveInput(value *waappv1.SensitiveText) string {
 	if value == nil {
 		return ""
 	}
-	return firstNonEmpty(value.GetValue(), value.GetRedactedValue())
+	return shared.FirstNonEmpty(value.GetValue(), value.GetRedactedValue())
 }
 
 func sensitiveOutput(value string, refPrefix string, include bool) *waappv1.SensitiveText {
-	out := &waappv1.SensitiveText{RedactedValue: redacted(value), SecretRef: refPrefix + ":" + stableID(value)}
+	out := &waappv1.SensitiveText{RedactedValue: shared.Redacted(value), SecretRef: refPrefix + ":" + shared.StableID(value)}
 	if include {
 		out.Value = value
 	}
