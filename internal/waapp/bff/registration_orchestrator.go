@@ -1,4 +1,4 @@
-package app
+package bff
 
 import (
 	"context"
@@ -7,16 +7,17 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/app"
 	"github.com/byte-v-forge/wa-app/internal/waapp/engine"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 )
 
-// StartRegistration is the dashboard registration entry point; the multi-step
-// orchestration lives on the bff action gateway.
-func (s *Server) StartRegistration(ctx context.Context, payload map[string]any) (map[string]any, error) {
-	return (&actionGateway{server: s}).startRegistration(ctx, payload)
+// StartRegistration is the dashboard registration entry point; it drives the
+// multi-step orchestration on a fresh action gateway bound to the given server.
+func StartRegistration(server *app.Server, ctx context.Context, payload map[string]any) (map[string]any, error) {
+	return (&actionGateway{server: server}).startRegistration(ctx, payload)
 }
 
 func (g *actionGateway) startRegistration(ctx context.Context, payload map[string]any) (map[string]any, error) {
@@ -71,7 +72,7 @@ func (g *actionGateway) startRegistration(ctx context.Context, payload map[strin
 		return nil, err
 	}
 	verificationRequestID := record.GetVerificationRequestId()
-	wait := registrationOTPWait{
+	wait := wamodel.RegistrationOTPWait{
 		WAAccountID:           wamodel.WAAccountID(account),
 		VerificationRequestID: verificationRequestID,
 		CreatedAtUnix:         time.Now().UTC().Unix(),

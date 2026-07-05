@@ -1,4 +1,4 @@
-package app
+package bff
 
 import (
 	"bytes"
@@ -11,6 +11,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/app"
 	"github.com/byte-v-forge/wa-app/internal/waapp/engine"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
@@ -25,16 +26,9 @@ const transientStateTTL = 30 * time.Minute
 const registrationAttemptStateTTL = 26 * time.Hour
 const registrationOTPWaitDefaultTTL = 20 * time.Minute
 
-type registrationOTPWait struct {
-	WAAccountID           string `json:"wa_account_id"`
-	VerificationRequestID string `json:"verification_request_id"`
-	ResumeURL             string `json:"resume_url"`
-	CreatedAtUnix         int64  `json:"created_at_unix"`
-}
+type actionGateway struct{ server *app.Server }
 
-type actionGateway struct{ server *Server }
-
-func NewActionGateway(server *Server) http.Handler {
+func NewActionGateway(server *app.Server) http.Handler {
 	return &actionGateway{server: server}
 }
 
@@ -88,7 +82,7 @@ func (g *actionGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 }
 
 func (g *actionGateway) proxySettings(ctx context.Context, payload map[string]any) (map[string]any, error) {
-	route, useProxy := g.server.resolveWAProxyRoute(waProxyResolveRequest{
+	route, useProxy := g.resolveWAProxyRoute(waProxyResolveRequest{
 		Payload:     payload,
 		CountryCode: proxyCountryCodeFromPayload(payload),
 	})
@@ -299,20 +293,20 @@ func (g *actionGateway) resumeOTP(ctx context.Context, payload map[string]any) (
 	return result, nil
 }
 
-func registrationOTPWaitFromPayload(payload map[string]any) (registrationOTPWait, time.Duration, error) {
-	wait := registrationOTPWait{
+func registrationOTPWaitFromPayload(payload map[string]any) (wamodel.RegistrationOTPWait, time.Duration, error) {
+	wait := wamodel.RegistrationOTPWait{
 		WAAccountID:           shared.TextField(payload, "wa_account_id"),
 		VerificationRequestID: shared.TextField(payload, "verification_request_id"),
 		ResumeURL:             shared.TextField(payload, "resume_url"),
 		CreatedAtUnix:         time.Now().UTC().Unix(),
 	}
 	if wait.VerificationRequestID == "" {
-		return registrationOTPWait{}, 0, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "verification_request_id is required", false)
+		return wamodel.RegistrationOTPWait{}, 0, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "verification_request_id is required", false)
 	}
 	if wait.WAAccountID != "" {
 		accountID, err := wamodel.RequireWAAccountID(wait.WAAccountID)
 		if err != nil {
-			return registrationOTPWait{}, 0, err
+			return wamodel.RegistrationOTPWait{}, 0, err
 		}
 		wait.WAAccountID = accountID
 	}
@@ -323,56 +317,56 @@ func registrationOTPWaitFromPayload(payload map[string]any) (registrationOTPWait
 	return wait, ttl, nil
 }
 
-func (g *actionGateway) saveRegistrationOTPWait(ctx context.Context, wait registrationOTPWait, ttl time.Duration) error {
+func (g *actionGateway) saveRegistrationOTPWait(ctx context.Context, wait wamodel.RegistrationOTPWait, ttl time.Duration) error {
 	data, err := json.Marshal(wait)
 	if err != nil {
 		return err
 	}
-	if err := g.server.Runtime().SaveTransientState(ctx, registrationOTPWaitKey(wait.VerificationRequestID), data, ttl); err != nil {
+	if err := g.server.Runtime().SaveTransientState(ctx, wamodel.RegistrationOTPWaitKey(wait.VerificationRequestID), data, ttl); err != nil {
 		return err
 	}
 	if wait.WAAccountID != "" {
-		if err := g.server.Runtime().SaveTransientState(ctx, registrationOTPWaitAccountKey(wait.WAAccountID), data, ttl); err != nil {
+		if err := g.server.Runtime().SaveTransientState(ctx, wamodel.RegistrationOTPWaitAccountKey(wait.WAAccountID), data, ttl); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func (g *actionGateway) loadRegistrationOTPWait(ctx context.Context, waAccountIDValue string, verificationRequestID string) (registrationOTPWait, error) {
+func (g *actionGateway) loadRegistrationOTPWait(ctx context.Context, waAccountIDValue string, verificationRequestID string) (wamodel.RegistrationOTPWait, error) {
 	key := ""
 	if verificationRequestID != "" {
-		key = registrationOTPWaitKey(verificationRequestID)
+		key = wamodel.RegistrationOTPWaitKey(verificationRequestID)
 	} else if waAccountIDValue != "" {
 		accountID, err := wamodel.RequireWAAccountID(waAccountIDValue)
 		if err != nil {
-			return registrationOTPWait{}, err
+			return wamodel.RegistrationOTPWait{}, err
 		}
-		key = registrationOTPWaitAccountKey(accountID)
+		key = wamodel.RegistrationOTPWaitAccountKey(accountID)
 	}
 	if key == "" {
-		return registrationOTPWait{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "wa_account_id or verification_request_id is required", false)
+		return wamodel.RegistrationOTPWait{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "wa_account_id or verification_request_id is required", false)
 	}
 	data, err := g.server.Runtime().GetTransientState(ctx, key)
 	if err != nil {
-		return registrationOTPWait{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_PROFILE_NOT_FOUND, "registration otp wait not found", false)
+		return wamodel.RegistrationOTPWait{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_PROFILE_NOT_FOUND, "registration otp wait not found", false)
 	}
-	var wait registrationOTPWait
+	var wait wamodel.RegistrationOTPWait
 	if err := json.Unmarshal(data, &wait); err != nil {
-		return registrationOTPWait{}, err
+		return wamodel.RegistrationOTPWait{}, err
 	}
 	return wait, nil
 }
 
-func (g *actionGateway) deleteRegistrationOTPWait(ctx context.Context, wait registrationOTPWait) error {
-	_ = g.server.Runtime().DeleteTransientState(ctx, registrationOTPWaitKey(wait.VerificationRequestID))
+func (g *actionGateway) deleteRegistrationOTPWait(ctx context.Context, wait wamodel.RegistrationOTPWait) error {
+	_ = g.server.Runtime().DeleteTransientState(ctx, wamodel.RegistrationOTPWaitKey(wait.VerificationRequestID))
 	if wait.WAAccountID != "" {
-		_ = g.server.Runtime().DeleteTransientState(ctx, registrationOTPWaitAccountKey(wait.WAAccountID))
+		_ = g.server.Runtime().DeleteTransientState(ctx, wamodel.RegistrationOTPWaitAccountKey(wait.WAAccountID))
 	}
 	return nil
 }
 
-func postRegistrationOTPResume(ctx context.Context, wait registrationOTPWait, code string) error {
+func postRegistrationOTPResume(ctx context.Context, wait wamodel.RegistrationOTPWait, code string) error {
 	body, err := json.Marshal(map[string]any{
 		"otp":                     code,
 		"code":                    code,
@@ -400,14 +394,6 @@ func postRegistrationOTPResume(ctx context.Context, wait registrationOTPWait, co
 	return nil
 }
 
-func registrationOTPWaitKey(verificationRequestID string) string {
-	return "wa-registration-otp-wait:verification:" + verificationRequestID
-}
-
-func registrationOTPWaitAccountKey(waAccountIDValue string) string {
-	return "wa-registration-otp-wait:account:" + waAccountIDValue
-}
-
 func (g *actionGateway) submitOTP(ctx context.Context, payload map[string]any) (map[string]any, error) {
 	runner, route, managedRoute, err := g.registrationRunner(payload)
 	if err != nil {
@@ -427,7 +413,7 @@ func (g *actionGateway) submitOTP(ctx context.Context, payload map[string]any) (
 	}
 	success := resp.GetRegistration().GetStatus() == waappv1.RegistrationStatus_REGISTRATION_STATUS_REGISTERED && resp.GetLoginState().GetStatus() == waappv1.LoginStateStatus_LOGIN_STATE_STATUS_ACTIVE
 	if success {
-		_ = g.deleteRegistrationOTPWait(ctx, registrationOTPWait{
+		_ = g.deleteRegistrationOTPWait(ctx, wamodel.RegistrationOTPWait{
 			WAAccountID:           resp.GetRegistration().GetWaAccountId(),
 			VerificationRequestID: resp.GetRegistration().GetVerificationRequestId(),
 		})
@@ -493,7 +479,7 @@ func (g *actionGateway) pollAccountTransferRegistration(ctx context.Context, pay
 		}
 		result = resultValue
 		if boolField(result, "success") {
-			_ = g.deleteRegistrationOTPWait(ctx, registrationOTPWait{WAAccountID: shared.TextField(payload, "wa_account_id"), VerificationRequestID: shared.TextField(payload, "verification_request_id")})
+			_ = g.deleteRegistrationOTPWait(ctx, wamodel.RegistrationOTPWait{WAAccountID: shared.TextField(payload, "wa_account_id"), VerificationRequestID: shared.TextField(payload, "verification_request_id")})
 			result["attempts"] = attempt + 1
 			return result, nil
 		}
@@ -530,7 +516,7 @@ func (g *actionGateway) cleanupFailedRegistration(ctx context.Context, payload m
 	accountID := cleanupWAAccountID(payload)
 	verificationRequestID := cleanupVerificationRequestID(payload)
 	if verificationRequestID != "" || accountID != "" {
-		_ = g.deleteRegistrationOTPWait(ctx, registrationOTPWait{
+		_ = g.deleteRegistrationOTPWait(ctx, wamodel.RegistrationOTPWait{
 			WAAccountID:           accountID,
 			VerificationRequestID: verificationRequestID,
 		})
@@ -744,7 +730,7 @@ func (g *actionGateway) registrationRunner(payload map[string]any) (*engine.Nati
 	if err != nil {
 		return nil, wacore.WAProxyRoute{}, false, err
 	}
-	route, useProxy := g.server.resolveWAProxyRoute(waProxyResolveRequest{
+	route, useProxy := g.resolveWAProxyRoute(waProxyResolveRequest{
 		Payload:     payload,
 		CountryCode: proxyCountryCodeFromPayload(payload),
 	})

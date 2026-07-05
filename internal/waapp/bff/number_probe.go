@@ -1,4 +1,4 @@
-package app
+package bff
 
 import (
 	"context"
@@ -8,6 +8,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/app"
 	"github.com/byte-v-forge/wa-app/internal/waapp/engine"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
@@ -16,10 +17,9 @@ import (
 
 const numberProbeMaxAttempts = 3
 
-// ProbeNumberSMS is the dashboard number-probe entry point; the orchestration
-// lives on the bff action gateway.
-func (s *Server) ProbeNumberSMS(ctx context.Context, payload map[string]any) (map[string]any, error) {
-	return (&actionGateway{server: s}).probeNumberSMS(ctx, payload)
+// ProbeNumberSMS is the dashboard number-probe entry point.
+func ProbeNumberSMS(server *app.Server, ctx context.Context, payload map[string]any) (map[string]any, error) {
+	return (&actionGateway{server: server}).probeNumberSMS(ctx, payload)
 }
 
 func (g *actionGateway) probeNumberSMS(ctx context.Context, payload map[string]any) (map[string]any, error) {
@@ -102,7 +102,7 @@ func (g *actionGateway) probeNumberSMSAttempt(ctx context.Context, payload map[s
 }
 
 func (g *actionGateway) numberProbeProxy(payload map[string]any) (wacore.WAProxyRoute, string, map[string]any) {
-	route, useProxy := g.server.resolveWAProxyRoute(waProxyResolveRequest{
+	route, useProxy := g.resolveWAProxyRoute(waProxyResolveRequest{
 		Payload:     payload,
 		CountryCode: proxyCountryCodeFromPayload(payload),
 	})

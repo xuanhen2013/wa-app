@@ -1,4 +1,4 @@
-package app
+package bff
 
 import (
 	"strings"
@@ -23,19 +23,23 @@ type waProxyResolveRequest struct {
 // resolveWAProxyRoute resolves the egress route for a WA registration/probe
 // request: the shared WA_COMMON_PROXY when configured, otherwise a direct
 // connection. There is no per-account policy or dynamic lease.
-func (s *serverCore) resolveWAProxyRoute(req waProxyResolveRequest) (wacore.WAProxyRoute, bool) {
+func (g *actionGateway) resolveWAProxyRoute(req waProxyResolveRequest) (wacore.WAProxyRoute, bool) {
 	countryCode := normalizeProxyCountryCode(shared.FirstNonEmpty(req.CountryCode, proxyCountryCodeFromPayload(req.Payload)))
-	if route, ok := s.resolveSystemCommonProxyRoute(countryCode); ok {
+	if route, ok := g.resolveSystemCommonProxyRoute(countryCode); ok {
 		return route, true
 	}
 	return wacore.WAProxyRoute{ProxyMode: waProxyModeDirect, CountryCode: "LOCAL", Source: waProxySourceDirect, PolicyMode: waProxyModeDirect}, false
 }
 
-func (s *serverCore) resolveSystemCommonProxyRoute(countryCode string) (wacore.WAProxyRoute, bool) {
-	if s == nil || strings.TrimSpace(s.commonProxyURL) == "" {
+func (g *actionGateway) resolveSystemCommonProxyRoute(countryCode string) (wacore.WAProxyRoute, bool) {
+	commonProxyURL := ""
+	if g != nil && g.server != nil {
+		commonProxyURL = g.server.CommonProxyURL()
+	}
+	if strings.TrimSpace(commonProxyURL) == "" {
 		return wacore.WAProxyRoute{}, false
 	}
-	route := staticProxyRoute("common", s.commonProxyURL, staticCommonProxyMode)
+	route := staticProxyRoute("common", commonProxyURL, staticCommonProxyMode)
 	route.CountryCode = countryCode
 	route.Source = waProxySourceSystemCommon
 	route.PolicyMode = waProxyModeCommon

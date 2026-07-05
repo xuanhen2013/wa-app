@@ -114,11 +114,11 @@ func (s *serverCore) deleteRegistrationOTPWaitForAccount(ctx context.Context, ac
 	if s == nil || s.runtime == nil || strings.TrimSpace(accountID) == "" {
 		return
 	}
-	accountKey := registrationOTPWaitAccountKey(accountID)
+	accountKey := wamodel.RegistrationOTPWaitAccountKey(accountID)
 	if data, err := s.runtime.GetTransientState(ctx, accountKey); err == nil {
-		var wait registrationOTPWait
+		var wait wamodel.RegistrationOTPWait
 		if json.Unmarshal(data, &wait) == nil && wait.VerificationRequestID != "" {
-			_ = s.runtime.DeleteTransientState(ctx, registrationOTPWaitKey(wait.VerificationRequestID))
+			_ = s.runtime.DeleteTransientState(ctx, wamodel.RegistrationOTPWaitKey(wait.VerificationRequestID))
 		}
 	}
 	_ = s.runtime.DeleteTransientState(ctx, accountKey)

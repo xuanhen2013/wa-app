@@ -1,4 +1,4 @@
-package app
+package bff
 
 import (
 	"encoding/json"
