@@ -115,3 +115,31 @@ func TestCheckLoginStateResultDTOContract_ErrorEmptyMessage(t *testing.T) {
 		checkLoginStateResultDTO{Success: false, Status: "X", LoginState: map[string]any{}, Check: map[string]any{}, Error: map[string]any{"code": "C"}, ErrorMessage: &empty},
 		`{"success":false,"status":"X","login_state":{},"check":{},"error":{"code":"C"},"error_message":""}`)
 }
+
+// Base request-OTP result: an empty (but non-nil) method_statuses must serialise
+// as [] and the three conditional keys must be absent.
+func TestRequestSMSOTPResultDTOContract_Base(t *testing.T) {
+	assertJSONContract(t, "requestSMSOTPResultDTO(base)",
+		requestSMSOTPResultDTO{
+			Success: true, Status: "SENT", VerificationRequestID: "wareq_1",
+			VerificationRequest: map[string]any{"id": "wareq_1"},
+			MethodStatuses:      []map[string]any{},
+			Proxy:               map[string]any{"use_proxy": false},
+		},
+		`{"success":true,"status":"SENT","verification_request_id":"wareq_1","verification_request":{"id":"wareq_1"},"method_statuses":[],"proxy":{"use_proxy":false}}`)
+}
+
+// With the conditional keys populated (account-transfer challenge + retry).
+func TestRequestSMSOTPResultDTOContract_WithConditionals(t *testing.T) {
+	assertJSONContract(t, "requestSMSOTPResultDTO(conditionals)",
+		requestSMSOTPResultDTO{
+			Success: false, Status: "WAITING", VerificationRequestID: "wareq_2",
+			VerificationRequest:      map[string]any{"id": "wareq_2"},
+			MethodStatuses:           []map[string]any{{"method": "sms"}},
+			Proxy:                    map[string]any{"use_proxy": true},
+			AccountTransferChallenge: map[string]any{"id": "atc_1"},
+			RegistrationPhase:        "ACCOUNT_TRANSFER_WAITING",
+			RetryAfterSeconds:        30,
+		},
+		`{"success":false,"status":"WAITING","verification_request_id":"wareq_2","verification_request":{"id":"wareq_2"},"method_statuses":[{"method":"sms"}],"proxy":{"use_proxy":true},"account_transfer_challenge":{"id":"atc_1"},"registration_phase":"ACCOUNT_TRANSFER_WAITING","retry_after_seconds":30}`)
+}

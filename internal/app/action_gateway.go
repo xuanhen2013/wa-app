@@ -213,22 +213,38 @@ func (g *actionGateway) requestSMSOTP(ctx context.Context, payload map[string]an
 	}
 	record := resp.GetVerificationRequest()
 	success := record.GetStatus() == waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_SENT || record.GetStatus() == waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_WAITING
-	response := map[string]any{
-		"success":                 success,
-		"status":                  record.GetStatus().String(),
-		"verification_request_id": record.GetVerificationRequestId(),
-		"verification_request":    protoMap(record),
-		"method_statuses":         protoMethodStatusMaps(record.GetMethodStatuses()),
-		"proxy":                   registrationProxyRouteMap(route, managedRoute),
+	result := requestSMSOTPResultDTO{
+		Success:               success,
+		Status:                record.GetStatus().String(),
+		VerificationRequestID: record.GetVerificationRequestId(),
+		VerificationRequest:   protoMap(record),
+		MethodStatuses:        protoMethodStatusMaps(record.GetMethodStatuses()),
+		Proxy:                 registrationProxyRouteMap(route, managedRoute),
 	}
 	if challenge := resp.GetAccountTransferChallenge(); challenge != nil {
-		response["account_transfer_challenge"] = protoMap(challenge)
-		response["registration_phase"] = "ACCOUNT_TRANSFER_WAITING"
+		result.AccountTransferChallenge = protoMap(challenge)
+		result.RegistrationPhase = "ACCOUNT_TRANSFER_WAITING"
 	}
 	if seconds := shared.DurationSeconds(record.GetRetryAfter()); seconds > 0 {
-		response["retry_after_seconds"] = seconds
+		result.RetryAfterSeconds = seconds
 	}
-	return response, nil
+	return result, nil
+}
+
+// requestSMSOTPResultDTO is the request-verification success shape. The six base
+// keys are always present (no omitempty, matching the old map — including an
+// empty method_statuses which marshals to []); account_transfer_challenge /
+// registration_phase / retry_after_seconds are the conditionally-added keys.
+type requestSMSOTPResultDTO struct {
+	Success                  bool             `json:"success"`
+	Status                   string           `json:"status"`
+	VerificationRequestID    string           `json:"verification_request_id"`
+	VerificationRequest      map[string]any   `json:"verification_request"`
+	MethodStatuses           []map[string]any `json:"method_statuses"`
+	Proxy                    map[string]any   `json:"proxy"`
+	AccountTransferChallenge map[string]any   `json:"account_transfer_challenge,omitempty"`
+	RegistrationPhase        string           `json:"registration_phase,omitempty"`
+	RetryAfterSeconds        int64            `json:"retry_after_seconds,omitempty"`
 }
 
 type awaitOTPDTO struct {
