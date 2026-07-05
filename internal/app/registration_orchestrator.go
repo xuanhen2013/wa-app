@@ -13,14 +13,19 @@ import (
 	"github.com/byte-v-forge/wa-app/internal/waapp/wamodel"
 )
 
-func (s *serverCore) StartRegistration(ctx context.Context, payload map[string]any) (map[string]any, error) {
-	if s == nil {
+// StartRegistration is the dashboard registration entry point; the multi-step
+// orchestration lives on the bff action gateway.
+func (s *Server) StartRegistration(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	return (&actionGateway{server: s}).startRegistration(ctx, payload)
+}
+
+func (g *actionGateway) startRegistration(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	if g == nil || g.server == nil {
 		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "wa-app service is not configured", false)
 	}
 	if payload == nil {
 		payload = map[string]any{}
 	}
-	gateway := &actionGateway{server: s.facade}
 	basePayload := cloneActionPayload(payload)
 	basePayload["purpose"] = shared.FirstNonEmpty(shared.TextField(basePayload, "purpose"), "WA_REGISTRATION")
 	basePayload["proxy_session_mode"] = shared.FirstNonEmpty(shared.TextField(basePayload, "proxy_session_mode"), "STICKY")
@@ -31,38 +36,38 @@ func (s *serverCore) StartRegistration(ctx context.Context, payload map[string]a
 		return rejectedRegistrationResult(basePayload, registrationMethodUnsupportedMap(method, reason)), nil
 	}
 	phone := wamodel.NormalizePhone(phoneFromAction(basePayload))
-	state, stateRef, reusedState, err := gateway.registrationAttemptState(ctx, phone)
+	state, stateRef, reusedState, err := g.registrationAttemptState(ctx, phone)
 	if err != nil {
 		return nil, err
 	}
 	logRegistrationAttemptState(basePayload, phone, reusedState)
-	runner, route, managedRoute, err := gateway.registrationRunner(basePayload)
+	runner, route, managedRoute, err := g.registrationRunner(basePayload)
 	if err != nil {
 		return nil, err
 	}
 	defer runner.CloseIdleConnections()
 	probeResult, state := runner.ProbeAccountWithState(ctx, wacore.EngineRegistrationInput{AppVersion: engine.DefaultWAAppVersion, Phone: phone, DeliveryMethod: method, AuthCodeContext: authCodeContext, IntegrityMode: integrityMode}, state)
-	_ = gateway.saveRegistrationAttemptState(context.Background(), stateRef, state)
+	_ = g.saveRegistrationAttemptState(context.Background(), stateRef, state)
 	logRegistrationProbeResult(basePayload, phone, route, method, probeResult)
 	if !registrationProbeAllowsMethod(probeResult, method) {
 		return rejectedRegistrationResult(basePayload, registrationProbeFailureMap(probeResult, route, managedRoute)), nil
 	}
-	codeResult, method, updatedState := gateway.requestVerificationCodeWithFallback(ctx, runner, phone, method, authCodeContext, integrityMode, state, stateRef)
+	codeResult, method, updatedState := g.requestVerificationCodeWithFallback(ctx, runner, phone, method, authCodeContext, integrityMode, state, stateRef)
 	logRegistrationCodeResult(basePayload, phone, route, method, codeResult)
 	if !verificationCodeRequestAccepted(codeResult) {
 		return rejectedRegistrationResult(basePayload, registrationRequestFailureMap(codeResult, method, route, managedRoute)), nil
 	}
-	account, profile, protocol, err := gateway.server.commitNativeState(ctx, phone, updatedState)
+	account, profile, protocol, err := g.commitNativeState(ctx, phone, updatedState)
 	if err != nil {
 		return nil, err
 	}
-	record := gateway.server.newVerificationCodeRequestRecord(account, profile, method, codeResult)
+	record := g.server.newVerificationCodeRequestRecord(account, profile, method, codeResult)
 	challenge := codeResult.AccountTransferChallenge
 	if challenge != nil {
 		challenge.VerificationRequestId = record.GetVerificationRequestId()
 	}
-	if err := gateway.server.store.SaveVerificationRequest(ctx, record); err != nil {
-		_ = gateway.discardRejectedRegistration(context.Background(), basePayload, wamodel.WAAccountID(account), record.GetVerificationRequestId())
+	if err := g.server.store.SaveVerificationRequest(ctx, record); err != nil {
+		_ = g.discardRejectedRegistration(context.Background(), basePayload, wamodel.WAAccountID(account), record.GetVerificationRequestId())
 		return nil, err
 	}
 	verificationRequestID := record.GetVerificationRequestId()
@@ -71,11 +76,11 @@ func (s *serverCore) StartRegistration(ctx context.Context, payload map[string]a
 		VerificationRequestID: verificationRequestID,
 		CreatedAtUnix:         time.Now().UTC().Unix(),
 	}
-	if err := gateway.saveRegistrationOTPWait(ctx, wait, registrationOTPWaitDefaultTTL); err != nil {
-		_ = gateway.discardRejectedRegistration(context.Background(), basePayload, wamodel.WAAccountID(account), verificationRequestID)
+	if err := g.saveRegistrationOTPWait(ctx, wait, registrationOTPWaitDefaultTTL); err != nil {
+		_ = g.discardRejectedRegistration(context.Background(), basePayload, wamodel.WAAccountID(account), verificationRequestID)
 		return nil, err
 	}
-	_ = gateway.server.runtime.DeleteTransientState(context.Background(), stateRef)
+	_ = g.server.runtime.DeleteTransientState(context.Background(), stateRef)
 	response := map[string]any{
 		"success":                 true,
 		"status":                  record.GetStatus().String(),

@@ -145,7 +145,7 @@ func (g *actionGateway) commitFingerprint(ctx context.Context, payload map[strin
 	if err != nil {
 		return nil, err
 	}
-	account, profile, protocol, err := g.server.commitNativeState(ctx, wamodel.NormalizePhone(phoneFromAction(payload)), state)
+	account, profile, protocol, err := g.commitNativeState(ctx, wamodel.NormalizePhone(phoneFromAction(payload)), state)
 	if err != nil {
 		return nil, err
 	}
@@ -563,45 +563,45 @@ func (g *actionGateway) checkLoginState(ctx context.Context, payload map[string]
 	return out, nil
 }
 
-func (s *serverCore) commitNativeState(ctx context.Context, phone *waappv1.PhoneTarget, state engine.NativeState) (*waappv1.WAAccount, *waappv1.ClientProfile, *waappv1.ProtocolProfile, error) {
-	engine, ok := s.runner.(nativeStateSaver)
+func (g *actionGateway) commitNativeState(ctx context.Context, phone *waappv1.PhoneTarget, state engine.NativeState) (*waappv1.WAAccount, *waappv1.ClientProfile, *waappv1.ProtocolProfile, error) {
+	saver, ok := g.server.runner.(nativeStateSaver)
 	if !ok {
 		return nil, nil, nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "native engine is required", false)
 	}
 	if phone.GetE164Number() == "" {
 		return nil, nil, nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "phone is required", false)
 	}
-	account, err := s.store.FindWAAccountByPhone(ctx, phone.GetE164Number())
+	account, err := g.server.store.FindWAAccountByPhone(ctx, phone.GetE164Number())
 	if err != nil {
-		now := s.clock.Now()
-		account = wamodel.NewWAAccount(s.ids.NewID("waacc_"), "", phone, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_PENDING_REGISTRATION, &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)})
-		account, err = s.saveWAAccount(ctx, account)
+		now := g.server.clock.Now()
+		account = wamodel.NewWAAccount(g.server.ids.NewID("waacc_"), "", phone, waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_PENDING_REGISTRATION, &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)})
+		account, err = g.server.saveWAAccount(ctx, account)
 		if err != nil {
 			return nil, nil, nil, err
 		}
 	}
-	protocol, err := s.ensureDefaultProtocolProfile(ctx)
+	protocol, err := g.ensureDefaultProtocolProfile(ctx)
 	if err != nil {
 		return nil, nil, nil, err
 	}
-	now := s.clock.Now()
-	profile := &waappv1.ClientProfile{ClientProfileId: s.ids.NewID("wacp_"), WaAccountId: wamodel.WAAccountID(account), ProtocolProfileId: protocol.GetProtocolProfileId(), Status: waappv1.ClientProfileStatus_CLIENT_PROFILE_STATUS_PREPARING, RegistrationKeyState: waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_PENDING, MessagingKeyState: waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_PENDING, Audit: &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)}}
-	if err := s.store.SaveClientProfile(ctx, profile); err != nil {
+	now := g.server.clock.Now()
+	profile := &waappv1.ClientProfile{ClientProfileId: g.server.ids.NewID("wacp_"), WaAccountId: wamodel.WAAccountID(account), ProtocolProfileId: protocol.GetProtocolProfileId(), Status: waappv1.ClientProfileStatus_CLIENT_PROFILE_STATUS_PREPARING, RegistrationKeyState: waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_PENDING, MessagingKeyState: waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_PENDING, Audit: &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)}}
+	if err := g.server.store.SaveClientProfile(ctx, profile); err != nil {
 		return nil, nil, nil, err
 	}
 	state.CC = shared.FirstNonEmpty(state.CC, shared.PhoneCC(phone))
 	state.Phone = shared.FirstNonEmpty(state.Phone, shared.PhoneNational(phone))
-	if err := engine.SaveState(ctx, profile.GetClientProfileId(), state); err != nil {
+	if err := saver.SaveState(ctx, profile.GetClientProfileId(), state); err != nil {
 		profile.Status = waappv1.ClientProfileStatus_CLIENT_PROFILE_STATUS_REJECTED
 		profile.LastError = shared.ToProtoError(err)
-		_ = s.store.SaveClientProfile(ctx, profile)
+		_ = g.server.store.SaveClientProfile(ctx, profile)
 		return nil, nil, nil, err
 	}
 	profile.Status = waappv1.ClientProfileStatus_CLIENT_PROFILE_STATUS_READY
 	profile.RegistrationKeyState = waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_READY
 	profile.MessagingKeyState = waappv1.KeyMaterialStatus_KEY_MATERIAL_STATUS_READY
-	profile.Audit.UpdatedAt = timestamppb.New(s.clock.Now())
-	if err := s.store.SaveClientProfile(ctx, profile); err != nil {
+	profile.Audit.UpdatedAt = timestamppb.New(g.server.clock.Now())
+	if err := g.server.store.SaveClientProfile(ctx, profile); err != nil {
 		return nil, nil, nil, err
 	}
 	return account, profile, protocol, nil
@@ -611,19 +611,19 @@ type nativeStateSaver interface {
 	SaveState(context.Context, string, engine.NativeState) error
 }
 
-func (s *serverCore) ensureDefaultProtocolProfile(ctx context.Context) (*waappv1.ProtocolProfile, error) {
+func (g *actionGateway) ensureDefaultProtocolProfile(ctx context.Context) (*waappv1.ProtocolProfile, error) {
 	protocolID := "waproto_native"
-	if profile, err := s.store.GetProtocolProfile(ctx, protocolID); err == nil {
+	if profile, err := g.server.store.GetProtocolProfile(ctx, protocolID); err == nil {
 		if engine.NativeAppVersion(profile.GetAppVersion()) != engine.DefaultWAAppVersion {
 			profile.AppVersion = engine.DefaultWAAppVersion
-			_ = s.store.SaveProtocolProfile(ctx, profile)
+			_ = g.server.store.SaveProtocolProfile(ctx, profile)
 		}
 		return profile, nil
 	}
-	now := s.clock.Now()
+	now := g.server.clock.Now()
 	artifactID := "waart_native"
 	artifact := &waappv1.AppArtifact{ArtifactId: artifactID, Label: "WA native app", VersionLabel: "native", ObservedAt: timestamppb.New(now)}
-	if err := s.store.SaveAppArtifact(ctx, artifact); err != nil {
+	if err := g.server.store.SaveAppArtifact(ctx, artifact); err != nil {
 		return nil, err
 	}
 	profile := &waappv1.ProtocolProfile{
@@ -644,7 +644,7 @@ func (s *serverCore) ensureDefaultProtocolProfile(ctx context.Context) (*waappv1
 		DiscoveredAt:      timestamppb.New(now),
 		Audit:             &waappv1.AuditStamp{CreatedAt: timestamppb.New(now), UpdatedAt: timestamppb.New(now)},
 	}
-	if err := s.store.SaveProtocolProfile(ctx, profile); err != nil {
+	if err := g.server.store.SaveProtocolProfile(ctx, profile); err != nil {
 		return nil, err
 	}
 	return profile, nil

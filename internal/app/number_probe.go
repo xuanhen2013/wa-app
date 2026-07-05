@@ -16,7 +16,13 @@ import (
 
 const numberProbeMaxAttempts = 3
 
-func (s *serverCore) ProbeNumberSMS(ctx context.Context, payload map[string]any) (map[string]any, error) {
+// ProbeNumberSMS is the dashboard number-probe entry point; the orchestration
+// lives on the bff action gateway.
+func (s *Server) ProbeNumberSMS(ctx context.Context, payload map[string]any) (map[string]any, error) {
+	return (&actionGateway{server: s}).probeNumberSMS(ctx, payload)
+}
+
+func (g *actionGateway) probeNumberSMS(ctx context.Context, payload map[string]any) (map[string]any, error) {
 	if payload == nil {
 		payload = map[string]any{}
 	}
@@ -28,7 +34,7 @@ func (s *serverCore) ProbeNumberSMS(ctx context.Context, payload map[string]any)
 		logNumberProbeResult(ctxData, phone, wacore.WAProxyRoute{}, result)
 		return result, nil
 	}
-	engine, ok := s.runner.(*engine.NativeEngine)
+	engine, ok := g.server.runner.(*engine.NativeEngine)
 	if !ok {
 		err := shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "native engine is required", false)
 		result := numberProbeError(payload, err)
@@ -38,7 +44,7 @@ func (s *serverCore) ProbeNumberSMS(ctx context.Context, payload map[string]any)
 	var lastResult map[string]any
 	var lastRoute wacore.WAProxyRoute
 	for attempt := 1; attempt <= numberProbeMaxAttempts; attempt++ {
-		result, route, retry, reason := s.probeNumberSMSAttempt(ctx, payload, ctxData, phone, engine, attempt)
+		result, route, retry, reason := g.probeNumberSMSAttempt(ctx, payload, ctxData, phone, engine, attempt)
 		lastResult, lastRoute = result, route
 		if !retry || attempt == numberProbeMaxAttempts {
 			if retry {
@@ -57,8 +63,8 @@ func (s *serverCore) ProbeNumberSMS(ctx context.Context, payload map[string]any)
 	return lastResult, nil
 }
 
-func (s *serverCore) probeNumberSMSAttempt(ctx context.Context, payload map[string]any, ctxData *waappv1.RequestContext, phone *waappv1.PhoneTarget, nativeEngine *engine.NativeEngine, attempt int) (map[string]any, wacore.WAProxyRoute, bool, string) {
-	route, proxyURL, proxy := s.numberProbeProxy(payload)
+func (g *actionGateway) probeNumberSMSAttempt(ctx context.Context, payload map[string]any, ctxData *waappv1.RequestContext, phone *waappv1.PhoneTarget, nativeEngine *engine.NativeEngine, attempt int) (map[string]any, wacore.WAProxyRoute, bool, string) {
+	route, proxyURL, proxy := g.numberProbeProxy(payload)
 	probeEngine := nativeEngine
 	defer func() {
 		if proxyURL != "" {
@@ -95,8 +101,8 @@ func (s *serverCore) probeNumberSMSAttempt(ctx context.Context, payload map[stri
 	return result, route, false, ""
 }
 
-func (s *serverCore) numberProbeProxy(payload map[string]any) (wacore.WAProxyRoute, string, map[string]any) {
-	route, useProxy := s.resolveWAProxyRoute(waProxyResolveRequest{
+func (g *actionGateway) numberProbeProxy(payload map[string]any) (wacore.WAProxyRoute, string, map[string]any) {
+	route, useProxy := g.server.resolveWAProxyRoute(waProxyResolveRequest{
 		Payload:     payload,
 		CountryCode: proxyCountryCodeFromPayload(payload),
 	})
