@@ -6,16 +6,6 @@ import (
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 )
 
-type WAProxyRoute struct {
-	AccountID   string
-	RouteID     string
-	ProxyURL    string
-	ProxyMode   string
-	CountryCode string
-	Source      string
-	PolicyMode  string
-}
-
 func proxyCountryCodeFromPayload(payload map[string]any) string {
 	phone := objectField(payload, "phone")
 	proxy := objectField(payload, "proxy")

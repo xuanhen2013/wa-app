@@ -152,7 +152,7 @@ func logRegistrationAttemptState(payload map[string]any, phone *waappv1.PhoneTar
 	)
 }
 
-func logRegistrationCodeResult(payload map[string]any, phone *waappv1.PhoneTarget, route WAProxyRoute, method waappv1.VerificationDeliveryMethod, result wacore.EngineCodeResult) {
+func logRegistrationCodeResult(payload map[string]any, phone *waappv1.PhoneTarget, route wacore.WAProxyRoute, method waappv1.VerificationDeliveryMethod, result wacore.EngineCodeResult) {
 	phoneHash := ""
 	if phone != nil && phone.GetE164Number() != "" {
 		phoneHash = shared.StableID(phone.GetE164Number())
@@ -175,7 +175,7 @@ func logRegistrationCodeResult(payload map[string]any, phone *waappv1.PhoneTarge
 	)
 }
 
-func logRegistrationProbeResult(payload map[string]any, phone *waappv1.PhoneTarget, route WAProxyRoute, method waappv1.VerificationDeliveryMethod, result wacore.EngineProbeResult) {
+func logRegistrationProbeResult(payload map[string]any, phone *waappv1.PhoneTarget, route wacore.WAProxyRoute, method waappv1.VerificationDeliveryMethod, result wacore.EngineProbeResult) {
 	phoneHash := ""
 	if phone != nil && phone.GetE164Number() != "" {
 		phoneHash = shared.StableID(phone.GetE164Number())
@@ -376,7 +376,7 @@ func registrationProbeMethodAvailable(result wacore.EngineProbeResult, method wa
 	return result.Status == waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REACHABLE && method == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS && result.CanSendSMS
 }
 
-func registrationRequestFailureMap(result wacore.EngineCodeResult, method waappv1.VerificationDeliveryMethod, route WAProxyRoute, managedRoute bool) map[string]any {
+func registrationRequestFailureMap(result wacore.EngineCodeResult, method waappv1.VerificationDeliveryMethod, route wacore.WAProxyRoute, managedRoute bool) map[string]any {
 	err := result.Err
 	if err == nil {
 		err = registrationCodeRequestError(result)
@@ -445,7 +445,7 @@ func registrationCodeRequestFlow(result wacore.EngineCodeResult, protoErr *waapp
 	}
 }
 
-func registrationProbeFailureMap(result wacore.EngineProbeResult, route WAProxyRoute, managedRoute bool) map[string]any {
+func registrationProbeFailureMap(result wacore.EngineProbeResult, route wacore.WAProxyRoute, managedRoute bool) map[string]any {
 	err := result.Err
 	if err == nil {
 		err = registrationProbeError(result)

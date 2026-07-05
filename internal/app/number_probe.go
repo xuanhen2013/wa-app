@@ -23,18 +23,18 @@ func (s *serverCore) ProbeNumberSMS(ctx context.Context, payload map[string]any)
 	if phone.GetE164Number() == "" {
 		err := shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "phone is required", false)
 		result := numberProbeError(payload, err)
-		logNumberProbeResult(ctxData, phone, WAProxyRoute{}, result)
+		logNumberProbeResult(ctxData, phone, wacore.WAProxyRoute{}, result)
 		return result, nil
 	}
 	engine, ok := s.runner.(*NativeEngine)
 	if !ok {
 		err := shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "native engine is required", false)
 		result := numberProbeError(payload, err)
-		logNumberProbeResult(ctxData, phone, WAProxyRoute{}, result)
+		logNumberProbeResult(ctxData, phone, wacore.WAProxyRoute{}, result)
 		return result, nil
 	}
 	var lastResult map[string]any
-	var lastRoute WAProxyRoute
+	var lastRoute wacore.WAProxyRoute
 	for attempt := 1; attempt <= numberProbeMaxAttempts; attempt++ {
 		result, route, retry, reason := s.probeNumberSMSAttempt(ctx, payload, ctxData, phone, engine, attempt)
 		lastResult, lastRoute = result, route
@@ -55,7 +55,7 @@ func (s *serverCore) ProbeNumberSMS(ctx context.Context, payload map[string]any)
 	return lastResult, nil
 }
 
-func (s *serverCore) probeNumberSMSAttempt(ctx context.Context, payload map[string]any, ctxData *waappv1.RequestContext, phone *waappv1.PhoneTarget, engine *NativeEngine, attempt int) (map[string]any, WAProxyRoute, bool, string) {
+func (s *serverCore) probeNumberSMSAttempt(ctx context.Context, payload map[string]any, ctxData *waappv1.RequestContext, phone *waappv1.PhoneTarget, engine *NativeEngine, attempt int) (map[string]any, wacore.WAProxyRoute, bool, string) {
 	route, proxyURL, proxy := s.numberProbeProxy(payload)
 	probeEngine := engine
 	defer func() {
@@ -93,7 +93,7 @@ func (s *serverCore) probeNumberSMSAttempt(ctx context.Context, payload map[stri
 	return result, route, false, ""
 }
 
-func (s *serverCore) numberProbeProxy(payload map[string]any) (WAProxyRoute, string, map[string]any) {
+func (s *serverCore) numberProbeProxy(payload map[string]any) (wacore.WAProxyRoute, string, map[string]any) {
 	route, useProxy := s.resolveWAProxyRoute(waProxyResolveRequest{
 		Payload:     payload,
 		CountryCode: proxyCountryCodeFromPayload(payload),
@@ -406,7 +406,7 @@ func numberProbeError(payload map[string]any, err error) map[string]any {
 	return result
 }
 
-func logNumberProbeResult(ctxData *waappv1.RequestContext, phone *waappv1.PhoneTarget, route WAProxyRoute, result map[string]any) {
+func logNumberProbeResult(ctxData *waappv1.RequestContext, phone *waappv1.PhoneTarget, route wacore.WAProxyRoute, result map[string]any) {
 	phoneStatus := objectField(result, "phone_status")
 	phoneHash := ""
 	if phone != nil && phone.GetE164Number() != "" {
@@ -431,7 +431,7 @@ func logNumberProbeResult(ctxData *waappv1.RequestContext, phone *waappv1.PhoneT
 	)
 }
 
-func logNumberProbeRetry(ctxData *waappv1.RequestContext, phone *waappv1.PhoneTarget, route WAProxyRoute, attempt int, maxAttempts int, reason string) {
+func logNumberProbeRetry(ctxData *waappv1.RequestContext, phone *waappv1.PhoneTarget, route wacore.WAProxyRoute, attempt int, maxAttempts int, reason string) {
 	phoneHash := ""
 	if phone != nil && phone.GetE164Number() != "" {
 		phoneHash = shared.StableID(phone.GetE164Number())

@@ -12,6 +12,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
 	"google.golang.org/protobuf/types/known/durationpb"
@@ -659,10 +660,10 @@ func (g *actionGateway) nativeEngineForPayload(payload map[string]any) (*NativeE
 	return engine.WithProxyURL(proxyURL)
 }
 
-func (g *actionGateway) registrationRunner(payload map[string]any) (*NativeEngine, WAProxyRoute, bool, error) {
+func (g *actionGateway) registrationRunner(payload map[string]any) (*NativeEngine, wacore.WAProxyRoute, bool, error) {
 	engine, err := g.nativeEngine()
 	if err != nil {
-		return nil, WAProxyRoute{}, false, err
+		return nil, wacore.WAProxyRoute{}, false, err
 	}
 	route, useProxy := g.server.resolveWAProxyRoute(waProxyResolveRequest{
 		Payload:     payload,
@@ -673,12 +674,12 @@ func (g *actionGateway) registrationRunner(payload map[string]any) (*NativeEngin
 	}
 	proxied, err := engine.WithProxyURL(route.ProxyURL)
 	if err != nil {
-		return nil, WAProxyRoute{}, false, err
+		return nil, wacore.WAProxyRoute{}, false, err
 	}
 	return proxied, route, true, nil
 }
 
-func registrationProxyRouteMap(route WAProxyRoute, managed bool) map[string]any {
+func registrationProxyRouteMap(route wacore.WAProxyRoute, managed bool) map[string]any {
 	if !managed {
 		return map[string]any{}
 	}

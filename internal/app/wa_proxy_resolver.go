@@ -4,6 +4,7 @@ import (
 	"strings"
 
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 )
 
 const (
@@ -22,17 +23,17 @@ type waProxyResolveRequest struct {
 // resolveWAProxyRoute resolves the egress route for a WA registration/probe
 // request: the shared WA_COMMON_PROXY when configured, otherwise a direct
 // connection. There is no per-account policy or dynamic lease.
-func (s *serverCore) resolveWAProxyRoute(req waProxyResolveRequest) (WAProxyRoute, bool) {
+func (s *serverCore) resolveWAProxyRoute(req waProxyResolveRequest) (wacore.WAProxyRoute, bool) {
 	countryCode := normalizeProxyCountryCode(shared.FirstNonEmpty(req.CountryCode, proxyCountryCodeFromPayload(req.Payload)))
 	if route, ok := s.resolveSystemCommonProxyRoute(countryCode); ok {
 		return route, true
 	}
-	return WAProxyRoute{ProxyMode: waProxyModeDirect, CountryCode: "LOCAL", Source: waProxySourceDirect, PolicyMode: waProxyModeDirect}, false
+	return wacore.WAProxyRoute{ProxyMode: waProxyModeDirect, CountryCode: "LOCAL", Source: waProxySourceDirect, PolicyMode: waProxyModeDirect}, false
 }
 
-func (s *serverCore) resolveSystemCommonProxyRoute(countryCode string) (WAProxyRoute, bool) {
+func (s *serverCore) resolveSystemCommonProxyRoute(countryCode string) (wacore.WAProxyRoute, bool) {
 	if s == nil || strings.TrimSpace(s.commonProxyURL) == "" {
-		return WAProxyRoute{}, false
+		return wacore.WAProxyRoute{}, false
 	}
 	route := staticProxyRoute("common", s.commonProxyURL, staticCommonProxyMode)
 	route.CountryCode = countryCode
@@ -41,7 +42,7 @@ func (s *serverCore) resolveSystemCommonProxyRoute(countryCode string) (WAProxyR
 	return route, true
 }
 
-func waProxySummary(route WAProxyRoute, useProxy bool) map[string]any {
+func waProxySummary(route wacore.WAProxyRoute, useProxy bool) map[string]any {
 	if !useProxy {
 		return map[string]any{"success": true, "accepted": true, "proxy_mode": waProxyModeDirect, "country_code": "LOCAL", "source": waProxySourceDirect}
 	}
