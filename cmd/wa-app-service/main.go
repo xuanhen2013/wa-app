@@ -10,8 +10,12 @@ import (
 	"syscall"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
-	"github.com/byte-v-forge/wa-app/internal/app"
 	"github.com/byte-v-forge/wa-app/internal/config"
+	"github.com/byte-v-forge/wa-app/internal/waapp/engine"
+	"github.com/byte-v-forge/wa-app/internal/waapp/rpc"
+	"github.com/byte-v-forge/wa-app/internal/waapp/runtime"
+	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/store"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
@@ -28,7 +32,7 @@ const (
 func main() {
 	cfg := config.Load()
 	dataDir := configValue(cfg.DataDir, defaultWAAppDataDirectory)
-	if err := app.LoadRegistrationDeviceProfiles(cfg.DeviceProfilesFile); err != nil {
+	if err := engine.LoadRegistrationDeviceProfiles(cfg.DeviceProfilesFile); err != nil {
 		log.Printf("wa-app device profiles override ignored: %v", err)
 	}
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -46,25 +50,25 @@ func main() {
 	}
 	defer func() { _ = runtime.Close() }()
 
-	clock := app.SystemClock{}
-	ids := app.RandomIDGenerator{}
-	engine, err := app.NewNativeEngine(store, clock, ids)
+	clock := shared.SystemClock{}
+	ids := shared.RandomIDGenerator{}
+	nativeEngine, err := engine.NewNativeEngine(store, clock, ids)
 	if err != nil {
 		log.Fatalf("initialize wa-app native engine: %v", err)
 	}
 	if strings.TrimSpace(cfg.PlayIntegrityAPIURL) != "" || strings.TrimSpace(cfg.PlayIntegrityAPIToken) != "" {
-		engine, err = engine.WithPlayIntegrityAPI(cfg.PlayIntegrityAPIURL, cfg.PlayIntegrityAPIToken)
+		nativeEngine, err = nativeEngine.WithPlayIntegrityAPI(cfg.PlayIntegrityAPIURL, cfg.PlayIntegrityAPIToken)
 		if err != nil {
 			log.Fatalf("initialize play integrity api client: %v", err)
 		}
 	}
 	if strings.TrimSpace(cfg.CommonProxy) != "" {
-		engine, err = engine.WithProxyURL(cfg.CommonProxy)
+		nativeEngine, err = nativeEngine.WithProxyURL(cfg.CommonProxy)
 		if err != nil {
 			log.Fatalf("initialize wa-app common proxy: %v", err)
 		}
 	}
-	service := app.NewServer(store, runtime, engine, clock, ids)
+	service := rpc.NewServer(store, runtime, nativeEngine, clock, ids)
 	service.SetCommonProxyURL(cfg.CommonProxy)
 	authConfig := newDashboardAuthConfig(cfg.DashboardAuthPass)
 	grpcListenAddr := configValue(cfg.GRPCListenAddr, defaultGRPCListenAddr)
@@ -119,18 +123,18 @@ func configValue(value string, fallback string) string {
 	return fallback
 }
 
-func newDurableStore(ctx context.Context, cfg config.Config, dataDir string) (app.Store, error) {
+func newDurableStore(ctx context.Context, cfg config.Config, dataDir string) (store.Store, error) {
 	if strings.TrimSpace(cfg.PGDSN) != "" {
-		return app.NewPostgresStore(ctx, cfg.PGDSN)
+		return store.NewPostgresStore(ctx, cfg.PGDSN)
 	}
 	log.Printf("WA_APP_PG_DSN is not configured; wa-app uses sqlite durable store in %s", dataDir)
-	return app.NewSQLiteStore(ctx, dataDir)
+	return store.NewSQLiteStore(ctx, dataDir)
 }
 
-func newRuntimeState(ctx context.Context, cfg config.Config, dataDir string) (app.RuntimeState, error) {
+func newRuntimeState(ctx context.Context, cfg config.Config, dataDir string) (runtime.RuntimeState, error) {
 	if strings.TrimSpace(cfg.RedisURL) != "" {
-		return app.NewRedisRuntime(ctx, cfg.RedisURL)
+		return runtime.NewRedisRuntime(ctx, cfg.RedisURL)
 	}
 	log.Printf("WA_APP_REDIS_URL is not configured; wa-app uses sqlite runtime state in %s", dataDir)
-	return app.NewSQLiteRuntime(ctx, dataDir)
+	return runtime.NewSQLiteRuntime(ctx, dataDir)
 }

@@ -20,7 +20,8 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
-	"github.com/byte-v-forge/wa-app/internal/app"
+	"github.com/byte-v-forge/wa-app/internal/waapp/bff"
+	"github.com/byte-v-forge/wa-app/internal/waapp/rpc"
 	"github.com/nyaruka/phonenumbers"
 	"google.golang.org/protobuf/encoding/protojson"
 	"google.golang.org/protobuf/proto"
@@ -28,11 +29,11 @@ import (
 
 type dashboardHTTP struct {
 	staticDir     string
-	service       *app.Server
+	service       *rpc.Server
 	actionHandler http.Handler
 }
 
-func runDashboardHTTP(ctx context.Context, listenAddr, staticDir string, service *app.Server, actionHandler http.Handler, auth dashboardAuthConfig) error {
+func runDashboardHTTP(ctx context.Context, listenAddr, staticDir string, service *rpc.Server, actionHandler http.Handler, auth dashboardAuthConfig) error {
 	if strings.TrimSpace(listenAddr) == "" {
 		return nil
 	}
@@ -591,8 +592,8 @@ func (s *dashboardHTTP) handleResolveContacts(w http.ResponseWriter, r *http.Req
 	writeProtoJSON(w, http.StatusOK, resp)
 }
 
-func newWAActionHandler(service *app.Server) http.Handler {
-	return app.NewActionGateway(service)
+func newWAActionHandler(service *rpc.Server) http.Handler {
+	return bff.NewActionGateway(service)
 }
 
 func (s *dashboardHTTP) handleHealth(w http.ResponseWriter, _ *http.Request) {
@@ -658,7 +659,7 @@ func (s *dashboardHTTP) handlePhoneSMSProbe(w http.ResponseWriter, r *http.Reque
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 65*time.Second)
 	defer cancel()
-	result, err := s.service.ProbeNumberSMS(ctx, payload)
+	result, err := bff.ProbeNumberSMS(s.service, ctx, payload)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "probe WA phone failed"})
 		return
@@ -692,7 +693,7 @@ func (s *dashboardHTTP) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
-	result, err := s.service.StartRegistration(ctx, payload)
+	result, err := bff.StartRegistration(s.service, ctx, payload)
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"success": false, "status": "REGISTRATION_START_FAILED", "error_message": err.Error()})
 		return
