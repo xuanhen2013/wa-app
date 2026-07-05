@@ -515,19 +515,6 @@ func longConnectionTerminalError(err error) bool {
 	}
 }
 
-// isAccountTakeoverError 判断错误是否为 chatd 下发的"账号被接管"登出信号:服务端在
-// <stream:error>/<failure> 里带 <conflict type="device_removed"|"replaced">,表示本设备登录态已失效
-// (号码已在其他设备注册)。对齐 APK ErrorStanzaHandler(X.1FJ)对 conflict type 的登出判定。
-// 经 chatdReceiveError 保留为非可重试 CONFLICT,消息含 account_takeover 标记,区别于 generic failure。
-func isAccountTakeoverError(err error) bool {
-	if err == nil {
-		return false
-	}
-	protoErr := shared.ToProtoError(err)
-	return protoErr.GetCode() == waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT &&
-		strings.Contains(protoErr.GetMessage(), chatdAccountTakeoverMarker)
-}
-
 // persistIfAccountTakeover 在长连接因账号被接管终止时把登录态持久化为 REVOKED 并停连,
 // 复用 device_logout 的"已转出"终态语义(重启后 restore 只拉 ACTIVE,不再被拉起)。
 func (m *LongConnectionManager) persistIfAccountTakeover(ctx context.Context, loginState *waappv1.LoginState, err error) {

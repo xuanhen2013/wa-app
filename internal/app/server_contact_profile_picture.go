@@ -313,37 +313,3 @@ func logWAProfilePictureError(scope string, err error) {
 	}
 	log.Printf("WA %s profile picture fetch failed code=%s retryable=false reason=%s", shared.SafeProxyLogToken(scope, "profile"), waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL.String(), contactProfilePictureFailureReason(err))
 }
-
-func contactProfilePictureFailureReason(err error) string {
-	if err == nil {
-		return "unknown"
-	}
-	if errors.Is(err, context.Canceled) {
-		return "context_canceled"
-	}
-	if errors.Is(err, context.DeadlineExceeded) {
-		return "timeout"
-	}
-	text := strings.ToLower(err.Error())
-	switch {
-	case strings.Contains(text, "username/password authentication failed"):
-		return "proxy_auth_failed"
-	case strings.Contains(text, "socks5 connect failed"):
-		return "proxy_connect_failed"
-	case strings.Contains(text, "proxy"):
-		return "proxy_failed"
-	case strings.Contains(text, "timeout") || strings.Contains(text, "deadline"):
-		return "timeout"
-	case strings.Contains(text, "no such host"):
-		return "dns_failed"
-	case strings.Contains(text, "connection refused"):
-		return "connect_refused"
-	case strings.Contains(text, "tls"):
-		return "tls_failed"
-	}
-	reason := chatdFailureReason(text)
-	if reason != "" && reason != "chatd_failed" {
-		return shared.SafeProxyLogToken(reason, "chatd_failed")
-	}
-	return "unexpected_failure"
-}
