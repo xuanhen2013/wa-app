@@ -8,6 +8,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 )
 
 func (s *serverCore) StartRegistration(ctx context.Context, payload map[string]any) (map[string]any, error) {
@@ -284,7 +285,7 @@ var registrationFallbackMethods = map[waappv1.VerificationDeliveryMethod]bool{
 // server lists in fallback_methods when the current method fails non-terminally
 // (next_method, no_routes, provider timeout, cooldown). It stops on the first
 // accepted request, a terminal rejection, or once no offered method remains.
-func (g *actionGateway) requestVerificationCodeWithFallback(ctx context.Context, runner *NativeEngine, phone *waappv1.PhoneTarget, requested waappv1.VerificationDeliveryMethod, authCodeContext string, integrityMode nativeIntegrityMode, state nativeState, stateRef string) (EngineCodeResult, waappv1.VerificationDeliveryMethod, nativeState) {
+func (g *actionGateway) requestVerificationCodeWithFallback(ctx context.Context, runner *NativeEngine, phone *waappv1.PhoneTarget, requested waappv1.VerificationDeliveryMethod, authCodeContext string, integrityMode wacore.IntegrityMode, state nativeState, stateRef string) (EngineCodeResult, waappv1.VerificationDeliveryMethod, nativeState) {
 	tried := map[waappv1.VerificationDeliveryMethod]bool{}
 	current := requested
 	currentState := state

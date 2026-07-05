@@ -11,6 +11,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 )
 
 type wamsysMaterialInput struct {
@@ -19,7 +20,7 @@ type wamsysMaterialInput struct {
 	Phone         *waappv1.PhoneTarget
 	State         nativeState
 	AppVersion    string
-	IntegrityMode nativeIntegrityMode
+	IntegrityMode wacore.IntegrityMode
 	Now           time.Time
 }
 
@@ -84,7 +85,7 @@ func (p localWamsysMaterialProvider) buildLocalWamsysCapture(ctx context.Context
 }
 
 func (p localWamsysMaterialProvider) registrationGPIAMaterial(ctx context.Context, input wamsysMaterialInput) (nativeGPIAMaterial, error) {
-	if normalizeNativeIntegrityMode(input.IntegrityMode.String()) != nativeIntegrityModePlayIntegrityAPI {
+	if wacore.NormalizeIntegrityMode(input.IntegrityMode.String()) != wacore.IntegrityModePlayIntegrityAPI {
 		return buildNativeGPIAErrorMaterial(input)
 	}
 	if p.playIntegrity == nil {
@@ -243,7 +244,7 @@ func (e *engineCore) applyRuntimeWamsys(
 	phone *waappv1.PhoneTarget,
 	state nativeState,
 	appVersion string,
-	integrityMode nativeIntegrityMode,
+	integrityMode wacore.IntegrityMode,
 	params map[string]string,
 	rawKeys map[string]struct{},
 ) error {

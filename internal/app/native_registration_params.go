@@ -14,6 +14,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"github.com/nyaruka/phonenumbers"
 )
 
@@ -74,11 +75,11 @@ func (e *engineCore) registrationToken(phone *waappv1.PhoneTarget, state nativeS
 	return state.LastCodeParams["token"]
 }
 
-func (e *engineCore) codeRequestOrderedParams(ctx context.Context, phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, state nativeState, authCodeContext string, appVersion string, integrityMode nativeIntegrityMode) (orderedParams, error) {
+func (e *engineCore) codeRequestOrderedParams(ctx context.Context, phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, state nativeState, authCodeContext string, appVersion string, integrityMode wacore.IntegrityMode) (orderedParams, error) {
 	return e.codeRequestOrderedParamsWithWamsys(ctx, phone, method, state, authCodeContext, nil, true, appVersion, integrityMode)
 }
 
-func (e *engineCore) codeRequestOrderedParamsWithWamsys(ctx context.Context, phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, state nativeState, authCodeContext string, wamsysCapture *waappv1.WamsysCapture, includeWamsys bool, appVersion string, integrityMode nativeIntegrityMode) (orderedParams, error) {
+func (e *engineCore) codeRequestOrderedParamsWithWamsys(ctx context.Context, phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, state nativeState, authCodeContext string, wamsysCapture *waappv1.WamsysCapture, includeWamsys bool, appVersion string, integrityMode wacore.IntegrityMode) (orderedParams, error) {
 	methodName := registrationMethodName(method, "sms")
 	fields := nativeDeviceMapFields(state)
 	attempts := nativeCodeRequestAttempts(state)
