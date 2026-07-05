@@ -97,7 +97,7 @@ func (s *PostgresStore) ListWAContacts(ctx context.Context, waAccountIDValue str
 }
 
 func (s *PostgresStore) DeleteWAContact(ctx context.Context, waAccountIDValue string, refs []string, deletedAt time.Time) (DeleteWAContactResult, error) {
-	refs = uniqueStrings(refs...)
+	refs = uniqueNonEmptyStrings(refs...)
 	if len(refs) == 0 {
 		return DeleteWAContactResult{}, nil
 	}

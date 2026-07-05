@@ -9,7 +9,7 @@ import (
 
 const defaultMessageReadReceiptTimeout = 15 * time.Second
 
-func (e *NativeEngine) SendReadReceipts(ctx context.Context, input EngineMessageReadReceiptInput) EngineMessageReadReceiptResult {
+func (e *messagingService) SendReadReceipts(ctx context.Context, input EngineMessageReadReceiptInput) EngineMessageReadReceiptResult {
 	if e == nil {
 		return EngineMessageReadReceiptResult{Err: fmt.Errorf("native engine is required")}
 	}

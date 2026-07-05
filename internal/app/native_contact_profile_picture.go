@@ -36,11 +36,11 @@ type chatdIQSender interface {
 	sendIQ(context.Context, nativeState, string, string, chatdNode, string) (chatdNode, chatdSessionUpdate, error)
 }
 
-func (e *NativeEngine) ResolveContactProfilePicture(ctx context.Context, input EngineContactProfilePictureInput) EngineContactProfilePictureResult {
+func (e *contactsService) ResolveContactProfilePicture(ctx context.Context, input EngineContactProfilePictureInput) EngineContactProfilePictureResult {
 	return e.resolveContactProfilePictureWithSender(ctx, input, nil)
 }
 
-func (e *NativeEngine) resolveContactProfilePictureWithSender(ctx context.Context, input EngineContactProfilePictureInput, sender chatdIQSender) EngineContactProfilePictureResult {
+func (e *contactsService) resolveContactProfilePictureWithSender(ctx context.Context, input EngineContactProfilePictureInput, sender chatdIQSender) EngineContactProfilePictureResult {
 	jid := normalizeWAJID(input.ContactJID)
 	if input.WAAccountID == "" || input.ClientProfileID == "" || input.RegisteredIdentityID == "" || jid == "" {
 		return EngineContactProfilePictureResult{Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "WA contact profile picture input is incomplete", false)}
@@ -103,7 +103,7 @@ func (e *NativeEngine) resolveContactProfilePictureWithSender(ctx context.Contex
 	return EngineContactProfilePictureResult{Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)}
 }
 
-func (e *NativeEngine) contactProfilePictureLocationsFromProfileIQ(ctx context.Context, sender chatdIQSender, state nativeState, input EngineContactProfilePictureInput, jid string) ([]contactProfilePictureLocation, chatdSessionUpdate, error) {
+func (e *contactsService) contactProfilePictureLocationsFromProfileIQ(ctx context.Context, sender chatdIQSender, state nativeState, input EngineContactProfilePictureInput, jid string) ([]contactProfilePictureLocation, chatdSessionUpdate, error) {
 	targets := contactProfilePictureTargets(jid, input.ContactPNJID)
 	if len(targets) == 0 {
 		return nil, chatdSessionUpdate{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "WA contact profile picture target is incomplete", false)
@@ -227,7 +227,7 @@ func parsePositiveInt64(value string) (int64, bool) {
 	return parsed, err == nil && parsed > 0
 }
 
-func (e *NativeEngine) downloadContactProfilePicture(ctx context.Context, location contactProfilePictureLocation, userAgent string) ([]byte, string, error) {
+func (e *contactsService) downloadContactProfilePicture(ctx context.Context, location contactProfilePictureLocation, userAgent string) ([]byte, string, error) {
 	httpClient, err := e.httpForProxy()
 	if err != nil {
 		return nil, "", err

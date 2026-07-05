@@ -559,7 +559,7 @@ func (g *actionGateway) checkLoginState(ctx context.Context, payload map[string]
 	return out, nil
 }
 
-func (s *Server) commitNativeState(ctx context.Context, phone *waappv1.PhoneTarget, state nativeState) (*waappv1.WAAccount, *waappv1.ClientProfile, *waappv1.ProtocolProfile, error) {
+func (s *serverCore) commitNativeState(ctx context.Context, phone *waappv1.PhoneTarget, state nativeState) (*waappv1.WAAccount, *waappv1.ClientProfile, *waappv1.ProtocolProfile, error) {
 	engine, ok := s.runner.(nativeStateSaver)
 	if !ok {
 		return nil, nil, nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "native engine is required", false)
@@ -607,7 +607,7 @@ type nativeStateSaver interface {
 	saveState(context.Context, string, nativeState) error
 }
 
-func (s *Server) ensureDefaultProtocolProfile(ctx context.Context) (*waappv1.ProtocolProfile, error) {
+func (s *serverCore) ensureDefaultProtocolProfile(ctx context.Context) (*waappv1.ProtocolProfile, error) {
 	protocolID := "waproto_native"
 	if profile, err := s.store.GetProtocolProfile(ctx, protocolID); err == nil {
 		if nativeAppVersion(profile.GetAppVersion()) != defaultWAAppVersion {

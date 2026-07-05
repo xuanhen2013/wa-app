@@ -38,7 +38,7 @@ func registrationDeviceCountryISO(phone *waappv1.PhoneTarget) string {
 	return "US"
 }
 
-func (e *NativeEngine) existParams(phone *waappv1.PhoneTarget, state nativeState) (map[string]string, map[string]struct{}) {
+func (e *engineCore) existParams(phone *waappv1.PhoneTarget, state nativeState) (map[string]string, map[string]struct{}) {
 	lg, lc := registrationLocale(phone)
 	params := map[string]string{
 		"cc":                phoneCC(phone),
@@ -66,18 +66,18 @@ func (e *NativeEngine) existParams(phone *waappv1.PhoneTarget, state nativeState
 	return params, raw
 }
 
-func (e *NativeEngine) registrationToken(phone *waappv1.PhoneTarget, state nativeState) string {
+func (e *engineCore) registrationToken(phone *waappv1.PhoneTarget, state nativeState) string {
 	if token := deriveDefaultRegistrationToken(phoneNational(phone)); token != "" {
 		return token
 	}
 	return state.LastCodeParams["token"]
 }
 
-func (e *NativeEngine) codeRequestOrderedParams(ctx context.Context, phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, state nativeState, authCodeContext string, appVersion string, integrityMode nativeIntegrityMode) (orderedParams, error) {
+func (e *engineCore) codeRequestOrderedParams(ctx context.Context, phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, state nativeState, authCodeContext string, appVersion string, integrityMode nativeIntegrityMode) (orderedParams, error) {
 	return e.codeRequestOrderedParamsWithWamsys(ctx, phone, method, state, authCodeContext, nil, true, appVersion, integrityMode)
 }
 
-func (e *NativeEngine) codeRequestOrderedParamsWithWamsys(ctx context.Context, phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, state nativeState, authCodeContext string, wamsysCapture *waappv1.WamsysCapture, includeWamsys bool, appVersion string, integrityMode nativeIntegrityMode) (orderedParams, error) {
+func (e *engineCore) codeRequestOrderedParamsWithWamsys(ctx context.Context, phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, state nativeState, authCodeContext string, wamsysCapture *waappv1.WamsysCapture, includeWamsys bool, appVersion string, integrityMode nativeIntegrityMode) (orderedParams, error) {
 	methodName := registrationMethodName(method, "sms")
 	fields := nativeDeviceMapFields(state)
 	attempts := nativeCodeRequestAttempts(state)
@@ -230,45 +230,6 @@ func registrationMethodName(method waappv1.VerificationDeliveryMethod, fallback 
 		return "standalone"
 	default:
 		return fallback
-	}
-}
-
-func registrationMethodFromName(name string) waappv1.VerificationDeliveryMethod {
-	switch verificationMethodCode(name) {
-	case "sms":
-		return waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS
-	case "voice":
-		return waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_VOICE
-	case "flash":
-		return waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_FLASH
-	case "wa_old":
-		return waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_WA_OLD
-	case "email_otp":
-		return waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_EMAIL_OTP
-	case "send_sms":
-		return waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SEND_SMS
-	case "passkey":
-		return waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_PASSKEY
-	case "silent_auth":
-		return waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SILENT_AUTH
-	case "silent_auth_ts_43":
-		return waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SILENT_AUTH_TS43
-	case "autoconf":
-		return waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_AUTOCONF
-	case "deeplink_otp":
-		return waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_DEEPLINK_OTP
-	case "recaptcha":
-		return waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_RECAPTCHA
-	case "oauth_email":
-		return waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_OAUTH_EMAIL
-	case "discoverable_credential":
-		return waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_DISCOVERABLE_CREDENTIAL
-	case "acc_tr":
-		return waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_ACCOUNT_TRANSFER
-	case "standalone":
-		return waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_STANDALONE_APP
-	default:
-		return waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_UNSPECIFIED
 	}
 }
 
@@ -872,7 +833,7 @@ func methodsFromStatuses(statuses []VerificationMethodStatus) []waappv1.Verifica
 	return out
 }
 
-func verificationMethod(name string) waappv1.VerificationDeliveryMethod {
+func verificationMethodFromName(name string) waappv1.VerificationDeliveryMethod {
 	switch verificationMethodCode(name) {
 	case "sms":
 		return waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS
@@ -932,7 +893,7 @@ func verificationCodeMethodStatuses(data map[string]any, _ waappv1.VerificationD
 }
 
 func upsertVerificationMethodStatus(statuses []VerificationMethodStatus, code string, wait verificationWaitStatus) []VerificationMethodStatus {
-	method := verificationMethod(code)
+	method := verificationMethodFromName(code)
 	if method == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_UNSPECIFIED {
 		return statuses
 	}

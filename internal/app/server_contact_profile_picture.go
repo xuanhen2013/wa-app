@@ -31,7 +31,7 @@ type contactProfilePictureCacheEntry struct {
 	Data             []byte `json:"data"`
 }
 
-func (s *Server) contactProfilePictureRunner(ctx context.Context, loginState *waappv1.LoginState) (ProtocolEngine, func(), error) {
+func (s *serverCore) contactProfilePictureRunner(ctx context.Context, loginState *waappv1.LoginState) (ProtocolEngine, func(), error) {
 	if s != nil && s.longConnections != nil {
 		if runner := s.longConnections.Runner(loginState); runner != nil {
 			if _, ok := runner.(waContactProfilePictureResolver); ok {
@@ -49,7 +49,7 @@ func contactProfilePictureRemoteTimeout(runner ProtocolEngine) time.Duration {
 	return defaultContactProfilePictureTimeout
 }
 
-func (s *Server) GetAccountProfilePicture(ctx context.Context, req *waappv1.GetAccountProfilePictureRequest) (*waappv1.GetAccountProfilePictureResponse, error) {
+func (s *accountSettingsHandler) GetAccountProfilePicture(ctx context.Context, req *waappv1.GetAccountProfilePictureRequest) (*waappv1.GetAccountProfilePictureResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.GetAccountProfilePictureResponse{Error: ToProtoError(err)}, nil
 	}
@@ -60,11 +60,11 @@ func (s *Server) GetAccountProfilePicture(ctx context.Context, req *waappv1.GetA
 	return &waappv1.GetAccountProfilePictureResponse{Image: picture.Data, ContentType: picture.ContentType, ProfilePictureId: picture.ProfilePictureID}, nil
 }
 
-func (s *Server) GetWAAccountProfilePicture(ctx context.Context, accountID string) (WAContactProfilePicture, error) {
+func (s *serverCore) GetWAAccountProfilePicture(ctx context.Context, accountID string) (WAContactProfilePicture, error) {
 	return s.getWAAccountProfilePicture(ctx, &waappv1.AccountLoginSelector{WaAccountId: accountID})
 }
 
-func (s *Server) getWAAccountProfilePicture(ctx context.Context, selector *waappv1.AccountLoginSelector) (WAContactProfilePicture, error) {
+func (s *serverCore) getWAAccountProfilePicture(ctx context.Context, selector *waappv1.AccountLoginSelector) (WAContactProfilePicture, error) {
 	loginState, err := s.accountSettingsLoginState(ctx, selector)
 	if err != nil {
 		return WAContactProfilePicture{}, err
@@ -115,7 +115,7 @@ func (s *Server) getWAAccountProfilePicture(ctx context.Context, selector *waapp
 	return picture, nil
 }
 
-func (s *Server) GetWAContactProfilePicture(ctx context.Context, contactID string) (WAContactProfilePicture, error) {
+func (s *serverCore) GetWAContactProfilePicture(ctx context.Context, contactID string) (WAContactProfilePicture, error) {
 	contactID = strings.TrimSpace(contactID)
 	if contactID == "" {
 		return WAContactProfilePicture{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "WA contact id is required", false)
@@ -175,11 +175,11 @@ func (s *Server) GetWAContactProfilePicture(ctx context.Context, contactID strin
 	return picture, nil
 }
 
-func (s *Server) cachedWAAccountProfilePicture(ctx context.Context, accountID string) (WAContactProfilePicture, bool) {
+func (s *serverCore) cachedWAAccountProfilePicture(ctx context.Context, accountID string) (WAContactProfilePicture, bool) {
 	return s.cachedWAProfilePicture(ctx, accountProfilePictureCacheKey(accountID))
 }
 
-func (s *Server) cachedWAContactProfilePicture(ctx context.Context, contact *waappv1.WAContact) (WAContactProfilePicture, bool) {
+func (s *serverCore) cachedWAContactProfilePicture(ctx context.Context, contact *waappv1.WAContact) (WAContactProfilePicture, bool) {
 	if s == nil || s.runtime == nil || contact == nil || contact.GetContactId() == "" {
 		return WAContactProfilePicture{}, false
 	}
@@ -191,7 +191,7 @@ func (s *Server) cachedWAContactProfilePicture(ctx context.Context, contact *waa
 	return picture, ok
 }
 
-func (s *Server) cachedWAProfilePicture(ctx context.Context, key string) (WAContactProfilePicture, bool) {
+func (s *serverCore) cachedWAProfilePicture(ctx context.Context, key string) (WAContactProfilePicture, bool) {
 	if s == nil || s.runtime == nil || strings.TrimSpace(key) == "" {
 		return WAContactProfilePicture{}, false
 	}
@@ -206,15 +206,15 @@ func (s *Server) cachedWAProfilePicture(ctx context.Context, key string) (WACont
 	return WAContactProfilePicture{ProfilePictureID: entry.ProfilePictureID, ContentType: entry.ContentType, Data: entry.Data}, true
 }
 
-func (s *Server) cacheWAAccountProfilePicture(ctx context.Context, accountID string, picture WAContactProfilePicture) {
+func (s *serverCore) cacheWAAccountProfilePicture(ctx context.Context, accountID string, picture WAContactProfilePicture) {
 	s.cacheWAProfilePicture(ctx, accountProfilePictureCacheKey(accountID), picture)
 }
 
-func (s *Server) cacheWAContactProfilePicture(ctx context.Context, contactID string, picture WAContactProfilePicture) {
+func (s *serverCore) cacheWAContactProfilePicture(ctx context.Context, contactID string, picture WAContactProfilePicture) {
 	s.cacheWAProfilePicture(ctx, contactProfilePictureCacheKey(contactID, contactProfilePictureCacheVersion(picture.ProfilePictureID)), picture)
 }
 
-func (s *Server) cacheWAProfilePicture(ctx context.Context, key string, picture WAContactProfilePicture) {
+func (s *serverCore) cacheWAProfilePicture(ctx context.Context, key string, picture WAContactProfilePicture) {
 	if s == nil || s.runtime == nil || strings.TrimSpace(key) == "" || len(picture.Data) == 0 {
 		return
 	}
@@ -226,7 +226,7 @@ func (s *Server) cacheWAProfilePicture(ctx context.Context, key string, picture 
 	_ = s.runtime.DeleteTransientState(ctx, profilePictureFailureCacheKey(key))
 }
 
-func (s *Server) cachedWAProfilePictureFailure(ctx context.Context, key string) bool {
+func (s *serverCore) cachedWAProfilePictureFailure(ctx context.Context, key string) bool {
 	if s == nil || s.runtime == nil || strings.TrimSpace(key) == "" {
 		return false
 	}
@@ -234,7 +234,7 @@ func (s *Server) cachedWAProfilePictureFailure(ctx context.Context, key string) 
 	return err == nil && len(data) > 0
 }
 
-func (s *Server) cacheWAProfilePictureFailure(ctx context.Context, key string) {
+func (s *serverCore) cacheWAProfilePictureFailure(ctx context.Context, key string) {
 	if s == nil || s.runtime == nil || strings.TrimSpace(key) == "" {
 		return
 	}
@@ -256,7 +256,7 @@ func shouldCacheProfilePictureFailure(err error) bool {
 	return appErr.Code == waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND
 }
 
-func (s *Server) deleteWAAccountProfilePictureCache(ctx context.Context, accountID string) {
+func (s *serverCore) deleteWAAccountProfilePictureCache(ctx context.Context, accountID string) {
 	if s == nil || s.runtime == nil || accountID == "" {
 		return
 	}

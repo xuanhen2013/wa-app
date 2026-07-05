@@ -41,7 +41,7 @@ type ProtocolTooling interface {
 	DeriveAuthKey(context.Context, *waappv1.DeriveAuthKeyRequest) (*waappv1.DeriveAuthKeyResponse, error)
 }
 
-func (s *Server) GeneratePhoneFingerprintProfile(ctx context.Context, req *waappv1.GeneratePhoneFingerprintProfileRequest) (*waappv1.GeneratePhoneFingerprintProfileResponse, error) {
+func (s *toolingHandler) GeneratePhoneFingerprintProfile(ctx context.Context, req *waappv1.GeneratePhoneFingerprintProfileRequest) (*waappv1.GeneratePhoneFingerprintProfileResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.GeneratePhoneFingerprintProfileResponse{Error: ToProtoError(err)}, nil
 	}
@@ -53,7 +53,7 @@ func (s *Server) GeneratePhoneFingerprintProfile(ctx context.Context, req *waapp
 	return &waappv1.GeneratePhoneFingerprintProfileResponse{Profile: profile, Error: ToProtoError(err)}, nil
 }
 
-func (s *Server) ImportWamsysCapture(ctx context.Context, req *waappv1.ImportWamsysCaptureRequest) (*waappv1.ImportWamsysCaptureResponse, error) {
+func (s *toolingHandler) ImportWamsysCapture(ctx context.Context, req *waappv1.ImportWamsysCaptureRequest) (*waappv1.ImportWamsysCaptureResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.ImportWamsysCaptureResponse{Error: ToProtoError(err)}, nil
 	}
@@ -65,7 +65,7 @@ func (s *Server) ImportWamsysCapture(ctx context.Context, req *waappv1.ImportWam
 	return &waappv1.ImportWamsysCaptureResponse{Capture: capture, Error: ToProtoError(err)}, nil
 }
 
-func (s *Server) BuildRegistrationRequest(ctx context.Context, req *waappv1.BuildRegistrationRequestRequest) (*waappv1.BuildRegistrationRequestResponse, error) {
+func (s *toolingHandler) BuildRegistrationRequest(ctx context.Context, req *waappv1.BuildRegistrationRequestRequest) (*waappv1.BuildRegistrationRequestResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.BuildRegistrationRequestResponse{Error: ToProtoError(err)}, nil
 	}
@@ -81,7 +81,7 @@ func (s *Server) BuildRegistrationRequest(ctx context.Context, req *waappv1.Buil
 	return resp, nil
 }
 
-func (s *Server) EncryptWASafeEnvelope(ctx context.Context, req *waappv1.EncryptWASafeEnvelopeRequest) (*waappv1.EncryptWASafeEnvelopeResponse, error) {
+func (s *toolingHandler) EncryptWASafeEnvelope(ctx context.Context, req *waappv1.EncryptWASafeEnvelopeRequest) (*waappv1.EncryptWASafeEnvelopeResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.EncryptWASafeEnvelopeResponse{Error: ToProtoError(err)}, nil
 	}
@@ -97,7 +97,7 @@ func (s *Server) EncryptWASafeEnvelope(ctx context.Context, req *waappv1.Encrypt
 	return resp, nil
 }
 
-func (s *Server) DeriveRegistrationToken(ctx context.Context, req *waappv1.DeriveRegistrationTokenRequest) (*waappv1.DeriveRegistrationTokenResponse, error) {
+func (s *toolingHandler) DeriveRegistrationToken(ctx context.Context, req *waappv1.DeriveRegistrationTokenRequest) (*waappv1.DeriveRegistrationTokenResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.DeriveRegistrationTokenResponse{Error: ToProtoError(err)}, nil
 	}
@@ -113,7 +113,7 @@ func (s *Server) DeriveRegistrationToken(ctx context.Context, req *waappv1.Deriv
 	return resp, nil
 }
 
-func (s *Server) DeriveAuthKey(ctx context.Context, req *waappv1.DeriveAuthKeyRequest) (*waappv1.DeriveAuthKeyResponse, error) {
+func (s *toolingHandler) DeriveAuthKey(ctx context.Context, req *waappv1.DeriveAuthKeyRequest) (*waappv1.DeriveAuthKeyResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.DeriveAuthKeyResponse{Error: ToProtoError(err)}, nil
 	}
@@ -129,7 +129,7 @@ func (s *Server) DeriveAuthKey(ctx context.Context, req *waappv1.DeriveAuthKeyRe
 	return resp, nil
 }
 
-func (s *Server) tooling() (ProtocolTooling, error) {
+func (s *serverCore) tooling() (ProtocolTooling, error) {
 	tooling, ok := s.runner.(ProtocolTooling)
 	if !ok {
 		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "protocol tooling is not available", false)
@@ -137,7 +137,7 @@ func (s *Server) tooling() (ProtocolTooling, error) {
 	return tooling, nil
 }
 
-func (e *NativeEngine) GeneratePhoneFingerprintProfile(ctx context.Context, req *waappv1.GeneratePhoneFingerprintProfileRequest) (*waappv1.PhoneFingerprintProfile, error) {
+func (e *toolingService) GeneratePhoneFingerprintProfile(ctx context.Context, req *waappv1.GeneratePhoneFingerprintProfileRequest) (*waappv1.PhoneFingerprintProfile, error) {
 	_ = ctx
 	phone := normalizePhone(req.GetPhone())
 	if phone.GetE164Number() == "" && phoneCC(phone) == "" {
@@ -147,7 +147,7 @@ func (e *NativeEngine) GeneratePhoneFingerprintProfile(ctx context.Context, req 
 	return phoneProfileToProto(phone, profile), nil
 }
 
-func (e *NativeEngine) ImportWamsysCapture(ctx context.Context, req *waappv1.ImportWamsysCaptureRequest) (*waappv1.WamsysCapture, error) {
+func (e *toolingService) ImportWamsysCapture(ctx context.Context, req *waappv1.ImportWamsysCaptureRequest) (*waappv1.WamsysCapture, error) {
 	_ = ctx
 	capture, err := parseWamsysJSON(req.GetJsonText())
 	if err != nil {
@@ -156,7 +156,7 @@ func (e *NativeEngine) ImportWamsysCapture(ctx context.Context, req *waappv1.Imp
 	return capture, nil
 }
 
-func (e *NativeEngine) BuildRegistrationRequest(ctx context.Context, req *waappv1.BuildRegistrationRequestRequest) (*waappv1.BuildRegistrationRequestResponse, error) {
+func (e *toolingService) BuildRegistrationRequest(ctx context.Context, req *waappv1.BuildRegistrationRequestRequest) (*waappv1.BuildRegistrationRequestResponse, error) {
 	params := orderedParams{}
 	rawKeys := map[string]struct{}{}
 	phone := normalizePhone(req.GetPhone())
@@ -190,7 +190,7 @@ func (e *NativeEngine) BuildRegistrationRequest(ctx context.Context, req *waappv
 		}
 		state = freshState
 	}
-	method := registrationMethodFromName(req.GetMethod())
+	method := verificationMethodFromName(req.GetMethod())
 	methodName := registrationMethodName(method, "sms")
 	language := firstNonEmpty(req.GetLanguage(), "en")
 	locale := firstNonEmpty(req.GetLocale(), "US")
@@ -280,7 +280,7 @@ func (e *NativeEngine) BuildRegistrationRequest(ctx context.Context, req *waappv
 	return resp, nil
 }
 
-func (e *NativeEngine) EncryptWASafeEnvelope(ctx context.Context, req *waappv1.EncryptWASafeEnvelopeRequest) (*waappv1.EncryptWASafeEnvelopeResponse, error) {
+func (e *toolingService) EncryptWASafeEnvelope(ctx context.Context, req *waappv1.EncryptWASafeEnvelopeRequest) (*waappv1.EncryptWASafeEnvelopeResponse, error) {
 	_ = ctx
 	plain := sensitiveInput(req.GetPlaintext())
 	if plain == "" {
@@ -293,7 +293,7 @@ func (e *NativeEngine) EncryptWASafeEnvelope(ctx context.Context, req *waappv1.E
 	return &waappv1.EncryptWASafeEnvelopeResponse{Enc: sensitiveOutput(enc, "wasafe-enc", req.GetIncludeSensitiveValues()), EncSha256: encHash(enc), EncLength: int32(len(enc))}, nil
 }
 
-func (e *NativeEngine) DeriveRegistrationToken(ctx context.Context, req *waappv1.DeriveRegistrationTokenRequest) (*waappv1.DeriveRegistrationTokenResponse, error) {
+func (e *toolingService) DeriveRegistrationToken(ctx context.Context, req *waappv1.DeriveRegistrationTokenRequest) (*waappv1.DeriveRegistrationTokenResponse, error) {
 	_ = ctx
 	token, err := deriveRegistrationTokenFromAPK(req.GetApk(), phoneNational(normalizePhone(req.GetPhone())), firstNonEmpty(req.GetPackageName(), "com.whatsapp"))
 	if err != nil {
@@ -302,7 +302,7 @@ func (e *NativeEngine) DeriveRegistrationToken(ctx context.Context, req *waappv1
 	return &waappv1.DeriveRegistrationTokenResponse{Token: sensitiveOutput(token, "registration-token", req.GetIncludeSensitiveValues())}, nil
 }
 
-func (e *NativeEngine) DeriveAuthKey(ctx context.Context, req *waappv1.DeriveAuthKeyRequest) (*waappv1.DeriveAuthKeyResponse, error) {
+func (e *toolingService) DeriveAuthKey(ctx context.Context, req *waappv1.DeriveAuthKeyRequest) (*waappv1.DeriveAuthKeyResponse, error) {
 	_ = ctx
 	authkey, err := deriveAuthKeyFromKeystoreXML(req.GetKeystoreXml())
 	if err != nil {
@@ -671,7 +671,7 @@ func deriveAuthKeyFromKeystoreXML(text string) (string, error) {
 	if err := json.Unmarshal([]byte(raw), &arr); err != nil {
 		return "", err
 	}
-	if len(arr) < 5 || intFromAny(arr[0]) != 2 {
+	if len(arr) < 5 || jsonNumber(arr[0]) != 2 {
 		return "", fmt.Errorf("unsupported keypair envelope")
 	}
 	ct, err := decodeB64Any(fmt.Sprint(arr[1]))
@@ -761,18 +761,4 @@ func sortedSet(values map[string]struct{}) []string {
 	}
 	sort.Strings(out)
 	return out
-}
-
-func intFromAny(value any) int {
-	switch v := value.(type) {
-	case float64:
-		return int(v)
-	case int:
-		return v
-	case json.Number:
-		n, _ := v.Int64()
-		return int(n)
-	default:
-		return 0
-	}
 }

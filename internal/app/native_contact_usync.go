@@ -17,7 +17,7 @@ const (
 	businessProfileTimeoutText = "business profile iq timed out"
 )
 
-func (e *NativeEngine) ResolveContacts(ctx context.Context, input EngineContactResolveInput) EngineContactResolveResult {
+func (e *contactsService) ResolveContacts(ctx context.Context, input EngineContactResolveInput) EngineContactResolveResult {
 	return e.resolveContactsWithSender(ctx, input, nil)
 }
 
@@ -25,7 +25,7 @@ func (e *NativeEngine) ResolveContacts(ctx context.Context, input EngineContactR
 // (长连接把消息/IQ/usync 多路复用在同一条 noise 连接上,对齐官方单 ConnectionThread 模型),
 // 避免为 usync 另开一条并发 ACTIVE 连接而触发服务端 <conflict type="replaced"> 自我顶替。
 // sender 为空时回退到独立短连接(无活跃长连接的窗口)。
-func (e *NativeEngine) resolveContactsWithSender(ctx context.Context, input EngineContactResolveInput, sender chatdIQSender) EngineContactResolveResult {
+func (e *contactsService) resolveContactsWithSender(ctx context.Context, input EngineContactResolveInput, sender chatdIQSender) EngineContactResolveResult {
 	jids := normalizeContactUsyncJIDs(input.JIDs)
 	if len(jids) == 0 {
 		return EngineContactResolveResult{}
@@ -666,7 +666,7 @@ func businessVerifiedNodeName(node chatdNode) string {
 	return ""
 }
 
-func (e *NativeEngine) resolveBusinessProfileContacts(ctx context.Context, sender chatdIQSender, state nativeState, input EngineContactResolveInput, contacts []*waappv1.WAContact) []*waappv1.WAContact {
+func (e *contactsService) resolveBusinessProfileContacts(ctx context.Context, sender chatdIQSender, state nativeState, input EngineContactResolveInput, contacts []*waappv1.WAContact) []*waappv1.WAContact {
 	refs := businessProfileRefs(contacts)
 	if len(refs) == 0 {
 		return nil
@@ -980,15 +980,12 @@ func chunkStrings(values []string, size int) [][]string {
 }
 
 func contactUsyncError(err error) error {
-	message := "native contact usync failed"
-	if snippet := chatdSafeFailureMessage(err); snippet != "" {
-		message += ": " + snippet
-	}
-	return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, message, accountSettingsRetryableError(err))
+	message := chatdFailureMessage("native contact usync failed", err)
+	return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, message, isRetryableTransportError(err))
 }
 
 func contactUsyncOptionalRemoteFailure(err error) bool {
-	return err != nil && accountSettingsRetryableError(err)
+	return err != nil && isRetryableTransportError(err)
 }
 
 func logContactUsyncShape(variant string, response chatdNode) {

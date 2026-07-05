@@ -221,26 +221,6 @@ func optionalPBBytes(fields map[int][]pbValue, fieldNo int) []byte {
 	return nil
 }
 
-func optionalPBVarint(fields map[int][]pbValue, fieldNo int) (uint64, bool) {
-	for _, value := range fields[fieldNo] {
-		if value.wireType == 0 {
-			return value.varint, true
-		}
-	}
-	return 0, false
-}
-
-func allPBBytes(fields map[int][]pbValue, fieldNo int) [][]byte {
-	values := fields[fieldNo]
-	out := make([][]byte, 0, len(values))
-	for _, value := range values {
-		if value.wireType == 2 {
-			out = append(out, append([]byte{}, value.bytes...))
-		}
-	}
-	return out
-}
-
 type serverHello struct {
 	ephemeral         []byte
 	staticCiphertext  []byte

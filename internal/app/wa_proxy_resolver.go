@@ -20,7 +20,7 @@ type waProxyResolveRequest struct {
 // resolveWAProxyRoute resolves the egress route for a WA registration/probe
 // request: the shared WA_COMMON_PROXY when configured, otherwise a direct
 // connection. There is no per-account policy or dynamic lease.
-func (s *Server) resolveWAProxyRoute(req waProxyResolveRequest) (WAProxyRoute, bool) {
+func (s *serverCore) resolveWAProxyRoute(req waProxyResolveRequest) (WAProxyRoute, bool) {
 	countryCode := normalizeProxyCountryCode(firstNonEmpty(req.CountryCode, proxyCountryCodeFromPayload(req.Payload)))
 	if route, ok := s.resolveSystemCommonProxyRoute(countryCode); ok {
 		return route, true
@@ -28,7 +28,7 @@ func (s *Server) resolveWAProxyRoute(req waProxyResolveRequest) (WAProxyRoute, b
 	return WAProxyRoute{ProxyMode: waProxyModeDirect, CountryCode: "LOCAL", Source: waProxySourceDirect, PolicyMode: waProxyModeDirect}, false
 }
 
-func (s *Server) resolveSystemCommonProxyRoute(countryCode string) (WAProxyRoute, bool) {
+func (s *serverCore) resolveSystemCommonProxyRoute(countryCode string) (WAProxyRoute, bool) {
 	if s == nil || strings.TrimSpace(s.commonProxyURL) == "" {
 		return WAProxyRoute{}, false
 	}

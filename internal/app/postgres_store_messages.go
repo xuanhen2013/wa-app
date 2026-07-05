@@ -14,7 +14,7 @@ func (s *PostgresStore) ListAccountMessages(ctx context.Context, waAccountIDValu
 	if err != nil {
 		return nil, "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, err.Error(), false)
 	}
-	contactRefs = uniqueStrings(contactRefs...)
+	contactRefs = uniqueNonEmptyStrings(contactRefs...)
 	if len(contactRefs) == 0 {
 		return nil, "", nil
 	}
@@ -101,7 +101,7 @@ func scanAccountMessage(rows pgx.Rows, includeSensitiveText bool) (*waappv1.Acco
 }
 
 func (s *PostgresStore) ListUnreadInboundMessagesByContactRefs(ctx context.Context, waAccountIDValue string, contactRefs []string, limit int) ([]*waappv1.InboundMessage, error) {
-	contactRefs = uniqueStrings(contactRefs...)
+	contactRefs = uniqueNonEmptyStrings(contactRefs...)
 	if len(contactRefs) == 0 {
 		return nil, nil
 	}

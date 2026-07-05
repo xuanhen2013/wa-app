@@ -28,13 +28,55 @@ const (
 var nativeSensitiveDigitsPattern = regexp.MustCompile(`\b[0-9]{4,8}\b`)
 var chatdNodeTokenErrorPattern = regexp.MustCompile(`(?i)(readstring could not match token|invalid list-size token)\s+([0-9]{1,3})`)
 
-type NativeEngine struct {
+// engineCore holds the immutable per-proxy-binding collaborators plus the request
+// material shaping shared by every native domain service. A fresh core is produced
+// for each proxy rebinding (see WithProxyURL).
+type engineCore struct {
 	stateStore     NativeStateStore
 	activeProxyURL string
 	http           *nativeHTTPClient
 	clock          Clock
 	ids            IDGenerator
 	wamsys         wamsysMaterialProvider
+}
+
+// NativeEngine is the facade over the per-domain native services. It embeds the
+// shared core plus one focused service per domain, so its full protocol and
+// capability method set is promoted from small single-responsibility services
+// instead of living on one god object.
+type NativeEngine struct {
+	*engineCore
+	*registrationService
+	*messagingService
+	*contactsService
+	*accountSettingsService
+	*toolingService
+}
+
+// registrationService owns the account probe / verification / login flows.
+type registrationService struct{ *engineCore }
+
+// messagingService owns inbound batch receive, decryption, text send and receipts.
+type messagingService struct{ *engineCore }
+
+// contactsService owns usync contact resolution and contact profile pictures.
+type contactsService struct{ *engineCore }
+
+// accountSettingsService owns 2FA / email / profile-name / picture operations.
+type accountSettingsService struct{ *engineCore }
+
+// toolingService owns the offline fingerprint / capture / crypto tooling.
+type toolingService struct{ *engineCore }
+
+func newNativeEngine(core *engineCore) *NativeEngine {
+	return &NativeEngine{
+		engineCore:             core,
+		registrationService:    &registrationService{core},
+		messagingService:       &messagingService{core},
+		contactsService:        &contactsService{core},
+		accountSettingsService: &accountSettingsService{core},
+		toolingService:         &toolingService{core},
+	}
 }
 
 func NewNativeEngine(stateStore NativeStateStore, clock Clock, ids IDGenerator) (*NativeEngine, error) {
@@ -51,7 +93,7 @@ func NewNativeEngine(stateStore NativeStateStore, clock Clock, ids IDGenerator) 
 	if err != nil {
 		return nil, err
 	}
-	return &NativeEngine{stateStore: stateStore, http: hc, clock: clock, ids: ids, wamsys: localWamsysMaterialProvider{}}, nil
+	return newNativeEngine(&engineCore{stateStore: stateStore, http: hc, clock: clock, ids: ids, wamsys: localWamsysMaterialProvider{}}), nil
 }
 
 func (e *NativeEngine) WithPlayIntegrityAPI(endpoint, token string) (*NativeEngine, error) {
@@ -59,7 +101,7 @@ func (e *NativeEngine) WithPlayIntegrityAPI(endpoint, token string) (*NativeEngi
 	if err != nil {
 		return nil, err
 	}
-	return &NativeEngine{stateStore: e.stateStore, activeProxyURL: e.activeProxyURL, http: e.http, clock: e.clock, ids: e.ids, wamsys: localWamsysMaterialProvider{playIntegrity: client}}, nil
+	return newNativeEngine(&engineCore{stateStore: e.stateStore, activeProxyURL: e.activeProxyURL, http: e.http, clock: e.clock, ids: e.ids, wamsys: localWamsysMaterialProvider{playIntegrity: client}}), nil
 }
 
 func (e *NativeEngine) WithProxyURL(proxyURL string) (*NativeEngine, error) {
@@ -71,22 +113,22 @@ func (e *NativeEngine) WithProxyURL(proxyURL string) (*NativeEngine, error) {
 	if err != nil {
 		return nil, err
 	}
-	return &NativeEngine{stateStore: e.stateStore, activeProxyURL: proxyURL, http: hc, clock: e.clock, ids: e.ids, wamsys: e.wamsysProvider()}, nil
+	return newNativeEngine(&engineCore{stateStore: e.stateStore, activeProxyURL: proxyURL, http: hc, clock: e.clock, ids: e.ids, wamsys: e.wamsysProvider()}), nil
 }
 
-func (e *NativeEngine) wamsysProvider() wamsysMaterialProvider {
+func (e *engineCore) wamsysProvider() wamsysMaterialProvider {
 	if e != nil && e.wamsys != nil {
 		return e.wamsys
 	}
 	return localWamsysMaterialProvider{}
 }
 
-func (e *NativeEngine) PlayIntegrityAPIConfigured() bool {
+func (e *engineCore) PlayIntegrityAPIConfigured() bool {
 	provider, ok := e.wamsysProvider().(localWamsysMaterialProvider)
 	return ok && provider.playIntegrity != nil
 }
 
-func (e *NativeEngine) PlayIntegrityAPIStatus(ctx context.Context) PlayIntegrityAPIStatus {
+func (e *engineCore) PlayIntegrityAPIStatus(ctx context.Context) PlayIntegrityAPIStatus {
 	provider, ok := e.wamsysProvider().(localWamsysMaterialProvider)
 	if !ok || provider.playIntegrity == nil {
 		return PlayIntegrityAPIStatus{Configured: false, Available: false, RawValuesPrinted: false}
@@ -94,14 +136,14 @@ func (e *NativeEngine) PlayIntegrityAPIStatus(ctx context.Context) PlayIntegrity
 	return provider.playIntegrity.Status(ctx)
 }
 
-func (e *NativeEngine) CloseIdleConnections() {
+func (e *engineCore) CloseIdleConnections() {
 	if e == nil || e.http == nil {
 		return
 	}
 	e.http.CloseIdleConnections()
 }
 
-func (e *NativeEngine) PrepareClientProfile(ctx context.Context, input EngineProfileInput) error {
+func (e *registrationService) PrepareClientProfile(ctx context.Context, input EngineProfileInput) error {
 	_ = ctx
 	state, err := newNativeState(input.Phone)
 	if err != nil {
@@ -114,7 +156,7 @@ func (e *NativeEngine) PrepareClientProfile(ctx context.Context, input EnginePro
 // 无任何可解析的应用层结论)时的最大尝试次数。exist 是幂等检查,重试安全。
 const existProbeTransientAttempts = 3
 
-func (e *NativeEngine) ProbeAccount(ctx context.Context, input EngineRegistrationInput) EngineProbeResult {
+func (e *registrationService) ProbeAccount(ctx context.Context, input EngineRegistrationInput) EngineProbeResult {
 	state, err := e.newState(input.Phone)
 	if err != nil {
 		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}
@@ -123,7 +165,7 @@ func (e *NativeEngine) ProbeAccount(ctx context.Context, input EngineRegistratio
 	return result
 }
 
-func (e *NativeEngine) probeAccountWithState(ctx context.Context, input EngineRegistrationInput, state nativeState) (EngineProbeResult, nativeState) {
+func (e *registrationService) probeAccountWithState(ctx context.Context, input EngineRegistrationInput, state nativeState) (EngineProbeResult, nativeState) {
 	if err := ensureNativeSoftwareAttestation(&state, e.clock.Now()); err != nil {
 		return EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}, state
 	}
@@ -168,7 +210,7 @@ func parsedExistApplicationOutcome(result EngineProbeResult) bool {
 		len(result.MethodStatuses) > 0
 }
 
-func (e *NativeEngine) RequestVerificationCode(ctx context.Context, input EngineRegistrationInput) EngineCodeResult {
+func (e *registrationService) RequestVerificationCode(ctx context.Context, input EngineRegistrationInput) EngineCodeResult {
 	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
 		return EngineCodeResult{Status: waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED, Err: err}
@@ -178,7 +220,7 @@ func (e *NativeEngine) RequestVerificationCode(ctx context.Context, input Engine
 	return result
 }
 
-func (e *NativeEngine) requestVerificationCodeWithState(ctx context.Context, input EngineRegistrationInput, state nativeState) (EngineCodeResult, nativeState) {
+func (e *registrationService) requestVerificationCodeWithState(ctx context.Context, input EngineRegistrationInput, state nativeState) (EngineCodeResult, nativeState) {
 	if err := ensureNativeSoftwareAttestation(&state, e.clock.Now()); err != nil {
 		return EngineCodeResult{Status: waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED, Err: err}, state
 	}
@@ -251,7 +293,7 @@ func (e *NativeEngine) requestVerificationCodeWithState(ctx context.Context, inp
 	return result, state
 }
 
-func (e *NativeEngine) prepareAccountTransferChallenge(phone *waappv1.PhoneTarget, state *nativeState, data map[string]any, now time.Time) (*waappv1.AccountTransferChallenge, error) {
+func (e *registrationService) prepareAccountTransferChallenge(phone *waappv1.PhoneTarget, state *nativeState, data map[string]any, now time.Time) (*waappv1.AccountTransferChallenge, error) {
 	codes := accountTransferCodesFromResponse(data)
 	if len(codes) == 0 {
 		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "account transfer code list is missing", false)
@@ -260,7 +302,7 @@ func (e *NativeEngine) prepareAccountTransferChallenge(phone *waappv1.PhoneTarge
 	return state.AccountTransfer.challenge("", now)
 }
 
-func (e *NativeEngine) RefreshAccountTransferChallenge(ctx context.Context, input EngineAccountTransferChallengeInput) EngineAccountTransferChallengeResult {
+func (e *registrationService) RefreshAccountTransferChallenge(ctx context.Context, input EngineAccountTransferChallengeInput) EngineAccountTransferChallengeResult {
 	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
 		return EngineAccountTransferChallengeResult{Err: err}
@@ -276,7 +318,7 @@ func (e *NativeEngine) RefreshAccountTransferChallenge(ctx context.Context, inpu
 	return EngineAccountTransferChallengeResult{Challenge: challenge}
 }
 
-func (e *NativeEngine) SubmitVerificationCode(ctx context.Context, input EngineSubmitInput) EngineRegisterResult {
+func (e *registrationService) SubmitVerificationCode(ctx context.Context, input EngineSubmitInput) EngineRegisterResult {
 	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
 		return EngineRegisterResult{Status: waappv1.RegistrationStatus_REGISTRATION_STATUS_REJECTED, Err: err}
@@ -394,7 +436,7 @@ func retryableRegisterHTTPFailure(data map[string]any, err error) bool {
 	return false
 }
 
-func (e *NativeEngine) CheckLoginState(ctx context.Context, input EngineLoginCheckInput) EngineLoginCheckResult {
+func (e *registrationService) CheckLoginState(ctx context.Context, input EngineLoginCheckInput) EngineLoginCheckResult {
 	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
 		return EngineLoginCheckResult{Status: waappv1.LoginStateCheckStatus_LOGIN_STATE_CHECK_STATUS_INVALID, Err: err}
@@ -414,10 +456,7 @@ func (e *NativeEngine) CheckLoginState(ctx context.Context, input EngineLoginChe
 	}
 	if err != nil {
 		status := loginCheckStatusForError(err)
-		message := "login state remote check failed"
-		if snippet := chatdSafeFailureMessage(err); snippet != "" {
-			message += ": " + snippet
-		}
+		message := chatdFailureMessage("login state remote check failed", err)
 		return EngineLoginCheckResult{Status: status, Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, message, status == waappv1.LoginStateCheckStatus_LOGIN_STATE_CHECK_STATUS_UNREACHABLE)}
 	}
 	return EngineLoginCheckResult{Status: waappv1.LoginStateCheckStatus_LOGIN_STATE_CHECK_STATUS_ACTIVE}
@@ -436,7 +475,7 @@ func loginCheckStatusForError(err error) waappv1.LoginStateCheckStatus {
 	return waappv1.LoginStateCheckStatus_LOGIN_STATE_CHECK_STATUS_INVALID
 }
 
-func (e *NativeEngine) ReceiveMessageBatch(ctx context.Context, input EngineMessageInput) EngineMessageBatchResult {
+func (e *messagingService) ReceiveMessageBatch(ctx context.Context, input EngineMessageInput) EngineMessageBatchResult {
 	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
 		return EngineMessageBatchResult{Err: err}
@@ -566,11 +605,16 @@ func chatRoutingInfoFromValue(value any) string {
 	}
 }
 
-func chatdReceiveError(err error) error {
-	message := "native chatd receive failed"
+// chatdFailureMessage appends any redacted chatd failure snippet to base.
+func chatdFailureMessage(base string, err error) string {
 	if snippet := chatdSafeFailureMessage(err); snippet != "" {
-		message += ": " + snippet
+		return base + ": " + snippet
 	}
+	return base
+}
+
+func chatdReceiveError(err error) error {
+	message := chatdFailureMessage("native chatd receive failed", err)
 	// 账号被接管(device_removed/replaced)是不可重试的登出终态(号码已在其他设备注册),透传为
 	// CONFLICT 并保留标记,使长连接据此持久化"已转出"而非无限重连;其余 chatd 收包失败仍为可重试 REJECTED。
 	if isAccountTakeoverError(err) {
@@ -683,7 +727,7 @@ func chatdNodeTokenFailureReason(text string, fallback string) string {
 	return fallback + " " + match[2]
 }
 
-func (e *NativeEngine) DecryptMessage(ctx context.Context, input EngineDecryptInput) EngineDecryptResult {
+func (e *messagingService) DecryptMessage(ctx context.Context, input EngineDecryptInput) EngineDecryptResult {
 	_ = ctx
 	if strings.HasPrefix(input.PayloadRef, "plaintext:") {
 		plain := strings.TrimPrefix(input.PayloadRef, "plaintext:")
@@ -796,7 +840,7 @@ func omitEmptyNativeOperatorField(key string, value string) bool {
 	}
 }
 
-func (e *NativeEngine) registerParams(phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, code string, state nativeState, authCodeContext string) (map[string]string, map[string]struct{}) {
+func (e *engineCore) registerParams(phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, code string, state nativeState, authCodeContext string) (map[string]string, map[string]struct{}) {
 	methodName := firstNonEmpty(state.LastCodeParams["method"], registrationMethodName(method, "sms"))
 	lg, lc := registrationLocale(phone)
 	params := map[string]string{
@@ -847,7 +891,7 @@ func applyRegisterCodeResultParams(params map[string]string, state nativeState) 
 	}
 }
 
-func (e *NativeEngine) loadState(ctx context.Context, clientProfileID string) (nativeState, error) {
+func (e *engineCore) loadState(ctx context.Context, clientProfileID string) (nativeState, error) {
 	state, err := e.stateStore.GetNativeState(ctx, clientProfileID)
 	if err != nil {
 		return nativeState{}, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_PROFILE_NOT_FOUND, "native client profile state not found", false)
@@ -855,11 +899,11 @@ func (e *NativeEngine) loadState(ctx context.Context, clientProfileID string) (n
 	return state, nil
 }
 
-func (e *NativeEngine) newState(phone *waappv1.PhoneTarget) (nativeState, error) {
+func (e *engineCore) newState(phone *waappv1.PhoneTarget) (nativeState, error) {
 	return newNativeState(phone)
 }
 
-func (e *NativeEngine) saveState(ctx context.Context, clientProfileID string, state nativeState) error {
+func (e *engineCore) saveState(ctx context.Context, clientProfileID string, state nativeState) error {
 	return e.stateStore.SaveNativeState(ctx, clientProfileID, state)
 }
 

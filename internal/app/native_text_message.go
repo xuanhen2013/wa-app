@@ -23,7 +23,7 @@ type chatdTextMessageSendResult struct {
 	Update chatdSessionUpdate
 }
 
-func (e *NativeEngine) SendTextMessage(ctx context.Context, input EngineTextMessageInput) EngineTextMessageResult {
+func (e *messagingService) SendTextMessage(ctx context.Context, input EngineTextMessageInput) EngineTextMessageResult {
 	if e == nil {
 		return EngineTextMessageResult{Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native engine is required", false)}
 	}
@@ -84,7 +84,7 @@ func (e *longConnectionNativeEngine) SendTextMessage(ctx context.Context, input 
 	return result.EngineTextMessageResult
 }
 
-func (e *NativeEngine) sendTextMessageOnSession(ctx context.Context, session *chatdSession, state *nativeState, input EngineTextMessageInput, receiveInput EngineMessageInput, timeout time.Duration) chatdTextMessageSendResult {
+func (e *messagingService) sendTextMessageOnSession(ctx context.Context, session *chatdSession, state *nativeState, input EngineTextMessageInput, receiveInput EngineMessageInput, timeout time.Duration) chatdTextMessageSendResult {
 	providerID := newTextProviderMessageID(input.ClientMessageID)
 	sentAt := e.clock.Now()
 	result := chatdTextMessageSendResult{EngineTextMessageResult: EngineTextMessageResult{ProviderMessageID: providerID, SentAt: sentAt}}
@@ -109,7 +109,7 @@ func (e *NativeEngine) sendTextMessageOnSession(ctx context.Context, session *ch
 	return result
 }
 
-func (e *NativeEngine) applyTextMessageSendUpdate(ctx context.Context, clientProfileID string, state *nativeState, input EngineMessageInput, items []chatdReceivedItem, update chatdSessionUpdate) error {
+func (e *messagingService) applyTextMessageSendUpdate(ctx context.Context, clientProfileID string, state *nativeState, input EngineMessageInput, items []chatdReceivedItem, update chatdSessionUpdate) error {
 	if state == nil {
 		return nil
 	}
@@ -171,7 +171,7 @@ func encryptNativeTextSignalMessage(state *nativeState, contactJID string, text 
 }
 
 func exactSignalSession(sessions map[string]nativeSignalSession, contactJID string) (string, nativeSignalSession, bool) {
-	for _, candidate := range uniqueStrings(contactJID, normalizeWAJID(contactJID)) {
+	for _, candidate := range uniqueNonEmptyStrings(contactJID, normalizeWAJID(contactJID)) {
 		key := signalSenderKey(candidate)
 		if session, ok := sessions[key]; ok {
 			return key, session, true
@@ -399,8 +399,8 @@ func chatdSendError(err error) error {
 	message := "native chatd send failed"
 	if ne, ok := err.(net.Error); ok && ne.Timeout() {
 		message += ": timeout"
-	} else if snippet := chatdSafeFailureMessage(err); snippet != "" {
-		message += ": " + snippet
+	} else {
+		message = chatdFailureMessage(message, err)
 	}
 	return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, message, true)
 }

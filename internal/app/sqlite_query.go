@@ -3,7 +3,7 @@ package app
 import "strings"
 
 func sqliteInClause(expression string, values []string) (string, []any) {
-	values = uniqueStrings(values...)
+	values = uniqueNonEmptyStrings(values...)
 	if len(values) == 0 {
 		return "1=0", nil
 	}

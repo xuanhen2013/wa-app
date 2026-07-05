@@ -674,13 +674,13 @@ func (m *LongConnectionManager) stopAll() {
 	wg.Wait()
 }
 
-func (s *Server) ensureLongConnection(ctx context.Context, loginState *waappv1.LoginState) {
+func (s *serverCore) ensureLongConnection(ctx context.Context, loginState *waappv1.LoginState) {
 	if s != nil && s.longConnections != nil {
 		s.longConnections.Ensure(ctx, loginState)
 	}
 }
 
-func (s *Server) revokeLongConnection(registeredIdentityID string, cause error) {
+func (s *serverCore) revokeLongConnection(registeredIdentityID string, cause error) {
 	if s != nil && s.longConnections != nil {
 		s.longConnections.Revoke(registeredIdentityID, cause)
 	}
@@ -689,7 +689,7 @@ func (s *Server) revokeLongConnection(registeredIdentityID string, cause error) 
 // markLoginTransferredOut 在长连接判定账号已被接管/转出(chatd 持续登录被拒)时调用:
 // 把登录态持久化为 REVOKED 并停连,复用 device_logout 的终态语义,使重启后不再被拉起
 // (restore 只拉 ACTIVE),仪表盘呈现"已转出"终态而非无限重连。
-func (s *Server) markLoginTransferredOut(ctx context.Context, loginState *waappv1.LoginState, cause error) {
+func (s *serverCore) markLoginTransferredOut(ctx context.Context, loginState *waappv1.LoginState, cause error) {
 	if s == nil || loginState == nil {
 		return
 	}
@@ -711,7 +711,7 @@ func (s *Server) markLoginTransferredOut(ctx context.Context, loginState *waappv
 	s.revokeLongConnection(registeredIdentityID, cause)
 }
 
-func (s *Server) longConnectionRunner(ctx context.Context, loginState *waappv1.LoginState, session *waappv1.MessageSession) (ProtocolEngine, error) {
+func (s *serverCore) longConnectionRunner(ctx context.Context, loginState *waappv1.LoginState, session *waappv1.MessageSession) (ProtocolEngine, error) {
 	engine, ok := s.runner.(*NativeEngine)
 	if !ok {
 		return s.runner, nil

@@ -16,7 +16,7 @@ const (
 	accountProfileNameMaxRunes = 25
 )
 
-func (s *Server) GetTwoFactorAuthStatus(ctx context.Context, req *waappv1.GetTwoFactorAuthStatusRequest) (*waappv1.GetTwoFactorAuthStatusResponse, error) {
+func (s *accountSettingsHandler) GetTwoFactorAuthStatus(ctx context.Context, req *waappv1.GetTwoFactorAuthStatusRequest) (*waappv1.GetTwoFactorAuthStatusResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.GetTwoFactorAuthStatusResponse{Error: ToProtoError(err)}, nil
 	}
@@ -37,7 +37,7 @@ func (s *Server) GetTwoFactorAuthStatus(ctx context.Context, req *waappv1.GetTwo
 	return &waappv1.GetTwoFactorAuthStatusResponse{Status: status}, nil
 }
 
-func (s *Server) SetTwoFactorAuthSettings(ctx context.Context, req *waappv1.SetTwoFactorAuthSettingsRequest) (*waappv1.SetTwoFactorAuthSettingsResponse, error) {
+func (s *accountSettingsHandler) SetTwoFactorAuthSettings(ctx context.Context, req *waappv1.SetTwoFactorAuthSettingsRequest) (*waappv1.SetTwoFactorAuthSettingsResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.SetTwoFactorAuthSettingsResponse{Error: ToProtoError(err)}, nil
 	}
@@ -66,7 +66,7 @@ func (s *Server) SetTwoFactorAuthSettings(ctx context.Context, req *waappv1.SetT
 	return &waappv1.SetTwoFactorAuthSettingsResponse{Operation: op, Error: op.GetError()}, nil
 }
 
-func (s *Server) SetAccountEmail(ctx context.Context, req *waappv1.SetAccountEmailRequest) (*waappv1.SetAccountEmailResponse, error) {
+func (s *accountSettingsHandler) SetAccountEmail(ctx context.Context, req *waappv1.SetAccountEmailRequest) (*waappv1.SetAccountEmailResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.SetAccountEmailResponse{Error: ToProtoError(err)}, nil
 	}
@@ -100,7 +100,7 @@ func (s *Server) SetAccountEmail(ctx context.Context, req *waappv1.SetAccountEma
 	return &waappv1.SetAccountEmailResponse{Operation: op, Error: op.GetError()}, nil
 }
 
-func (s *Server) RequestAccountEmailOtp(ctx context.Context, req *waappv1.RequestAccountEmailOtpRequest) (*waappv1.RequestAccountEmailOtpResponse, error) {
+func (s *accountSettingsHandler) RequestAccountEmailOtp(ctx context.Context, req *waappv1.RequestAccountEmailOtpRequest) (*waappv1.RequestAccountEmailOtpResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.RequestAccountEmailOtpResponse{Error: ToProtoError(err)}, nil
 	}
@@ -115,7 +115,7 @@ func (s *Server) RequestAccountEmailOtp(ctx context.Context, req *waappv1.Reques
 	return &waappv1.RequestAccountEmailOtpResponse{Operation: op, Error: op.GetError()}, nil
 }
 
-func (s *Server) VerifyAccountEmailOtp(ctx context.Context, req *waappv1.VerifyAccountEmailOtpRequest) (*waappv1.VerifyAccountEmailOtpResponse, error) {
+func (s *accountSettingsHandler) VerifyAccountEmailOtp(ctx context.Context, req *waappv1.VerifyAccountEmailOtpRequest) (*waappv1.VerifyAccountEmailOtpResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.VerifyAccountEmailOtpResponse{Error: ToProtoError(err)}, nil
 	}
@@ -144,7 +144,7 @@ func (s *Server) VerifyAccountEmailOtp(ctx context.Context, req *waappv1.VerifyA
 	return &waappv1.VerifyAccountEmailOtpResponse{Operation: op, Error: op.GetError()}, nil
 }
 
-func (s *Server) SetAccountProfileName(ctx context.Context, req *waappv1.SetAccountProfileNameRequest) (*waappv1.SetAccountProfileNameResponse, error) {
+func (s *accountSettingsHandler) SetAccountProfileName(ctx context.Context, req *waappv1.SetAccountProfileNameRequest) (*waappv1.SetAccountProfileNameResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.SetAccountProfileNameResponse{Error: ToProtoError(err)}, nil
 	}
@@ -167,7 +167,7 @@ func (s *Server) SetAccountProfileName(ctx context.Context, req *waappv1.SetAcco
 	return &waappv1.SetAccountProfileNameResponse{Operation: op, Error: op.GetError()}, nil
 }
 
-func (s *Server) SetAccountProfilePicture(ctx context.Context, req *waappv1.SetAccountProfilePictureRequest) (*waappv1.SetAccountProfilePictureResponse, error) {
+func (s *accountSettingsHandler) SetAccountProfilePicture(ctx context.Context, req *waappv1.SetAccountProfilePictureRequest) (*waappv1.SetAccountProfilePictureResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.SetAccountProfilePictureResponse{Error: ToProtoError(err)}, nil
 	}
@@ -189,7 +189,7 @@ func (s *Server) SetAccountProfilePicture(ctx context.Context, req *waappv1.SetA
 	return &waappv1.SetAccountProfilePictureResponse{Operation: op, ProfilePictureId: result.ProfilePictureID, HasStaging: result.HasStaging, Error: op.GetError()}, nil
 }
 
-func (s *Server) RemoveAccountProfilePicture(ctx context.Context, req *waappv1.RemoveAccountProfilePictureRequest) (*waappv1.RemoveAccountProfilePictureResponse, error) {
+func (s *accountSettingsHandler) RemoveAccountProfilePicture(ctx context.Context, req *waappv1.RemoveAccountProfilePictureRequest) (*waappv1.RemoveAccountProfilePictureResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.RemoveAccountProfilePictureResponse{Error: ToProtoError(err)}, nil
 	}
@@ -203,12 +203,12 @@ func (s *Server) RemoveAccountProfilePicture(ctx context.Context, req *waappv1.R
 	return &waappv1.RemoveAccountProfilePictureResponse{Operation: op, Error: op.GetError()}, nil
 }
 
-func (s *Server) applyAccountSettings(ctx context.Context, requestContext *waappv1.RequestContext, selector *waappv1.AccountLoginSelector, kind waappv1.AccountSettingsOperationKind, enrich func(EngineAccountSettingsInput) EngineAccountSettingsInput) (*waappv1.AccountSettingsOperation, error) {
+func (s *serverCore) applyAccountSettings(ctx context.Context, requestContext *waappv1.RequestContext, selector *waappv1.AccountLoginSelector, kind waappv1.AccountSettingsOperationKind, enrich func(EngineAccountSettingsInput) EngineAccountSettingsInput) (*waappv1.AccountSettingsOperation, error) {
 	op, _, err := s.applyAccountSettingsResult(ctx, requestContext, selector, kind, enrich)
 	return op, err
 }
 
-func (s *Server) applyAccountSettingsResult(ctx context.Context, requestContext *waappv1.RequestContext, selector *waappv1.AccountLoginSelector, kind waappv1.AccountSettingsOperationKind, enrich func(EngineAccountSettingsInput) EngineAccountSettingsInput) (*waappv1.AccountSettingsOperation, EngineAccountSettingsResult, error) {
+func (s *serverCore) applyAccountSettingsResult(ctx context.Context, requestContext *waappv1.RequestContext, selector *waappv1.AccountLoginSelector, kind waappv1.AccountSettingsOperationKind, enrich func(EngineAccountSettingsInput) EngineAccountSettingsInput) (*waappv1.AccountSettingsOperation, EngineAccountSettingsResult, error) {
 	operationCtx, cancel := accountSettingsOperationContext(ctx)
 	defer cancel()
 	loginState, err := s.accountSettingsLoginState(operationCtx, selector)
@@ -250,7 +250,7 @@ func (s *Server) applyAccountSettingsResult(ctx context.Context, requestContext 
 	return op, result, nil
 }
 
-func (s *Server) refreshTwoFactorAuthStatus(ctx context.Context, requestContext *waappv1.RequestContext, selector *waappv1.AccountLoginSelector) (*waappv1.TwoFactorAuthStatus, *waappv1.WaError, error) {
+func (s *serverCore) refreshTwoFactorAuthStatus(ctx context.Context, requestContext *waappv1.RequestContext, selector *waappv1.AccountLoginSelector) (*waappv1.TwoFactorAuthStatus, *waappv1.WaError, error) {
 	operationCtx, cancel := accountSettingsOperationContext(ctx)
 	defer cancel()
 	loginState, err := s.accountSettingsLoginState(operationCtx, selector)
@@ -283,7 +283,7 @@ func (s *Server) refreshTwoFactorAuthStatus(ctx context.Context, requestContext 
 	return status, nil, nil
 }
 
-func (s *Server) cachedTwoFactorAuthStatus(ctx context.Context, selector *waappv1.AccountLoginSelector) (*waappv1.TwoFactorAuthStatus, error) {
+func (s *serverCore) cachedTwoFactorAuthStatus(ctx context.Context, selector *waappv1.AccountLoginSelector) (*waappv1.TwoFactorAuthStatus, error) {
 	accountID, err := s.accountSettingsAccountID(ctx, selector)
 	if err != nil {
 		return nil, err
@@ -295,7 +295,7 @@ func (s *Server) cachedTwoFactorAuthStatus(ctx context.Context, selector *waappv
 	return cloneTwoFactorAuthStatus(account.GetTwoFactorAuth()), nil
 }
 
-func (s *Server) patchTwoFactorAuthStatus(ctx context.Context, accountID string, updatedAt time.Time, patch func(*waappv1.TwoFactorAuthStatus)) error {
+func (s *serverCore) patchTwoFactorAuthStatus(ctx context.Context, accountID string, updatedAt time.Time, patch func(*waappv1.TwoFactorAuthStatus)) error {
 	account, err := s.getWAAccount(ctx, accountID)
 	if err != nil {
 		return err
@@ -308,7 +308,7 @@ func (s *Server) patchTwoFactorAuthStatus(ctx context.Context, accountID string,
 	return s.saveTwoFactorAuthStatusForAccount(ctx, account, status, updatedAt)
 }
 
-func (s *Server) saveTwoFactorAuthStatus(ctx context.Context, accountID string, status *waappv1.TwoFactorAuthStatus, updatedAt time.Time) error {
+func (s *serverCore) saveTwoFactorAuthStatus(ctx context.Context, accountID string, status *waappv1.TwoFactorAuthStatus, updatedAt time.Time) error {
 	account, err := s.getWAAccount(ctx, accountID)
 	if err != nil {
 		return err
@@ -316,7 +316,7 @@ func (s *Server) saveTwoFactorAuthStatus(ctx context.Context, accountID string, 
 	return s.saveTwoFactorAuthStatusForAccount(ctx, account, status, updatedAt)
 }
 
-func (s *Server) saveTwoFactorAuthStatusForAccount(ctx context.Context, account *waappv1.WAAccount, status *waappv1.TwoFactorAuthStatus, updatedAt time.Time) error {
+func (s *serverCore) saveTwoFactorAuthStatusForAccount(ctx context.Context, account *waappv1.WAAccount, status *waappv1.TwoFactorAuthStatus, updatedAt time.Time) error {
 	if updatedAt.IsZero() {
 		updatedAt = s.clock.Now()
 	}
@@ -370,7 +370,7 @@ func mergeTwoFactorAuthStatus(status *waappv1.TwoFactorAuthStatus, patch *waappv
 	status.EmailConfirmed = status.GetEmailConfirmed() || patch.GetEmailConfirmed()
 }
 
-func (s *Server) accountSettingsAccountID(ctx context.Context, selector *waappv1.AccountLoginSelector) (string, error) {
+func (s *serverCore) accountSettingsAccountID(ctx context.Context, selector *waappv1.AccountLoginSelector) (string, error) {
 	if selector.GetWaAccountId() != "" {
 		return requireWAAccountID(selector.GetWaAccountId())
 	}
@@ -381,7 +381,7 @@ func (s *Server) accountSettingsAccountID(ctx context.Context, selector *waappv1
 	return requireWAAccountID(loginState.GetWaAccountId())
 }
 
-func (s *Server) saveAccountDisplayName(ctx context.Context, accountID string, displayName string, updatedAt time.Time) error {
+func (s *serverCore) saveAccountDisplayName(ctx context.Context, accountID string, displayName string, updatedAt time.Time) error {
 	account, err := s.getWAAccount(ctx, accountID)
 	if err != nil {
 		return err
@@ -408,7 +408,7 @@ func accountSettingsOperationContext(ctx context.Context) (context.Context, cont
 	return context.WithTimeout(ctx, defaultAccountSettingsOperationTimeout)
 }
 
-func (s *Server) accountSettingsRunner(ctx context.Context, requestContext *waappv1.RequestContext, loginState *waappv1.LoginState, kind waappv1.AccountSettingsOperationKind) (ProtocolEngine, func(), error) {
+func (s *serverCore) accountSettingsRunner(ctx context.Context, requestContext *waappv1.RequestContext, loginState *waappv1.LoginState, kind waappv1.AccountSettingsOperationKind) (ProtocolEngine, func(), error) {
 	if s.longConnections != nil {
 		if runner := s.longConnections.Runner(loginState); runner != nil {
 			return runner, func() {}, nil
@@ -417,7 +417,7 @@ func (s *Server) accountSettingsRunner(ctx context.Context, requestContext *waap
 	return s.runner, func() {}, nil
 }
 
-func (s *Server) accountSettingsLoginState(ctx context.Context, selector *waappv1.AccountLoginSelector) (*waappv1.LoginState, error) {
+func (s *serverCore) accountSettingsLoginState(ctx context.Context, selector *waappv1.AccountLoginSelector) (*waappv1.LoginState, error) {
 	if selector.GetLoginStateId() != "" {
 		return requireActiveLoginState(func() (*waappv1.LoginState, error) {
 			return s.store.GetLoginState(ctx, selector.GetLoginStateId())

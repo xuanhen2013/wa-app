@@ -10,7 +10,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func (s *Server) publishOTPCandidates(ctx context.Context, msg *waappv1.InboundMessage, session *waappv1.MessageSession, candidates []*waappv1.ExtractedCandidate, source waappv1.WaOtpSource) {
+func (s *serverCore) publishOTPCandidates(ctx context.Context, msg *waappv1.InboundMessage, session *waappv1.MessageSession, candidates []*waappv1.ExtractedCandidate, source waappv1.WaOtpSource) {
 	if s == nil || len(candidates) == 0 {
 		return
 	}

@@ -12,7 +12,7 @@ import (
 
 const numberProbeMaxAttempts = 3
 
-func (s *Server) ProbeNumberSMS(ctx context.Context, payload map[string]any) (map[string]any, error) {
+func (s *serverCore) ProbeNumberSMS(ctx context.Context, payload map[string]any) (map[string]any, error) {
 	if payload == nil {
 		payload = map[string]any{}
 	}
@@ -53,7 +53,7 @@ func (s *Server) ProbeNumberSMS(ctx context.Context, payload map[string]any) (ma
 	return lastResult, nil
 }
 
-func (s *Server) probeNumberSMSAttempt(ctx context.Context, payload map[string]any, ctxData *waappv1.RequestContext, phone *waappv1.PhoneTarget, engine *NativeEngine, attempt int) (map[string]any, WAProxyRoute, bool, string) {
+func (s *serverCore) probeNumberSMSAttempt(ctx context.Context, payload map[string]any, ctxData *waappv1.RequestContext, phone *waappv1.PhoneTarget, engine *NativeEngine, attempt int) (map[string]any, WAProxyRoute, bool, string) {
 	route, proxyURL, proxy := s.numberProbeProxy(payload)
 	probeEngine := engine
 	defer func() {
@@ -91,7 +91,7 @@ func (s *Server) probeNumberSMSAttempt(ctx context.Context, payload map[string]a
 	return result, route, false, ""
 }
 
-func (s *Server) numberProbeProxy(payload map[string]any) (WAProxyRoute, string, map[string]any) {
+func (s *serverCore) numberProbeProxy(payload map[string]any) (WAProxyRoute, string, map[string]any) {
 	route, useProxy := s.resolveWAProxyRoute(waProxyResolveRequest{
 		Payload:     payload,
 		CountryCode: proxyCountryCodeFromPayload(payload),

@@ -6,11 +6,11 @@ import (
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 )
 
-func (s *Server) DecryptMessage(ctx context.Context, req *waappv1.DecryptMessageRequest) (*waappv1.DecryptMessageResponse, error) {
+func (s *extractionHandler) DecryptMessage(ctx context.Context, req *waappv1.DecryptMessageRequest) (*waappv1.DecryptMessageResponse, error) {
 	return s.decryptMessage(ctx, req, s.runner, waappv1.WaOtpSource_WA_OTP_SOURCE_AUTO_EXTRACTION)
 }
 
-func (s *Server) decryptMessage(ctx context.Context, req *waappv1.DecryptMessageRequest, runner ProtocolEngine, otpSource waappv1.WaOtpSource) (*waappv1.DecryptMessageResponse, error) {
+func (s *serverCore) decryptMessage(ctx context.Context, req *waappv1.DecryptMessageRequest, runner ProtocolEngine, otpSource waappv1.WaOtpSource) (*waappv1.DecryptMessageResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.DecryptMessageResponse{Error: ToProtoError(err)}, nil
 	}
@@ -47,7 +47,7 @@ func (s *Server) decryptMessage(ctx context.Context, req *waappv1.DecryptMessage
 	return &waappv1.DecryptMessageResponse{DecryptedMessage: result.DecryptedMessage}, nil
 }
 
-func (s *Server) ExtractCandidates(ctx context.Context, req *waappv1.ExtractCandidatesRequest) (*waappv1.ExtractCandidatesResponse, error) {
+func (s *extractionHandler) ExtractCandidates(ctx context.Context, req *waappv1.ExtractCandidatesRequest) (*waappv1.ExtractCandidatesResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.ExtractCandidatesResponse{Error: ToProtoError(err)}, nil
 	}
@@ -79,7 +79,7 @@ func (s *Server) ExtractCandidates(ctx context.Context, req *waappv1.ExtractCand
 	return &waappv1.ExtractCandidatesResponse{Candidates: candidates}, nil
 }
 
-func (s *Server) ListAccountOtpMessages(ctx context.Context, req *waappv1.ListAccountOtpMessagesRequest) (*waappv1.ListAccountOtpMessagesResponse, error) {
+func (s *extractionHandler) ListAccountOtpMessages(ctx context.Context, req *waappv1.ListAccountOtpMessagesRequest) (*waappv1.ListAccountOtpMessagesResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.ListAccountOtpMessagesResponse{Error: ToProtoError(err)}, nil
 	}

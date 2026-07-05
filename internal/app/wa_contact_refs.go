@@ -12,7 +12,7 @@ func contactActionRefs(contactRef string, contact *waappv1.WAContact) []string {
 		refs = append(refs, contact.GetContactId())
 		refs = append(refs, contactMessageRefs(contact)...)
 	}
-	return uniqueStrings(refs...)
+	return uniqueNonEmptyStrings(refs...)
 }
 
 func contactMessageRefs(contact *waappv1.WAContact) []string {
@@ -21,7 +21,7 @@ func contactMessageRefs(contact *waappv1.WAContact) []string {
 	}
 	refs := contactRefVariants(contact.GetJid())
 	refs = append(refs, contactRefVariants(contact.GetNumber())...)
-	return uniqueStrings(refs...)
+	return uniqueNonEmptyStrings(refs...)
 }
 
 func contactRefVariants(contactRef string) []string {
@@ -32,22 +32,5 @@ func contactRefVariants(contactRef string) []string {
 	} else if strings.Contains(numberRef, "@") {
 		numberRef = contactRef
 	}
-	return uniqueStrings(contactRef, numberRef, normalizeWAJID(numberRef))
-}
-
-func uniqueStrings(values ...string) []string {
-	out := []string{}
-	seen := map[string]struct{}{}
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		if _, ok := seen[value]; ok {
-			continue
-		}
-		seen[value] = struct{}{}
-		out = append(out, value)
-	}
-	return out
+	return uniqueNonEmptyStrings(contactRef, numberRef, normalizeWAJID(numberRef))
 }

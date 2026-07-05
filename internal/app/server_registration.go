@@ -8,7 +8,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func (s *Server) ProbeAccount(ctx context.Context, req *waappv1.ProbeAccountRequest) (*waappv1.ProbeAccountResponse, error) {
+func (s *registrationHandler) ProbeAccount(ctx context.Context, req *waappv1.ProbeAccountRequest) (*waappv1.ProbeAccountResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.ProbeAccountResponse{Error: ToProtoError(err)}, nil
 	}
@@ -25,11 +25,11 @@ func (s *Server) ProbeAccount(ctx context.Context, req *waappv1.ProbeAccountRequ
 	return &waappv1.ProbeAccountResponse{Probe: probe, Error: probe.GetLastError()}, nil
 }
 
-func (s *Server) RequestVerificationCode(ctx context.Context, req *waappv1.RequestVerificationCodeRequest) (*waappv1.RequestVerificationCodeResponse, error) {
+func (s *registrationHandler) RequestVerificationCode(ctx context.Context, req *waappv1.RequestVerificationCodeRequest) (*waappv1.RequestVerificationCodeResponse, error) {
 	return s.requestVerificationCode(ctx, req, s.runner)
 }
 
-func (s *Server) requestVerificationCode(ctx context.Context, req *waappv1.RequestVerificationCodeRequest, runner ProtocolEngine) (*waappv1.RequestVerificationCodeResponse, error) {
+func (s *serverCore) requestVerificationCode(ctx context.Context, req *waappv1.RequestVerificationCodeRequest, runner ProtocolEngine) (*waappv1.RequestVerificationCodeResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.RequestVerificationCodeResponse{Error: ToProtoError(err)}, nil
 	}
@@ -53,7 +53,7 @@ func (s *Server) requestVerificationCode(ctx context.Context, req *waappv1.Reque
 	return &waappv1.RequestVerificationCodeResponse{VerificationRequest: record, AccountTransferChallenge: challenge, Error: record.GetLastError()}, nil
 }
 
-func (s *Server) RefreshAccountTransferChallenge(ctx context.Context, req *waappv1.RefreshAccountTransferChallengeRequest) (*waappv1.RefreshAccountTransferChallengeResponse, error) {
+func (s *registrationHandler) RefreshAccountTransferChallenge(ctx context.Context, req *waappv1.RefreshAccountTransferChallengeRequest) (*waappv1.RefreshAccountTransferChallengeResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.RefreshAccountTransferChallengeResponse{Error: ToProtoError(err)}, nil
 	}
@@ -82,11 +82,11 @@ func (s *Server) RefreshAccountTransferChallenge(ctx context.Context, req *waapp
 	return &waappv1.RefreshAccountTransferChallengeResponse{AccountTransferChallenge: result.Challenge, Error: ToProtoError(result.Err)}, nil
 }
 
-func (s *Server) SubmitVerificationCode(ctx context.Context, req *waappv1.SubmitVerificationCodeRequest) (*waappv1.SubmitVerificationCodeResponse, error) {
+func (s *registrationHandler) SubmitVerificationCode(ctx context.Context, req *waappv1.SubmitVerificationCodeRequest) (*waappv1.SubmitVerificationCodeResponse, error) {
 	return s.submitVerificationCode(ctx, req, s.runner)
 }
 
-func (s *Server) submitVerificationCode(ctx context.Context, req *waappv1.SubmitVerificationCodeRequest, runner ProtocolEngine) (*waappv1.SubmitVerificationCodeResponse, error) {
+func (s *serverCore) submitVerificationCode(ctx context.Context, req *waappv1.SubmitVerificationCodeRequest, runner ProtocolEngine) (*waappv1.SubmitVerificationCodeResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.SubmitVerificationCodeResponse{Error: ToProtoError(err)}, nil
 	}
@@ -132,7 +132,7 @@ func (s *Server) submitVerificationCode(ctx context.Context, req *waappv1.Submit
 	return &waappv1.SubmitVerificationCodeResponse{Registration: registration, LoginState: loginState, Error: registration.GetLastError()}, nil
 }
 
-func (s *Server) GetRegistration(ctx context.Context, req *waappv1.GetRegistrationRequest) (*waappv1.GetRegistrationResponse, error) {
+func (s *registrationHandler) GetRegistration(ctx context.Context, req *waappv1.GetRegistrationRequest) (*waappv1.GetRegistrationResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.GetRegistrationResponse{Error: ToProtoError(err)}, nil
 	}
@@ -143,7 +143,7 @@ func (s *Server) GetRegistration(ctx context.Context, req *waappv1.GetRegistrati
 	return &waappv1.GetRegistrationResponse{Registration: registration}, nil
 }
 
-func (s *Server) GetLoginState(ctx context.Context, req *waappv1.GetLoginStateRequest) (*waappv1.GetLoginStateResponse, error) {
+func (s *registrationHandler) GetLoginState(ctx context.Context, req *waappv1.GetLoginStateRequest) (*waappv1.GetLoginStateResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.GetLoginStateResponse{Error: ToProtoError(err)}, nil
 	}
@@ -154,7 +154,7 @@ func (s *Server) GetLoginState(ctx context.Context, req *waappv1.GetLoginStateRe
 	return &waappv1.GetLoginStateResponse{LoginState: loginState}, nil
 }
 
-func (s *Server) GetActiveLoginState(ctx context.Context, req *waappv1.GetActiveLoginStateRequest) (*waappv1.GetActiveLoginStateResponse, error) {
+func (s *registrationHandler) GetActiveLoginState(ctx context.Context, req *waappv1.GetActiveLoginStateRequest) (*waappv1.GetActiveLoginStateResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.GetActiveLoginStateResponse{Error: ToProtoError(err)}, nil
 	}
@@ -169,11 +169,11 @@ func (s *Server) GetActiveLoginState(ctx context.Context, req *waappv1.GetActive
 	return &waappv1.GetActiveLoginStateResponse{LoginState: loginState}, nil
 }
 
-func (s *Server) CheckLoginState(ctx context.Context, req *waappv1.CheckLoginStateRequest) (*waappv1.CheckLoginStateResponse, error) {
+func (s *registrationHandler) CheckLoginState(ctx context.Context, req *waappv1.CheckLoginStateRequest) (*waappv1.CheckLoginStateResponse, error) {
 	return s.checkLoginState(ctx, req, s.runner)
 }
 
-func (s *Server) checkLoginState(ctx context.Context, req *waappv1.CheckLoginStateRequest, runner ProtocolEngine) (*waappv1.CheckLoginStateResponse, error) {
+func (s *serverCore) checkLoginState(ctx context.Context, req *waappv1.CheckLoginStateRequest, runner ProtocolEngine) (*waappv1.CheckLoginStateResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.CheckLoginStateResponse{Error: ToProtoError(err)}, nil
 	}
@@ -210,7 +210,7 @@ func (s *Server) checkLoginState(ctx context.Context, req *waappv1.CheckLoginSta
 	return &waappv1.CheckLoginStateResponse{LoginState: loginState, Check: check, Error: check.GetError()}, nil
 }
 
-func (s *Server) loginStateForCheck(ctx context.Context, req *waappv1.CheckLoginStateRequest) (*waappv1.LoginState, error) {
+func (s *serverCore) loginStateForCheck(ctx context.Context, req *waappv1.CheckLoginStateRequest) (*waappv1.LoginState, error) {
 	if req.GetLoginStateId() != "" {
 		return s.store.GetLoginState(ctx, req.GetLoginStateId())
 	}
@@ -227,7 +227,7 @@ func (s *Server) loginStateForCheck(ctx context.Context, req *waappv1.CheckLogin
 	return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "login_state_id, registered_identity_id, or wa_account_id/client_profile_id is required", false)
 }
 
-func (s *Server) applyLoginStateCheck(loginState *waappv1.LoginState, check *waappv1.LoginStateCheck, now time.Time) bool {
+func (s *serverCore) applyLoginStateCheck(loginState *waappv1.LoginState, check *waappv1.LoginStateCheck, now time.Time) bool {
 	if loginState.GetAudit() == nil {
 		loginState.Audit = &waappv1.AuditStamp{CreatedAt: timestamppb.New(now)}
 	}
@@ -248,7 +248,7 @@ func (s *Server) applyLoginStateCheck(loginState *waappv1.LoginState, check *waa
 	return true
 }
 
-func (s *Server) loginStateFromRegistration(registration *waappv1.RegistrationRecord) (*waappv1.LoginState, error) {
+func (s *serverCore) loginStateFromRegistration(registration *waappv1.RegistrationRecord) (*waappv1.LoginState, error) {
 	if registration.GetStatus() != waappv1.RegistrationStatus_REGISTRATION_STATUS_REGISTERED {
 		return nil, nil
 	}
@@ -279,7 +279,7 @@ func (s *Server) loginStateFromRegistration(registration *waappv1.RegistrationRe
 	}, nil
 }
 
-func (s *Server) waAccountAndProfile(ctx context.Context, waAccountIDValue string, clientProfileID string) (*waappv1.WAAccount, *waappv1.ClientProfile, error) {
+func (s *serverCore) waAccountAndProfile(ctx context.Context, waAccountIDValue string, clientProfileID string) (*waappv1.WAAccount, *waappv1.ClientProfile, error) {
 	accountID, err := requireWAAccountID(waAccountIDValue)
 	if err != nil {
 		return nil, nil, err
@@ -305,7 +305,7 @@ func defaultExpiry(now time.Time, expiresAt *timestamppb.Timestamp) *timestamppb
 	return timestamppb.New(now.Add(10 * time.Minute))
 }
 
-func (s *Server) newVerificationCodeRequestRecord(account *waappv1.WAAccount, profile *waappv1.ClientProfile, method waappv1.VerificationDeliveryMethod, result EngineCodeResult) *waappv1.VerificationCodeRequestRecord {
+func (s *serverCore) newVerificationCodeRequestRecord(account *waappv1.WAAccount, profile *waappv1.ClientProfile, method waappv1.VerificationDeliveryMethod, result EngineCodeResult) *waappv1.VerificationCodeRequestRecord {
 	now := s.clock.Now()
 	return &waappv1.VerificationCodeRequestRecord{
 		VerificationRequestId: s.ids.NewID("wavrf_"),

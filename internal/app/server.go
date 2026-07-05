@@ -3,22 +3,15 @@ package app
 import (
 	"context"
 	"strings"
-	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-type Server struct {
-	waappv1.UnimplementedWaDiscoveryServiceServer
-	waappv1.UnimplementedWaProfileServiceServer
-	waappv1.UnimplementedWaRegistrationServiceServer
-	waappv1.UnimplementedWaMessagingServiceServer
-	waappv1.UnimplementedWaExtractionServiceServer
-	waappv1.UnimplementedWaContactServiceServer
-	waappv1.UnimplementedWaToolingServiceServer
-	waappv1.UnimplementedWaAccountSettingsServiceServer
-
+// serverCore holds the injected collaborators plus every cross-service helper and
+// workflow method. The per-service gRPC handlers embed it; it is the single home
+// for shared behaviour so no one handler becomes a god object.
+type serverCore struct {
 	store   Store
 	runtime RuntimeState
 	runner  ProtocolEngine
@@ -27,6 +20,75 @@ type Server struct {
 
 	commonProxyURL  string
 	longConnections *LongConnectionManager
+
+	// facade points back at the embedding Server so the few helpers that drive the
+	// full service surface (e.g. the BFF action gateway) can reach every handler.
+	facade *Server
+}
+
+// Each handler implements exactly one gRPC service and embeds the shared core.
+type discoveryHandler struct {
+	waappv1.UnimplementedWaDiscoveryServiceServer
+	*serverCore
+}
+type profileHandler struct {
+	waappv1.UnimplementedWaProfileServiceServer
+	*serverCore
+}
+type registrationHandler struct {
+	waappv1.UnimplementedWaRegistrationServiceServer
+	*serverCore
+}
+type messagingHandler struct {
+	waappv1.UnimplementedWaMessagingServiceServer
+	*serverCore
+}
+type extractionHandler struct {
+	waappv1.UnimplementedWaExtractionServiceServer
+	*serverCore
+}
+type contactHandler struct {
+	waappv1.UnimplementedWaContactServiceServer
+	*serverCore
+}
+type toolingHandler struct {
+	waappv1.UnimplementedWaToolingServiceServer
+	*serverCore
+}
+type accountSettingsHandler struct {
+	waappv1.UnimplementedWaAccountSettingsServiceServer
+	*serverCore
+}
+
+// Server is the facade that embeds the shared core and the eight per-service
+// handlers, so it still satisfies all eight gRPC service interfaces (via method
+// promotion) for a single registration/wiring surface, without owning 128 methods.
+type Server struct {
+	*serverCore
+	*discoveryHandler
+	*profileHandler
+	*registrationHandler
+	*messagingHandler
+	*extractionHandler
+	*contactHandler
+	*toolingHandler
+	*accountSettingsHandler
+}
+
+func newServerFacade(core *serverCore) *Server {
+	server := &Server{
+		serverCore:             core,
+		discoveryHandler:       &discoveryHandler{serverCore: core},
+		profileHandler:         &profileHandler{serverCore: core},
+		registrationHandler:    &registrationHandler{serverCore: core},
+		messagingHandler:       &messagingHandler{serverCore: core},
+		extractionHandler:      &extractionHandler{serverCore: core},
+		contactHandler:         &contactHandler{serverCore: core},
+		toolingHandler:         &toolingHandler{serverCore: core},
+		accountSettingsHandler: &accountSettingsHandler{serverCore: core},
+	}
+	core.facade = server
+	return server
 }
 
 func NewServer(store Store, runtime RuntimeState, runner ProtocolEngine, clock Clock, ids IDGenerator) *Server {
@@ -36,16 +98,16 @@ func NewServer(store Store, runtime RuntimeState, runner ProtocolEngine, clock C
 	if ids == nil {
 		ids = RandomIDGenerator{}
 	}
-	server := &Server{store: store, runtime: runtime, runner: runner, clock: clock, ids: ids}
+	server := newServerFacade(&serverCore{store: store, runtime: runtime, runner: runner, clock: clock, ids: ids})
 	server.longConnections = NewLongConnectionManager(server)
 	return server
 }
 
-func (s *Server) SetCommonProxyURL(common string) {
+func (s *serverCore) SetCommonProxyURL(common string) {
 	s.commonProxyURL = strings.TrimSpace(common)
 }
 
-func (s *Server) PlayIntegrityAPIConfigured() bool {
+func (s *serverCore) PlayIntegrityAPIConfigured() bool {
 	if s == nil {
 		return false
 	}
@@ -53,7 +115,7 @@ func (s *Server) PlayIntegrityAPIConfigured() bool {
 	return ok && engine.PlayIntegrityAPIConfigured()
 }
 
-func (s *Server) PlayIntegrityAPIStatus(ctx context.Context) PlayIntegrityAPIStatus {
+func (s *serverCore) PlayIntegrityAPIStatus(ctx context.Context) PlayIntegrityAPIStatus {
 	if s == nil {
 		return PlayIntegrityAPIStatus{Configured: false, Available: false, RawValuesPrinted: false}
 	}
@@ -64,14 +126,14 @@ func (s *Server) PlayIntegrityAPIStatus(ctx context.Context) PlayIntegrityAPISta
 	return engine.PlayIntegrityAPIStatus(ctx)
 }
 
-func (s *Server) RunLongConnections(ctx context.Context) error {
+func (s *serverCore) RunLongConnections(ctx context.Context) error {
 	if s == nil || s.longConnections == nil {
 		return nil
 	}
 	return s.longConnections.Run(ctx)
 }
 
-func (s *Server) RegisterAppArtifact(ctx context.Context, req *waappv1.RegisterAppArtifactRequest) (*waappv1.RegisterAppArtifactResponse, error) {
+func (s *discoveryHandler) RegisterAppArtifact(ctx context.Context, req *waappv1.RegisterAppArtifactRequest) (*waappv1.RegisterAppArtifactResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.RegisterAppArtifactResponse{Error: ToProtoError(err)}, nil
 	}
@@ -86,7 +148,7 @@ func (s *Server) RegisterAppArtifact(ctx context.Context, req *waappv1.RegisterA
 	return &waappv1.RegisterAppArtifactResponse{Artifact: artifact}, nil
 }
 
-func (s *Server) RecordProtocolProfile(ctx context.Context, req *waappv1.RecordProtocolProfileRequest) (*waappv1.RecordProtocolProfileResponse, error) {
+func (s *discoveryHandler) RecordProtocolProfile(ctx context.Context, req *waappv1.RecordProtocolProfileRequest) (*waappv1.RecordProtocolProfileResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.RecordProtocolProfileResponse{Error: ToProtoError(err)}, nil
 	}
@@ -112,7 +174,7 @@ func (s *Server) RecordProtocolProfile(ctx context.Context, req *waappv1.RecordP
 	return &waappv1.RecordProtocolProfileResponse{ProtocolProfile: profile}, nil
 }
 
-func (s *Server) GetProtocolProfile(ctx context.Context, req *waappv1.GetProtocolProfileRequest) (*waappv1.GetProtocolProfileResponse, error) {
+func (s *discoveryHandler) GetProtocolProfile(ctx context.Context, req *waappv1.GetProtocolProfileRequest) (*waappv1.GetProtocolProfileResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.GetProtocolProfileResponse{Error: ToProtoError(err)}, nil
 	}
@@ -123,7 +185,7 @@ func (s *Server) GetProtocolProfile(ctx context.Context, req *waappv1.GetProtoco
 	return &waappv1.GetProtocolProfileResponse{ProtocolProfile: profile}, nil
 }
 
-func (s *Server) CreateWAAccount(ctx context.Context, req *waappv1.CreateWAAccountRequest) (*waappv1.CreateWAAccountResponse, error) {
+func (s *profileHandler) CreateWAAccount(ctx context.Context, req *waappv1.CreateWAAccountRequest) (*waappv1.CreateWAAccountResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.CreateWAAccountResponse{Error: ToProtoError(err)}, nil
 	}
@@ -143,7 +205,7 @@ func (s *Server) CreateWAAccount(ctx context.Context, req *waappv1.CreateWAAccou
 	return &waappv1.CreateWAAccountResponse{Account: account}, nil
 }
 
-func (s *Server) GetWAAccount(ctx context.Context, req *waappv1.GetWAAccountRequest) (*waappv1.GetWAAccountResponse, error) {
+func (s *profileHandler) GetWAAccount(ctx context.Context, req *waappv1.GetWAAccountRequest) (*waappv1.GetWAAccountResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.GetWAAccountResponse{Error: ToProtoError(err)}, nil
 	}
@@ -158,7 +220,7 @@ func (s *Server) GetWAAccount(ctx context.Context, req *waappv1.GetWAAccountRequ
 	return &waappv1.GetWAAccountResponse{Account: account}, nil
 }
 
-func (s *Server) ListWAAccounts(ctx context.Context, req *waappv1.ListWAAccountsRequest) (*waappv1.ListWAAccountsResponse, error) {
+func (s *profileHandler) ListWAAccounts(ctx context.Context, req *waappv1.ListWAAccountsRequest) (*waappv1.ListWAAccountsResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.ListWAAccountsResponse{Error: ToProtoError(err)}, nil
 	}
@@ -169,7 +231,7 @@ func (s *Server) ListWAAccounts(ctx context.Context, req *waappv1.ListWAAccounts
 	return &waappv1.ListWAAccountsResponse{Accounts: accounts, NextCursor: nextCursor}, nil
 }
 
-func (s *Server) DeleteWAAccount(ctx context.Context, req *waappv1.DeleteWAAccountRequest) (*waappv1.DeleteWAAccountResponse, error) {
+func (s *profileHandler) DeleteWAAccount(ctx context.Context, req *waappv1.DeleteWAAccountRequest) (*waappv1.DeleteWAAccountResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.DeleteWAAccountResponse{Error: ToProtoError(err)}, nil
 	}
@@ -187,7 +249,7 @@ func (s *Server) DeleteWAAccount(ctx context.Context, req *waappv1.DeleteWAAccou
 	return &waappv1.DeleteWAAccountResponse{Success: true}, nil
 }
 
-func (s *Server) DeletePendingRegistrationWAAccounts(ctx context.Context, req *waappv1.DeletePendingRegistrationWAAccountsRequest) (*waappv1.DeletePendingRegistrationWAAccountsResponse, error) {
+func (s *profileHandler) DeletePendingRegistrationWAAccounts(ctx context.Context, req *waappv1.DeletePendingRegistrationWAAccountsRequest) (*waappv1.DeletePendingRegistrationWAAccountsResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.DeletePendingRegistrationWAAccountsResponse{Error: ToProtoError(err)}, nil
 	}
@@ -198,7 +260,7 @@ func (s *Server) DeletePendingRegistrationWAAccounts(ctx context.Context, req *w
 	return &waappv1.DeletePendingRegistrationWAAccountsResponse{DeletedCount: int32(deleted)}, nil
 }
 
-func (s *Server) PrepareClientProfile(ctx context.Context, req *waappv1.PrepareClientProfileRequest) (*waappv1.PrepareClientProfileResponse, error) {
+func (s *profileHandler) PrepareClientProfile(ctx context.Context, req *waappv1.PrepareClientProfileRequest) (*waappv1.PrepareClientProfileResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.PrepareClientProfileResponse{Error: ToProtoError(err)}, nil
 	}
@@ -237,7 +299,7 @@ func (s *Server) PrepareClientProfile(ctx context.Context, req *waappv1.PrepareC
 	return &waappv1.PrepareClientProfileResponse{ClientProfile: profile, Error: profile.GetLastError()}, nil
 }
 
-func (s *Server) GetClientProfile(ctx context.Context, req *waappv1.GetClientProfileRequest) (*waappv1.GetClientProfileResponse, error) {
+func (s *profileHandler) GetClientProfile(ctx context.Context, req *waappv1.GetClientProfileRequest) (*waappv1.GetClientProfileResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.GetClientProfileResponse{Error: ToProtoError(err)}, nil
 	}
@@ -248,7 +310,7 @@ func (s *Server) GetClientProfile(ctx context.Context, req *waappv1.GetClientPro
 	return &waappv1.GetClientProfileResponse{ClientProfile: s.attachClientProfileRuntime(ctx, profile)}, nil
 }
 
-func (s *Server) ListClientProfiles(ctx context.Context, req *waappv1.ListClientProfilesRequest) (*waappv1.ListClientProfilesResponse, error) {
+func (s *profileHandler) ListClientProfiles(ctx context.Context, req *waappv1.ListClientProfilesRequest) (*waappv1.ListClientProfilesResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.ListClientProfilesResponse{Error: ToProtoError(err)}, nil
 	}
@@ -266,7 +328,7 @@ func (s *Server) ListClientProfiles(ctx context.Context, req *waappv1.ListClient
 	return &waappv1.ListClientProfilesResponse{ClientProfiles: s.attachClientProfilesRuntime(ctx, profiles), NextCursor: nextCursor}, nil
 }
 
-func (s *Server) RetireClientProfile(ctx context.Context, req *waappv1.RetireClientProfileRequest) (*waappv1.RetireClientProfileResponse, error) {
+func (s *profileHandler) RetireClientProfile(ctx context.Context, req *waappv1.RetireClientProfileRequest) (*waappv1.RetireClientProfileResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.RetireClientProfileResponse{Error: ToProtoError(err)}, nil
 	}
@@ -305,7 +367,7 @@ func protocolAppVersion(profile *waappv1.ProtocolProfile) string {
 	return nativeAppVersion(profile.GetAppVersion())
 }
 
-func (s *Server) clientProfileAppVersion(ctx context.Context, profile *waappv1.ClientProfile) string {
+func (s *serverCore) clientProfileAppVersion(ctx context.Context, profile *waappv1.ClientProfile) string {
 	if s == nil || profile == nil {
 		return defaultWAAppVersion
 	}
@@ -320,7 +382,7 @@ func (s *Server) clientProfileAppVersion(ctx context.Context, profile *waappv1.C
 	return protocolAppVersion(protocol)
 }
 
-func (s *Server) protocolIDAppVersion(ctx context.Context, protocolProfileID string) string {
+func (s *serverCore) protocolIDAppVersion(ctx context.Context, protocolProfileID string) string {
 	if s == nil || strings.TrimSpace(protocolProfileID) == "" {
 		return defaultWAAppVersion
 	}
@@ -335,7 +397,7 @@ func (s *Server) protocolIDAppVersion(ctx context.Context, protocolProfileID str
 	return protocolAppVersion(protocol)
 }
 
-func (s *Server) loginStateAppVersion(ctx context.Context, loginState *waappv1.LoginState) string {
+func (s *serverCore) loginStateAppVersion(ctx context.Context, loginState *waappv1.LoginState) string {
 	if s == nil || loginState == nil {
 		return defaultWAAppVersion
 	}
@@ -344,11 +406,4 @@ func (s *Server) loginStateAppVersion(ctx context.Context, loginState *waappv1.L
 		return defaultWAAppVersion
 	}
 	return s.clientProfileAppVersion(ctx, profile)
-}
-
-func protoDurationSeconds(d interface{ GetSeconds() int64 }) time.Duration {
-	if d == nil {
-		return 0
-	}
-	return time.Duration(d.GetSeconds()) * time.Second
 }

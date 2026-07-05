@@ -7,24 +7,46 @@ import (
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 )
 
+// Store is the composite durable-persistence port. It is deliberately an
+// aggregate of per-domain repositories so callers can depend on the narrow slice
+// they use (interface segregation); the concrete backends implement the whole set.
 type Store interface {
+	DiscoveryRepository
+	WAAccountRepository
+	ClientProfileRepository
+	NativeStateStore
+	RegistrationRepository
+	MessagingRepository
+	WAContactRepository
 	Close()
+}
+
+// DiscoveryRepository persists app artifacts and protocol profiles.
+type DiscoveryRepository interface {
 	SaveAppArtifact(context.Context, *waappv1.AppArtifact) error
 	GetAppArtifact(context.Context, string) (*waappv1.AppArtifact, error)
 	SaveProtocolProfile(context.Context, *waappv1.ProtocolProfile) error
 	GetProtocolProfile(context.Context, string) (*waappv1.ProtocolProfile, error)
+}
 
+// WAAccountRepository persists WA accounts.
+type WAAccountRepository interface {
 	SaveWAAccount(context.Context, *waappv1.WAAccount) error
 	GetWAAccount(context.Context, string) (*waappv1.WAAccount, error)
 	FindWAAccountByPhone(context.Context, string) (*waappv1.WAAccount, error)
 	ListWAAccounts(context.Context, string, int) ([]*waappv1.WAAccount, string, error)
 	DeleteWAAccount(context.Context, string) error
+}
+
+// ClientProfileRepository persists client (device) profiles.
+type ClientProfileRepository interface {
 	SaveClientProfile(context.Context, *waappv1.ClientProfile) error
 	GetClientProfile(context.Context, string) (*waappv1.ClientProfile, error)
 	ListClientProfiles(context.Context, string, string, int) ([]*waappv1.ClientProfile, string, error)
-	SaveNativeState(context.Context, string, nativeState) error
-	GetNativeState(context.Context, string) (nativeState, error)
+}
 
+// RegistrationRepository persists registration, verification and login-state records.
+type RegistrationRepository interface {
 	SaveAccountProbe(context.Context, *waappv1.AccountProbe) error
 	SaveVerificationRequest(context.Context, *waappv1.VerificationCodeRequestRecord) error
 	GetVerificationRequest(context.Context, string) (*waappv1.VerificationCodeRequestRecord, error)
@@ -37,7 +59,11 @@ type Store interface {
 	ListRevokedLoginStates(context.Context) ([]LoginStateRecord, error)
 	GetLoginStateByRegistration(context.Context, string) (*waappv1.LoginState, error)
 	GetLoginStateByRegisteredIdentity(context.Context, string) (*waappv1.LoginState, error)
+}
 
+// MessagingRepository persists message sessions, inbound/decrypted messages,
+// extracted candidates and OTP messages.
+type MessagingRepository interface {
 	SaveMessageSession(context.Context, *waappv1.MessageSession) error
 	GetMessageSession(context.Context, string) (*waappv1.MessageSession, error)
 	CloseStaleOpenMessageSessions(context.Context, time.Time) (int64, error)
@@ -51,6 +77,10 @@ type Store interface {
 	SaveCandidates(context.Context, []*waappv1.ExtractedCandidate) error
 	SaveOTPMessage(context.Context, *waappv1.OtpMessage) error
 	ListAccountOTPMessages(context.Context, string, string, int, bool) ([]*waappv1.OtpMessage, string, error)
+}
+
+// WAContactRepository persists WA contacts.
+type WAContactRepository interface {
 	SaveWAContacts(context.Context, []*waappv1.WAContact) error
 	GetWAContact(context.Context, string) (*waappv1.WAContact, error)
 	GetWAContactByRef(context.Context, string, string) (*waappv1.WAContact, error)

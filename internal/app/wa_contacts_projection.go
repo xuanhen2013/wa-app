@@ -11,7 +11,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func (s *Server) saveInboundMessagesForSession(ctx context.Context, session *waappv1.MessageSession, messages []*waappv1.InboundMessage) error {
+func (s *serverCore) saveInboundMessagesForSession(ctx context.Context, session *waappv1.MessageSession, messages []*waappv1.InboundMessage) error {
 	if err := s.store.SaveInboundMessages(ctx, messages); err != nil {
 		return err
 	}

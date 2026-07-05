@@ -494,10 +494,6 @@ func (b *nativeResponseBody) Close() error {
 	return err
 }
 
-func setNativeHTTPHeader(req *http.Request, name string, value string) {
-	req.Header[name] = []string{value}
-}
-
 func encryptWASafe(plaintext []byte, serverPublicKeyHex string) (string, error) {
 	serverRaw, err := hex.DecodeString(serverPublicKeyHex)
 	if err != nil {

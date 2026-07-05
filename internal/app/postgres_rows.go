@@ -73,14 +73,6 @@ func parseMessageTransports(values []string) []waappv1.MessageTransportKind {
 	return out
 }
 
-func parseDeliveryMethods(values []string) []waappv1.VerificationDeliveryMethod {
-	out := make([]waappv1.VerificationDeliveryMethod, 0, len(values))
-	for _, value := range values {
-		out = append(out, waappv1.VerificationDeliveryMethod(waappv1.VerificationDeliveryMethod_value[value]))
-	}
-	return out
-}
-
 type protocolProfileRow struct {
 	id                string
 	artifactID        string

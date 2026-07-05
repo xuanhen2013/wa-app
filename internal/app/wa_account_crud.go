@@ -14,7 +14,7 @@ const pendingRegistrationCleanupPageLimit = 100
 // markWAAccountTransferredOut 在账号被接管/转出(chatd device_removed/replaced 或 device_logout)时,
 // 把账号级状态置为 TRANSFERRED_OUT,使仪表盘账号资料不再显示"正常"。账号不存在或已是该态则跳过;
 // 再次注册到本端会经注册流回到 ACTIVE。
-func (s *Server) markWAAccountTransferredOut(ctx context.Context, waAccountID string) {
+func (s *serverCore) markWAAccountTransferredOut(ctx context.Context, waAccountID string) {
 	if s == nil || strings.TrimSpace(waAccountID) == "" {
 		return
 	}
@@ -30,7 +30,7 @@ func (s *Server) markWAAccountTransferredOut(ctx context.Context, waAccountID st
 	}
 }
 
-func (s *Server) saveWAAccount(ctx context.Context, account *waappv1.WAAccount) (*waappv1.WAAccount, error) {
+func (s *serverCore) saveWAAccount(ctx context.Context, account *waappv1.WAAccount) (*waappv1.WAAccount, error) {
 	if account == nil {
 		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "WA account is required", false)
 	}
@@ -48,7 +48,7 @@ func (s *Server) saveWAAccount(ctx context.Context, account *waappv1.WAAccount) 
 	return s.store.GetWAAccount(ctx, accountID)
 }
 
-func (s *Server) getWAAccount(ctx context.Context, accountID string) (*waappv1.WAAccount, error) {
+func (s *serverCore) getWAAccount(ctx context.Context, accountID string) (*waappv1.WAAccount, error) {
 	accountID, err := requireWAAccountID(accountID)
 	if err != nil {
 		return nil, err
@@ -60,11 +60,11 @@ func (s *Server) getWAAccount(ctx context.Context, accountID string) (*waappv1.W
 	return account, err
 }
 
-func (s *Server) listWAAccounts(ctx context.Context, cursor string, limit int) ([]*waappv1.WAAccount, string, error) {
+func (s *serverCore) listWAAccounts(ctx context.Context, cursor string, limit int) ([]*waappv1.WAAccount, string, error) {
 	return s.store.ListWAAccounts(ctx, strings.TrimSpace(cursor), limit)
 }
 
-func (s *Server) deleteWAAccount(ctx context.Context, accountID string) (bool, error) {
+func (s *serverCore) deleteWAAccount(ctx context.Context, accountID string) (bool, error) {
 	accountID, err := requireWAAccountID(accountID)
 	if err != nil {
 		return false, err
@@ -76,7 +76,7 @@ func (s *Server) deleteWAAccount(ctx context.Context, accountID string) (bool, e
 	return err == nil, err
 }
 
-func (s *Server) deletePendingRegistrationWAAccounts(ctx context.Context) (int, error) {
+func (s *serverCore) deletePendingRegistrationWAAccounts(ctx context.Context) (int, error) {
 	cursor := ""
 	deleted := 0
 	for {
@@ -108,11 +108,11 @@ func (s *Server) deletePendingRegistrationWAAccounts(ctx context.Context) (int, 
 	}
 }
 
-func (s *Server) deleteRegistrationOTPWaitForAccount(ctx context.Context, accountID string) {
+func (s *serverCore) deleteRegistrationOTPWaitForAccount(ctx context.Context, accountID string) {
 	if s == nil || s.runtime == nil || strings.TrimSpace(accountID) == "" {
 		return
 	}
-	gateway := &actionGateway{server: s}
+	gateway := &actionGateway{server: s.facade}
 	wait, err := gateway.loadRegistrationOTPWait(ctx, accountID, "")
 	if err != nil {
 		_ = s.runtime.DeleteTransientState(ctx, registrationOTPWaitAccountKey(accountID))

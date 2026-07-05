@@ -90,13 +90,6 @@ func timestamp(t time.Time) *timestamppb.Timestamp {
 	return timestamppb.New(t.UTC())
 }
 
-func timestampOrNow(t time.Time, now time.Time) *timestamppb.Timestamp {
-	if t.IsZero() {
-		return timestamppb.New(now.UTC())
-	}
-	return timestamppb.New(t.UTC())
-}
-
 func firstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {

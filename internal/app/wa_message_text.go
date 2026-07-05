@@ -508,21 +508,11 @@ func waTemplateDisplayText(raw []byte) string {
 func waHydratedTemplateParts(raw []byte) []string {
 	parts := uniqueNonEmptyStrings(waHumanStringAtPath(raw, 6), waHumanStringAtPath(raw, 2), waHumanStringAtPath(raw, 7))
 	for _, button := range waBytesValuesAtPath(raw, 8) {
-		if text := waTemplateButtonDisplayText(button); text != "" {
+		if text := waButtonDisplayText(button); text != "" {
 			parts = append(parts, "• "+text)
 		}
 	}
 	return uniqueNonEmptyStrings(parts...)
-}
-
-func waTemplateButtonDisplayText(raw []byte) string {
-	return firstNonEmpty(
-		waHumanStringAtPath(raw, 1, 1),
-		waHumanStringAtPath(raw, 2, 1),
-		waHumanStringAtPath(raw, 2, 2),
-		waHumanStringAtPath(raw, 3, 1),
-		waHumanStringAtPath(raw, 3, 2),
-	)
 }
 
 func waContactDisplayText(raw []byte) string {

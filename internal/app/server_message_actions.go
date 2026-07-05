@@ -19,7 +19,7 @@ type messageActionRecord struct {
 	session *waappv1.MessageSession
 }
 
-func (s *Server) MarkAccountMessagesRead(ctx context.Context, req *waappv1.MarkAccountMessagesReadRequest) (*waappv1.MarkAccountMessagesReadResponse, error) {
+func (s *messagingHandler) MarkAccountMessagesRead(ctx context.Context, req *waappv1.MarkAccountMessagesReadRequest) (*waappv1.MarkAccountMessagesReadResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.MarkAccountMessagesReadResponse{Error: ToProtoError(err)}, nil
 	}
@@ -53,7 +53,7 @@ func (s *Server) MarkAccountMessagesRead(ctx context.Context, req *waappv1.MarkA
 	return resp, nil
 }
 
-func (s *Server) DeleteAccountMessages(ctx context.Context, req *waappv1.DeleteAccountMessagesRequest) (*waappv1.DeleteAccountMessagesResponse, error) {
+func (s *messagingHandler) DeleteAccountMessages(ctx context.Context, req *waappv1.DeleteAccountMessagesRequest) (*waappv1.DeleteAccountMessagesResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.DeleteAccountMessagesResponse{Error: ToProtoError(err)}, nil
 	}
@@ -87,7 +87,7 @@ func (s *Server) DeleteAccountMessages(ctx context.Context, req *waappv1.DeleteA
 	return &waappv1.DeleteAccountMessagesResponse{UpdatedCount: int32(changed)}, nil
 }
 
-func (s *Server) loadMessageReadRecords(ctx context.Context, accountID string, requestedIDs []string, contactRef string) ([]messageActionRecord, error) {
+func (s *serverCore) loadMessageReadRecords(ctx context.Context, accountID string, requestedIDs []string, contactRef string) ([]messageActionRecord, error) {
 	if len(normalizeActionMessageIDs(requestedIDs)) > 0 {
 		return s.loadMessageActionRecords(ctx, accountID, requestedIDs)
 	}
@@ -106,7 +106,7 @@ func (s *Server) loadMessageReadRecords(ctx context.Context, accountID string, r
 	return records, nil
 }
 
-func (s *Server) loadMessageActionRecords(ctx context.Context, accountID string, requestedIDs []string) ([]messageActionRecord, error) {
+func (s *serverCore) loadMessageActionRecords(ctx context.Context, accountID string, requestedIDs []string) ([]messageActionRecord, error) {
 	ids := normalizeActionMessageIDs(requestedIDs)
 	if len(ids) == 0 {
 		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "account_message_ids is required", false)
@@ -186,7 +186,7 @@ func actionRecordMessages(records []messageActionRecord) []*waappv1.InboundMessa
 	return messages
 }
 
-func (s *Server) sendReadReceipts(ctx context.Context, requestContext *waappv1.RequestContext, accountID string, records []messageActionRecord) (int, error) {
+func (s *serverCore) sendReadReceipts(ctx context.Context, requestContext *waappv1.RequestContext, accountID string, records []messageActionRecord) (int, error) {
 	receipts := readReceiptMessages(records)
 	if len(receipts) == 0 {
 		return 0, nil
@@ -238,6 +238,6 @@ func readReceiptMessages(records []messageActionRecord) []EngineMessageReadRecei
 	return out
 }
 
-func (s *Server) messageActionRunner(ctx context.Context, requestContext *waappv1.RequestContext) (ProtocolEngine, func(), error) {
+func (s *serverCore) messageActionRunner(ctx context.Context, requestContext *waappv1.RequestContext) (ProtocolEngine, func(), error) {
 	return s.runner, func() {}, nil
 }

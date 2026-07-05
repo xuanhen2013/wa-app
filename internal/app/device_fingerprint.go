@@ -9,7 +9,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func (s *Server) attachClientProfileRuntime(ctx context.Context, profile *waappv1.ClientProfile) *waappv1.ClientProfile {
+func (s *serverCore) attachClientProfileRuntime(ctx context.Context, profile *waappv1.ClientProfile) *waappv1.ClientProfile {
 	if profile == nil {
 		return nil
 	}
@@ -21,7 +21,7 @@ func (s *Server) attachClientProfileRuntime(ctx context.Context, profile *waappv
 	return profile
 }
 
-func (s *Server) attachClientProfilesRuntime(ctx context.Context, profiles []*waappv1.ClientProfile) []*waappv1.ClientProfile {
+func (s *serverCore) attachClientProfilesRuntime(ctx context.Context, profiles []*waappv1.ClientProfile) []*waappv1.ClientProfile {
 	for _, profile := range profiles {
 		s.attachClientProfileRuntime(ctx, profile)
 	}

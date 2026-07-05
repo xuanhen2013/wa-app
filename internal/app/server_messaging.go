@@ -9,7 +9,7 @@ import (
 	"google.golang.org/protobuf/types/known/timestamppb"
 )
 
-func (s *Server) OpenMessageSession(ctx context.Context, req *waappv1.OpenMessageSessionRequest) (*waappv1.OpenMessageSessionResponse, error) {
+func (s *messagingHandler) OpenMessageSession(ctx context.Context, req *waappv1.OpenMessageSessionRequest) (*waappv1.OpenMessageSessionResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.OpenMessageSessionResponse{Error: ToProtoError(err)}, nil
 	}
@@ -42,7 +42,7 @@ func (s *Server) OpenMessageSession(ctx context.Context, req *waappv1.OpenMessag
 	return &waappv1.OpenMessageSessionResponse{Session: session}, nil
 }
 
-func (s *Server) GetMessageSession(ctx context.Context, req *waappv1.GetMessageSessionRequest) (*waappv1.GetMessageSessionResponse, error) {
+func (s *messagingHandler) GetMessageSession(ctx context.Context, req *waappv1.GetMessageSessionRequest) (*waappv1.GetMessageSessionResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.GetMessageSessionResponse{Error: ToProtoError(err)}, nil
 	}
@@ -53,11 +53,11 @@ func (s *Server) GetMessageSession(ctx context.Context, req *waappv1.GetMessageS
 	return &waappv1.GetMessageSessionResponse{Session: session}, nil
 }
 
-func (s *Server) ReceiveMessageBatch(ctx context.Context, req *waappv1.ReceiveMessageBatchRequest) (*waappv1.ReceiveMessageBatchResponse, error) {
+func (s *messagingHandler) ReceiveMessageBatch(ctx context.Context, req *waappv1.ReceiveMessageBatchRequest) (*waappv1.ReceiveMessageBatchResponse, error) {
 	return s.receiveMessageBatch(ctx, req, s.runner)
 }
 
-func (s *Server) receiveMessageBatch(ctx context.Context, req *waappv1.ReceiveMessageBatchRequest, runner ProtocolEngine) (*waappv1.ReceiveMessageBatchResponse, error) {
+func (s *serverCore) receiveMessageBatch(ctx context.Context, req *waappv1.ReceiveMessageBatchRequest, runner ProtocolEngine) (*waappv1.ReceiveMessageBatchResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.ReceiveMessageBatchResponse{Error: ToProtoError(err)}, nil
 	}
@@ -123,7 +123,7 @@ func (s *Server) receiveMessageBatch(ctx context.Context, req *waappv1.ReceiveMe
 	return &waappv1.ReceiveMessageBatchResponse{Messages: result.Messages, Session: session}, nil
 }
 
-func (s *Server) ListAccountMessages(ctx context.Context, req *waappv1.ListAccountMessagesRequest) (*waappv1.ListAccountMessagesResponse, error) {
+func (s *messagingHandler) ListAccountMessages(ctx context.Context, req *waappv1.ListAccountMessagesRequest) (*waappv1.ListAccountMessagesResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.ListAccountMessagesResponse{Error: ToProtoError(err)}, nil
 	}
@@ -145,7 +145,7 @@ func (s *Server) ListAccountMessages(ctx context.Context, req *waappv1.ListAccou
 	return &waappv1.ListAccountMessagesResponse{Messages: items, NextCursor: nextCursor}, nil
 }
 
-func (s *Server) GetLongConnectionStatus(ctx context.Context, req *waappv1.GetLongConnectionStatusRequest) (*waappv1.GetLongConnectionStatusResponse, error) {
+func (s *messagingHandler) GetLongConnectionStatus(ctx context.Context, req *waappv1.GetLongConnectionStatusRequest) (*waappv1.GetLongConnectionStatusResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.GetLongConnectionStatusResponse{Error: ToProtoError(err)}, nil
 	}
@@ -162,7 +162,7 @@ func (s *Server) GetLongConnectionStatus(ctx context.Context, req *waappv1.GetLo
 	return &waappv1.GetLongConnectionStatusResponse{Connections: s.longConnections.Snapshots(req)}, nil
 }
 
-func (s *Server) AcknowledgeMessage(ctx context.Context, req *waappv1.AcknowledgeMessageRequest) (*waappv1.AcknowledgeMessageResponse, error) {
+func (s *messagingHandler) AcknowledgeMessage(ctx context.Context, req *waappv1.AcknowledgeMessageRequest) (*waappv1.AcknowledgeMessageResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.AcknowledgeMessageResponse{Error: ToProtoError(err)}, nil
 	}
@@ -185,7 +185,7 @@ func (s *Server) AcknowledgeMessage(ctx context.Context, req *waappv1.Acknowledg
 	return &waappv1.AcknowledgeMessageResponse{Message: msg}, nil
 }
 
-func (s *Server) CloseMessageSession(ctx context.Context, req *waappv1.CloseMessageSessionRequest) (*waappv1.CloseMessageSessionResponse, error) {
+func (s *messagingHandler) CloseMessageSession(ctx context.Context, req *waappv1.CloseMessageSessionRequest) (*waappv1.CloseMessageSessionResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.CloseMessageSessionResponse{Error: ToProtoError(err)}, nil
 	}

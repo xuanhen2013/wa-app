@@ -236,7 +236,7 @@ func nativeStableWamsysBootID(state nativeState) string {
 	}, "-")
 }
 
-func (e *NativeEngine) applyRuntimeWamsys(
+func (e *engineCore) applyRuntimeWamsys(
 	ctx context.Context,
 	kind waappv1.RegistrationRequestKind,
 	phone *waappv1.PhoneTarget,

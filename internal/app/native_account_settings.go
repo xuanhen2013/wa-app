@@ -12,7 +12,7 @@ type accountSettingsIQSender interface {
 	sendIQ(context.Context, nativeState, string, string, chatdNode, string) (chatdNode, chatdSessionUpdate, error)
 }
 
-func (e *NativeEngine) ApplyAccountSettings(ctx context.Context, input EngineAccountSettingsInput) EngineAccountSettingsResult {
+func (e *accountSettingsService) ApplyAccountSettings(ctx context.Context, input EngineAccountSettingsInput) EngineAccountSettingsResult {
 	state, err := e.loadState(ctx, input.ClientProfileID)
 	if err != nil {
 		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: err}
@@ -28,7 +28,7 @@ func (e *NativeEngine) ApplyAccountSettings(ctx context.Context, input EngineAcc
 	return e.applyAccountSettingsWithSender(ctx, input, state, newChatdClient(accountSettingsChatdConfig(proxyURL, state)))
 }
 
-func (e *NativeEngine) applyAccountSettingsWithSender(ctx context.Context, input EngineAccountSettingsInput, state nativeState, sender accountSettingsIQSender) EngineAccountSettingsResult {
+func (e *accountSettingsService) applyAccountSettingsWithSender(ctx context.Context, input EngineAccountSettingsInput, state nativeState, sender accountSettingsIQSender) EngineAccountSettingsResult {
 	if input.Kind == waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_PROFILE_NAME_SET {
 		return e.applyAccountProfileName(ctx, input, state, sender)
 	}
@@ -46,7 +46,7 @@ func (e *NativeEngine) applyAccountSettingsWithSender(ctx context.Context, input
 	return accountSettingsResultFromIQ(input, response)
 }
 
-func (e *NativeEngine) applyAccountProfileName(ctx context.Context, input EngineAccountSettingsInput, state nativeState, sender accountSettingsIQSender) EngineAccountSettingsResult {
+func (e *accountSettingsService) applyAccountProfileName(ctx context.Context, input EngineAccountSettingsInput, state nativeState, sender accountSettingsIQSender) EngineAccountSettingsResult {
 	state.PushName = input.DisplayName
 	if err := e.saveState(ctx, input.ClientProfileID, state); err != nil {
 		return EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native account profile name could not be saved", true)}
@@ -299,7 +299,7 @@ func accountSettingsRequestError(err error) error {
 	if accountSettingsTimeoutError(err) {
 		return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, accountSettingsRequestTimeoutMessage, true)
 	}
-	return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "native account settings request failed", accountSettingsRetryableError(err))
+	return NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "native account settings request failed", isRetryableTransportError(err))
 }
 
 func accountSettingsTimeoutError(err error) bool {
@@ -313,7 +313,7 @@ func accountSettingsTimeoutError(err error) bool {
 	return strings.Contains(lower, "timed out") || strings.Contains(lower, "timeout") || strings.Contains(lower, "deadline")
 }
 
-func accountSettingsRetryableError(err error) bool {
+func isRetryableTransportError(err error) bool {
 	if err == nil {
 		return false
 	}

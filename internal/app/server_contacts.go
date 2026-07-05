@@ -13,7 +13,7 @@ type waContactResolver interface {
 	ResolveContacts(context.Context, EngineContactResolveInput) EngineContactResolveResult
 }
 
-func (s *Server) ListWAContacts(ctx context.Context, req *waappv1.ListWAContactsRequest) (*waappv1.ListWAContactsResponse, error) {
+func (s *contactHandler) ListWAContacts(ctx context.Context, req *waappv1.ListWAContactsRequest) (*waappv1.ListWAContactsResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.ListWAContactsResponse{Error: ToProtoError(err)}, nil
 	}
@@ -31,7 +31,7 @@ func (s *Server) ListWAContacts(ctx context.Context, req *waappv1.ListWAContacts
 	return &waappv1.ListWAContactsResponse{Contacts: contacts, NextCursor: nextCursor}, nil
 }
 
-func (s *Server) ResolveWAContacts(ctx context.Context, req *waappv1.ResolveWAContactsRequest) (*waappv1.ResolveWAContactsResponse, error) {
+func (s *contactHandler) ResolveWAContacts(ctx context.Context, req *waappv1.ResolveWAContactsRequest) (*waappv1.ResolveWAContactsResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.ResolveWAContactsResponse{Error: ToProtoError(err)}, nil
 	}
@@ -79,7 +79,7 @@ func (s *Server) ResolveWAContacts(ctx context.Context, req *waappv1.ResolveWACo
 	return &waappv1.ResolveWAContactsResponse{Contacts: result.Contacts, QueriedCount: int32(result.Queried), ResolvedCount: int32(result.Resolved)}, nil
 }
 
-func (s *Server) DeleteWAContact(ctx context.Context, req *waappv1.DeleteWAContactRequest) (*waappv1.DeleteWAContactResponse, error) {
+func (s *contactHandler) DeleteWAContact(ctx context.Context, req *waappv1.DeleteWAContactRequest) (*waappv1.DeleteWAContactResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.DeleteWAContactResponse{Error: ToProtoError(err)}, nil
 	}
@@ -102,7 +102,7 @@ func (s *Server) DeleteWAContact(ctx context.Context, req *waappv1.DeleteWAConta
 	return &waappv1.DeleteWAContactResponse{Deleted: result.Deleted, DeletedMessageCount: int32(result.DeletedMessageCount)}, nil
 }
 
-func (s *Server) resolveContactActionRefs(ctx context.Context, accountID string, contactRef string) []string {
+func (s *serverCore) resolveContactActionRefs(ctx context.Context, accountID string, contactRef string) []string {
 	contact, err := s.store.GetWAContactByRef(ctx, accountID, contactRef)
 	if err != nil || contact.GetWaAccountId() != accountID {
 		return contactActionRefs(contactRef, nil)
@@ -110,7 +110,7 @@ func (s *Server) resolveContactActionRefs(ctx context.Context, accountID string,
 	return contactActionRefs(contactRef, contact)
 }
 
-func (s *Server) resolveContactJIDs(ctx context.Context, accountID string, requested []string, limit int) ([]string, error) {
+func (s *serverCore) resolveContactJIDs(ctx context.Context, accountID string, requested []string, limit int) ([]string, error) {
 	limit = normalizeContactResolveLimit(limit)
 	if len(requested) > 0 {
 		return firstNStrings(normalizeContactUsyncJIDs(requested), limit), nil
@@ -136,7 +136,7 @@ func needsContactResolution(contact *waappv1.WAContact) bool {
 	return !contactUsyncHasDisplayIdentity(contact) || contact.GetProfilePictureId() == ""
 }
 
-func (s *Server) activeContactResolveLoginState(ctx context.Context, accountID string) (*waappv1.LoginState, error) {
+func (s *serverCore) activeContactResolveLoginState(ctx context.Context, accountID string) (*waappv1.LoginState, error) {
 	records, err := s.store.ListActiveLoginStates(ctx)
 	if err != nil {
 		return nil, err
@@ -153,7 +153,7 @@ func (s *Server) activeContactResolveLoginState(ctx context.Context, accountID s
 // contactResolverRunner 优先复用该账号已建立的长连接 runner,让 usync 走同一条 chatd 连接
 // (每账号一条连接),避免另开并发 ACTIVE 连接触发服务端 <conflict type="replaced"> 自我顶替。
 // 长连接尚未就绪时回退到独立 runner(短连接窗口),与 accountSettingsRunner 一致。
-func (s *Server) contactResolverRunner(loginState *waappv1.LoginState) (ProtocolEngine, func(), error) {
+func (s *serverCore) contactResolverRunner(loginState *waappv1.LoginState) (ProtocolEngine, func(), error) {
 	if s.longConnections != nil {
 		if runner := s.longConnections.Runner(loginState); runner != nil {
 			return runner, func() {}, nil

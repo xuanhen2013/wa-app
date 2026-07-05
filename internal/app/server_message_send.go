@@ -13,7 +13,7 @@ type waTextMessageSender interface {
 	SendTextMessage(context.Context, EngineTextMessageInput) EngineTextMessageResult
 }
 
-func (s *Server) SendTextMessage(ctx context.Context, req *waappv1.SendTextMessageRequest) (*waappv1.SendTextMessageResponse, error) {
+func (s *messagingHandler) SendTextMessage(ctx context.Context, req *waappv1.SendTextMessageRequest) (*waappv1.SendTextMessageResponse, error) {
 	if err := validateContext(req.GetContext()); err != nil {
 		return &waappv1.SendTextMessageResponse{Error: ToProtoError(err)}, nil
 	}
@@ -76,7 +76,7 @@ func (s *Server) SendTextMessage(ctx context.Context, req *waappv1.SendTextMessa
 	return &waappv1.SendTextMessageResponse{ProviderMessageId: providerID, SentAt: timestamppb.New(sentAt.UTC())}, nil
 }
 
-func (s *Server) textMessageContactJID(ctx context.Context, accountID string, contactRef string) string {
+func (s *serverCore) textMessageContactJID(ctx context.Context, accountID string, contactRef string) string {
 	contactRef = strings.TrimSpace(contactRef)
 	if contactRef == "" {
 		return ""
@@ -93,7 +93,7 @@ func (s *Server) textMessageContactJID(ctx context.Context, accountID string, co
 	return normalizeWAJID(contactRef)
 }
 
-func (s *Server) textMessageRunner(ctx context.Context, requestContext *waappv1.RequestContext, loginState *waappv1.LoginState) (ProtocolEngine, func(), error) {
+func (s *serverCore) textMessageRunner(ctx context.Context, requestContext *waappv1.RequestContext, loginState *waappv1.LoginState) (ProtocolEngine, func(), error) {
 	if s.longConnections != nil {
 		if runner := s.longConnections.Runner(loginState); runner != nil {
 			return runner, func() {}, nil
@@ -102,7 +102,7 @@ func (s *Server) textMessageRunner(ctx context.Context, requestContext *waappv1.
 	return s.runner, func() {}, nil
 }
 
-func (s *Server) saveOutboundTextMessage(ctx context.Context, loginState *waappv1.LoginState, contactJID string, providerID string, text string, sentAt time.Time, ackStatus waappv1.MessageAckStatus) error {
+func (s *serverCore) saveOutboundTextMessage(ctx context.Context, loginState *waappv1.LoginState, contactJID string, providerID string, text string, sentAt time.Time, ackStatus waappv1.MessageAckStatus) error {
 	session, err := s.outboundMessageSession(ctx, loginState, sentAt)
 	if err != nil {
 		return err
@@ -136,7 +136,7 @@ func (s *Server) saveOutboundTextMessage(ctx context.Context, loginState *waappv
 	})
 }
 
-func (s *Server) outboundMessageSession(ctx context.Context, loginState *waappv1.LoginState, now time.Time) (*waappv1.MessageSession, error) {
+func (s *serverCore) outboundMessageSession(ctx context.Context, loginState *waappv1.LoginState, now time.Time) (*waappv1.MessageSession, error) {
 	if s.longConnections != nil {
 		if sessionID := s.longConnections.MessageSessionID(loginState); sessionID != "" {
 			if session, err := s.store.GetMessageSession(ctx, sessionID); err == nil {

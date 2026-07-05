@@ -18,7 +18,7 @@ type nativePreChatdABState struct {
 
 const nativeABPropSuccessRefreshDelay = time.Minute
 
-func (e *NativeEngine) refreshPreChatdABProps(ctx context.Context, phone *waappv1.PhoneTarget, state *nativeState, appVersion string) {
+func (e *engineCore) refreshPreChatdABProps(ctx context.Context, phone *waappv1.PhoneTarget, state *nativeState, appVersion string) {
 	if e == nil || state == nil || !state.PreChatdAB.due(e.clock.Now()) {
 		return
 	}
@@ -92,7 +92,7 @@ func nativeABPropRetryAfterSeconds(data map[string]any) int64 {
 	return jsonInt64(data["retry_after"])
 }
 
-func (e *NativeEngine) fetchPreChatdABProps(ctx context.Context, phone *waappv1.PhoneTarget, state nativeState, appVersion string) (map[string]any, error) {
+func (e *engineCore) fetchPreChatdABProps(ctx context.Context, phone *waappv1.PhoneTarget, state nativeState, appVersion string) (map[string]any, error) {
 	params := preChatdABPropParams(phone, state)
 	logNativeRegistrationOrderedShape("abprop", phone, waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_UNSPECIFIED, params)
 	client, err := e.httpForProxy()

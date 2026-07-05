@@ -1,7 +1,6 @@
 package app
 
 import (
-	"fmt"
 	"regexp"
 	"strings"
 	"time"
@@ -83,17 +82,6 @@ func normalizeWAAccountStatus(status waappv1.WAAccountStatus) waappv1.WAAccountS
 	return waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_PENDING_REGISTRATION
 }
 
-func parseWAAccountStatus(value string) waappv1.WAAccountStatus {
-	value = strings.ToUpper(strings.TrimSpace(value))
-	if value == "" {
-		return waappv1.WAAccountStatus_WA_ACCOUNT_STATUS_UNSPECIFIED
-	}
-	if !strings.HasPrefix(value, "WA_ACCOUNT_STATUS_") {
-		value = "WA_ACCOUNT_STATUS_" + value
-	}
-	return waappv1.WAAccountStatus(waappv1.WAAccountStatus_value[value])
-}
-
 func waAccountStatusStorageValue(account *waappv1.WAAccount) string {
 	return waAccountStatus(account).String()
 }
@@ -113,14 +101,6 @@ func requireWAAccountID(value string) (string, error) {
 	}
 	if !waAccountIDPattern.MatchString(accountID) {
 		return "", NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "wa_account_id must use letters, digits, colon, underscore or dash", false)
-	}
-	return accountID, nil
-}
-
-func requireWAAccountIDValue(value string) (string, error) {
-	accountID, err := requireWAAccountID(value)
-	if err != nil {
-		return "", fmt.Errorf("%w", err)
 	}
 	return accountID, nil
 }

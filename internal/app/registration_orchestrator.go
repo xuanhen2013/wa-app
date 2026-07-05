@@ -9,14 +9,14 @@ import (
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 )
 
-func (s *Server) StartRegistration(ctx context.Context, payload map[string]any) (map[string]any, error) {
+func (s *serverCore) StartRegistration(ctx context.Context, payload map[string]any) (map[string]any, error) {
 	if s == nil {
 		return nil, NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "wa-app service is not configured", false)
 	}
 	if payload == nil {
 		payload = map[string]any{}
 	}
-	gateway := &actionGateway{server: s}
+	gateway := &actionGateway{server: s.facade}
 	basePayload := cloneActionPayload(payload)
 	basePayload["purpose"] = firstNonEmpty(textField(basePayload, "purpose"), "WA_REGISTRATION")
 	basePayload["proxy_session_mode"] = firstNonEmpty(textField(basePayload, "proxy_session_mode"), "STICKY")
@@ -207,7 +207,7 @@ func authCodeContextFromPayload(payload map[string]any) string {
 }
 
 func registrationMethodFromPayload(payload map[string]any) waappv1.VerificationDeliveryMethod {
-	method := registrationMethodFromName(firstNonEmpty(
+	method := verificationMethodFromName(firstNonEmpty(
 		textField(payload, "delivery_method"),
 		textField(payload, "verification_method"),
 		textField(payload, "method"),
@@ -327,7 +327,7 @@ func codeFailureAllowsFallback(result EngineCodeResult) bool {
 // available (via fallback_methods) in the APK's default method order.
 func nextFallbackMethod(result EngineCodeResult, tried map[waappv1.VerificationDeliveryMethod]bool) (waappv1.VerificationDeliveryMethod, bool) {
 	for _, code := range apkDefaultRegistrationMethodOrder {
-		method := verificationMethod(code)
+		method := verificationMethodFromName(code)
 		if method == waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_UNSPECIFIED || tried[method] || !registrationFallbackMethods[method] {
 			continue
 		}
