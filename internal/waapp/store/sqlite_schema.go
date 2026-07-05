@@ -1,6 +1,6 @@
-package app
+package store
 
-const sqliteStoreSchema = `
+const SQLiteStoreSchema = `
 CREATE TABLE IF NOT EXISTS wa_sqlite_artifacts (
   id TEXT PRIMARY KEY,
   updated_at INTEGER NOT NULL,

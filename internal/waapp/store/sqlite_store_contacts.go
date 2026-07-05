@@ -1,4 +1,4 @@
-package app
+package store
 
 import (
 	"context"
@@ -42,7 +42,7 @@ ON CONFLICT(id) DO UPDATE SET
     WHEN COALESCE(NULLIF(json_extract(wa_sqlite_contacts.payload, '$.number'), ''), NULLIF(json_extract(excluded.payload, '$.number'), ''), '') <> ''
       AND COALESCE(json_extract(wa_sqlite_contacts.payload, '$.display_name'), '') = '+' || COALESCE(NULLIF(json_extract(wa_sqlite_contacts.payload, '$.number'), ''), NULLIF(json_extract(excluded.payload, '$.number'), ''), '') THEN excluded.payload
     ELSE wa_sqlite_contacts.payload
-  END`, contact.GetContactId(), contact.GetWaAccountId(), sqliteTimeValue(shared.TimeFromProto(contact.GetAudit().GetUpdatedAt())), payload); err != nil {
+  END`, contact.GetContactId(), contact.GetWaAccountId(), SQLiteTimeValue(shared.TimeFromProto(contact.GetAudit().GetUpdatedAt())), payload); err != nil {
 			return err
 		}
 	}
@@ -95,7 +95,7 @@ func (s *SQLiteStore) ListWAContacts(ctx context.Context, waAccountIDValue strin
 	query := `SELECT payload FROM wa_sqlite_contacts WHERE wa_account_id=?`
 	args := []any{waAccountIDValue}
 	if shared.HasKeysetCursor(cursor) {
-		value := sqliteTimeValue(cursor.UpdatedAt)
+		value := SQLiteTimeValue(cursor.UpdatedAt)
 		query += ` AND (updated_at < ? OR (updated_at = ? AND id < ?))`
 		args = append(args, value, value, cursor.ID)
 	}

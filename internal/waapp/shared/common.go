@@ -100,6 +100,11 @@ func TimeFromProto(ts *timestamppb.Timestamp) time.Time {
 	return ts.AsTime().UTC()
 }
 
+// NewAuditStamp builds an audit stamp from the given creation and update times.
+func NewAuditStamp(createdAt time.Time, updatedAt time.Time) *waappv1.AuditStamp {
+	return &waappv1.AuditStamp{CreatedAt: timestamppb.New(createdAt.UTC()), UpdatedAt: timestamppb.New(updatedAt.UTC())}
+}
+
 func FirstNonEmpty(values ...string) string {
 	for _, value := range values {
 		if strings.TrimSpace(value) != "" {

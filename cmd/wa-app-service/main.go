@@ -13,6 +13,7 @@ import (
 	"github.com/byte-v-forge/wa-app/internal/app"
 	"github.com/byte-v-forge/wa-app/internal/config"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/store"
 	"golang.org/x/sync/errgroup"
 	"google.golang.org/grpc"
 	"google.golang.org/grpc/health"
@@ -120,12 +121,12 @@ func configValue(value string, fallback string) string {
 	return fallback
 }
 
-func newDurableStore(ctx context.Context, cfg config.Config, dataDir string) (app.Store, error) {
+func newDurableStore(ctx context.Context, cfg config.Config, dataDir string) (store.Store, error) {
 	if strings.TrimSpace(cfg.PGDSN) != "" {
-		return app.NewPostgresStore(ctx, cfg.PGDSN)
+		return store.NewPostgresStore(ctx, cfg.PGDSN)
 	}
 	log.Printf("WA_APP_PG_DSN is not configured; wa-app uses sqlite durable store in %s", dataDir)
-	return app.NewSQLiteStore(ctx, dataDir)
+	return store.NewSQLiteStore(ctx, dataDir)
 }
 
 func newRuntimeState(ctx context.Context, cfg config.Config, dataDir string) (app.RuntimeState, error) {

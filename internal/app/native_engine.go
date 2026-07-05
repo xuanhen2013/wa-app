@@ -12,6 +12,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/store"
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"github.com/byte-v-forge/wa-app/internal/waapp/waproto"
 	"google.golang.org/protobuf/types/known/timestamppb"
@@ -34,7 +35,7 @@ var chatdNodeTokenErrorPattern = regexp.MustCompile(`(?i)(readstring could not m
 // material shaping shared by every native domain service. A fresh core is produced
 // for each proxy rebinding (see WithProxyURL).
 type engineCore struct {
-	stateStore     NativeStateStore
+	stateStore     store.NativeStateStore
 	activeProxyURL string
 	http           *nativeHTTPClient
 	clock          shared.Clock
@@ -81,7 +82,7 @@ func newNativeEngine(core *engineCore) *NativeEngine {
 	}
 }
 
-func NewNativeEngine(stateStore NativeStateStore, clock shared.Clock, ids shared.IDGenerator) (*NativeEngine, error) {
+func NewNativeEngine(stateStore store.NativeStateStore, clock shared.Clock, ids shared.IDGenerator) (*NativeEngine, error) {
 	if stateStore == nil {
 		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native state store is required", false)
 	}

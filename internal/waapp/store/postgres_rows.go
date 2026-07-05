@@ -1,4 +1,4 @@
-package app
+package store
 
 import (
 	"database/sql"
@@ -100,7 +100,7 @@ func (r protocolProfileRow) toProto() *waappv1.ProtocolProfile {
 		RegistrationFlows: parseRegistrationFlows(r.registrationFlows),
 		MessageTransports: parseMessageTransports(r.messageTransports),
 		DiscoveredAt:      timestamppb.New(r.discoveredAt.UTC()),
-		Audit:             audit(r.createdAt, r.updatedAt),
+		Audit:             shared.NewAuditStamp(r.createdAt, r.updatedAt),
 	}
 }
 
@@ -127,7 +127,7 @@ func (r waAccountRow) toProto() *waappv1.WAAccount {
 		CountryCallingCode: r.cc,
 		NationalNumber:     r.national,
 		CountryIso2:        r.iso2,
-	}, waappv1.WAAccountStatus(waappv1.WAAccountStatus_value[r.status]), audit(r.createdAt, r.updatedAt))
+	}, waappv1.WAAccountStatus(waappv1.WAAccountStatus_value[r.status]), shared.NewAuditStamp(r.createdAt, r.updatedAt))
 	if r.twoFactorConfigured.Valid || r.twoFactorEmailConfigured.Valid || r.twoFactorEmailAddress.Valid || r.twoFactorEmailVerified.Valid || r.twoFactorEmailConfirmed.Valid {
 		account.TwoFactorAuth = &waappv1.TwoFactorAuthStatus{
 			Configured:      r.twoFactorConfigured.Bool,
@@ -199,7 +199,7 @@ func (r clientProfileRow) toProto() *waappv1.ClientProfile {
 		RegistrationKeyState: waappv1.KeyMaterialStatus(waappv1.KeyMaterialStatus_value[r.registrationKeyState]),
 		MessagingKeyState:    waappv1.KeyMaterialStatus(waappv1.KeyMaterialStatus_value[r.messagingKeyState]),
 		LastUsedAt:           sqlTime(r.lastUsedAt),
-		Audit:                audit(r.createdAt, r.updatedAt),
+		Audit:                shared.NewAuditStamp(r.createdAt, r.updatedAt),
 		LastError:            protoError(r.errCode, r.errMessage, r.errRetryable),
 	}
 }
@@ -305,7 +305,7 @@ func (r loginStateRow) toProto() *waappv1.LoginState {
 		Status:               waappv1.LoginStateStatus(waappv1.LoginStateStatus_value[r.status]),
 		RegisteredAt:         timestamppb.New(r.registeredAt.UTC()),
 		LastVerifiedAt:       sqlTime(r.lastVerifiedAt),
-		Audit:                audit(r.createdAt, r.updatedAt),
+		Audit:                shared.NewAuditStamp(r.createdAt, r.updatedAt),
 		LastError:            protoError(r.errCode, r.errMessage, r.errRetryable),
 	}
 }
@@ -489,7 +489,7 @@ func (r otpMessageRow) toProto(includeSensitiveValue bool) *waappv1.OtpMessage {
 		Otp:                  text,
 		ReceivedAt:           timestamppb.New(r.receivedAt.UTC()),
 		ExpiresAt:            sqlTime(r.expiresAt),
-		Audit:                audit(r.createdAt, r.updatedAt),
+		Audit:                shared.NewAuditStamp(r.createdAt, r.updatedAt),
 	}
 }
 
@@ -530,7 +530,7 @@ func (r contactRow) toProto() *waappv1.WAContact {
 		Kind:             kind,
 		IsWhatsappUser:   r.isWhatsAppUser,
 		IsReachable:      r.isReachable,
-		Audit:            audit(r.createdAt, r.updatedAt),
+		Audit:            shared.NewAuditStamp(r.createdAt, r.updatedAt),
 		MessageCount:     int32(r.messageCount),
 		UnreadCount:      int32(r.unreadCount),
 		LastMessageAt:    sqlTime(r.lastMessageAt),

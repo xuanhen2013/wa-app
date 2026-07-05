@@ -1,4 +1,4 @@
-package app
+package store
 
 import (
 	"context"
@@ -82,7 +82,7 @@ WHERE s.wa_account_id=? AND json_extract(m.payload, '$.kind')=? AND COALESCE(jso
 	query += ` AND ` + inClause
 	args = append(args, inArgs...)
 	if shared.HasKeysetCursor(cursor) {
-		value := sqliteTimeValue(cursor.UpdatedAt)
+		value := SQLiteTimeValue(cursor.UpdatedAt)
 		query += ` AND (m.received_at < ? OR (m.received_at = ? AND m.id < ?))`
 		args = append(args, value, value, cursor.ID)
 	}

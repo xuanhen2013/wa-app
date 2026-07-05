@@ -10,22 +10,21 @@ import (
 	"time"
 
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
+	"github.com/byte-v-forge/wa-app/internal/waapp/store"
 	_ "modernc.org/sqlite"
 )
-
-const defaultWAAppDataDir = "/var/lib/wa-app"
 
 type SQLiteRuntime struct{ db *sql.DB }
 
 func NewSQLiteRuntime(ctx context.Context, dataDir string) (*SQLiteRuntime, error) {
 	dataDir = strings.TrimSpace(dataDir)
 	if dataDir == "" {
-		dataDir = defaultWAAppDataDir
+		dataDir = store.DefaultWAAppDataDir
 	}
 	if err := os.MkdirAll(dataDir, 0o700); err != nil {
 		return nil, err
 	}
-	return NewSQLiteRuntimeFile(ctx, filepath.Join(dataDir, sqliteStoreFileName))
+	return NewSQLiteRuntimeFile(ctx, filepath.Join(dataDir, store.SQLiteStoreFileName))
 }
 
 func NewSQLiteRuntimeFile(ctx context.Context, path string) (*SQLiteRuntime, error) {
@@ -43,7 +42,7 @@ func NewSQLiteRuntimeFile(ctx context.Context, path string) (*SQLiteRuntime, err
 		_ = db.Close()
 		return nil, err
 	}
-	if _, err := db.ExecContext(ctx, sqliteStoreSchema); err != nil {
+	if _, err := db.ExecContext(ctx, store.SQLiteStoreSchema); err != nil {
 		_ = db.Close()
 		return nil, err
 	}
@@ -81,7 +80,7 @@ func (r *SQLiteRuntime) ClaimRequest(ctx context.Context, requestID string, ttl 
 	if err := r.cleanup(ctx, now); err != nil {
 		return false, err
 	}
-	expiresAt := sqliteTimeValue(now.Add(ttl))
+	expiresAt := store.SQLiteTimeValue(now.Add(ttl))
 	result, err := r.db.ExecContext(ctx, `INSERT OR IGNORE INTO wa_sqlite_runtime_state (kind,key,value,expires_at) VALUES (?,?,?,?)`, "idempotency", requestID, []byte("1"), expiresAt)
 	if err != nil {
 		return false, err
@@ -137,13 +136,13 @@ func (r *SQLiteRuntime) ClaimLease(ctx context.Context, key string, holder strin
 	var expiresAt int64
 	err = tx.QueryRowContext(ctx, `SELECT value,expires_at FROM wa_sqlite_runtime_state WHERE kind=? AND key=?`, "lease", key).Scan(&current, &expiresAt)
 	switch {
-	case err == nil && string(current) != holder && expiresAt > sqliteTimeValue(now):
+	case err == nil && string(current) != holder && expiresAt > store.SQLiteTimeValue(now):
 		return false, tx.Commit()
 	case err != nil && err != sql.ErrNoRows:
 		return false, err
 	}
 	_, err = tx.ExecContext(ctx, `INSERT INTO wa_sqlite_runtime_state (kind,key,value,expires_at) VALUES (?,?,?,?)
-ON CONFLICT(kind,key) DO UPDATE SET value=excluded.value, expires_at=excluded.expires_at`, "lease", key, []byte(holder), sqliteTimeValue(now.Add(shared.NormalizeLeaseTTL(ttl))))
+ON CONFLICT(kind,key) DO UPDATE SET value=excluded.value, expires_at=excluded.expires_at`, "lease", key, []byte(holder), store.SQLiteTimeValue(now.Add(shared.NormalizeLeaseTTL(ttl))))
 	if err != nil {
 		return false, err
 	}
@@ -159,7 +158,7 @@ func (r *SQLiteRuntime) RenewLease(ctx context.Context, key string, holder strin
 	now := time.Now().UTC()
 	result, err := r.db.ExecContext(ctx, `UPDATE wa_sqlite_runtime_state
 SET expires_at=?
-WHERE kind=? AND key=? AND value=? AND expires_at>?`, sqliteTimeValue(now.Add(shared.NormalizeLeaseTTL(ttl))), "lease", key, []byte(holder), sqliteTimeValue(now))
+WHERE kind=? AND key=? AND value=? AND expires_at>?`, store.SQLiteTimeValue(now.Add(shared.NormalizeLeaseTTL(ttl))), "lease", key, []byte(holder), store.SQLiteTimeValue(now))
 	if err != nil {
 		return false, err
 	}
@@ -192,7 +191,7 @@ func (r *SQLiteRuntime) CloseSessionLease(ctx context.Context, sessionID string)
 }
 
 func (r *SQLiteRuntime) save(ctx context.Context, kind string, key string, value []byte, ttl time.Duration) error {
-	expiresAt := sqliteTimeValue(time.Now().UTC().Add(ttl))
+	expiresAt := store.SQLiteTimeValue(time.Now().UTC().Add(ttl))
 	_, err := r.db.ExecContext(ctx, `INSERT INTO wa_sqlite_runtime_state (kind,key,value,expires_at) VALUES (?,?,?,?)
 ON CONFLICT(kind,key) DO UPDATE SET value=excluded.value, expires_at=excluded.expires_at`, kind, key, value, expiresAt)
 	return err
@@ -200,7 +199,7 @@ ON CONFLICT(kind,key) DO UPDATE SET value=excluded.value, expires_at=excluded.ex
 
 func (r *SQLiteRuntime) load(ctx context.Context, kind string, key string) ([]byte, error) {
 	var value []byte
-	err := r.db.QueryRowContext(ctx, `SELECT value FROM wa_sqlite_runtime_state WHERE kind=? AND key=? AND expires_at>?`, kind, key, sqliteTimeValue(time.Now().UTC())).Scan(&value)
+	err := r.db.QueryRowContext(ctx, `SELECT value FROM wa_sqlite_runtime_state WHERE kind=? AND key=? AND expires_at>?`, kind, key, store.SQLiteTimeValue(time.Now().UTC())).Scan(&value)
 	if err != nil {
 		return nil, err
 	}
@@ -213,6 +212,6 @@ func (r *SQLiteRuntime) delete(ctx context.Context, kind string, key string) err
 }
 
 func (r *SQLiteRuntime) cleanup(ctx context.Context, now time.Time) error {
-	_, err := r.db.ExecContext(ctx, `DELETE FROM wa_sqlite_runtime_state WHERE expires_at<=?`, sqliteTimeValue(now))
+	_, err := r.db.ExecContext(ctx, `DELETE FROM wa_sqlite_runtime_state WHERE expires_at<=?`, store.SQLiteTimeValue(now))
 	return err
 }

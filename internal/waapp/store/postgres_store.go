@@ -1,4 +1,4 @@
-package app
+package store
 
 import (
 	"context"
@@ -605,10 +605,6 @@ func sqlTime(ns sql.NullTime) *timestamppb.Timestamp {
 		return nil
 	}
 	return timestamppb.New(ns.Time.UTC())
-}
-
-func audit(createdAt time.Time, updatedAt time.Time) *waappv1.AuditStamp {
-	return &waappv1.AuditStamp{CreatedAt: timestamppb.New(createdAt.UTC()), UpdatedAt: timestamppb.New(updatedAt.UTC())}
 }
 
 func errCode(err *shared.AppError) string {
