@@ -655,7 +655,7 @@ func waContactMetadataRecordHint(raw []byte) wacore.WAContactHint {
 			case 6:
 				hint.Username = waContactNameString(field.Value)
 			case 7:
-				hint.PNJID = phoneNumberWAJID(waProtoPlainString(field.Value))
+				hint.PNJID = PhoneNumberWAJID(waProtoPlainString(field.Value))
 			}
 		case field.Kind == protowire.VarintType:
 			switch field.Number {
@@ -750,7 +750,7 @@ func numericWAJID(value uint64, domain string) string {
 	return local + "@" + domain
 }
 
-func phoneNumberWAJID(value string) string {
+func PhoneNumberWAJID(value string) string {
 	digits := shared.DigitsOnly(value)
 	if len(digits) < 5 || len(digits) > 24 {
 		return ""

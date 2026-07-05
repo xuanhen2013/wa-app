@@ -559,15 +559,15 @@ func buildLoginPayload(identity loginIdentity, ua userAgentConfig, cfg loginPayl
 	return out
 }
 
-func defaultLoginPayload(identity loginIdentity, state nativeState, version string) []byte {
+func defaultLoginPayload(identity loginIdentity, state NativeState, version string) []byte {
 	return loginPayload(identity, state, version, false, false)
 }
 
-func passiveLoginCheckPayload(identity loginIdentity, state nativeState, version string) []byte {
+func passiveLoginCheckPayload(identity loginIdentity, state NativeState, version string) []byte {
 	return loginPayload(identity, state, version, true, true)
 }
 
-func loginPayload(identity loginIdentity, state nativeState, version string, passive bool, shortConnect bool) []byte {
+func loginPayload(identity loginIdentity, state NativeState, version string, passive bool, shortConnect bool) []byte {
 	ua := chatdUserAgentForState(state, version)
 	buf := make([]byte, 8)
 	_, _ = io.ReadFull(rand.Reader, buf)
@@ -576,10 +576,10 @@ func loginPayload(identity loginIdentity, state nativeState, version string, pas
 	return buildLoginPayload(identity, ua, cfg)
 }
 
-func chatdUserAgentForState(state nativeState, version string) userAgentConfig {
-	profile := normalizeNativePhoneProfile(state.Profile, "")
+func chatdUserAgentForState(state NativeState, version string) userAgentConfig {
+	profile := NormalizeNativePhoneProfile(state.Profile, "")
 	cfg := userAgentConfig{
-		version:       nativeAppVersion(version),
+		version:       NativeAppVersion(version),
 		osVersion:     profile.AndroidVersion,
 		manufacturer:  profile.DeviceVendor,
 		device:        profile.DeviceModel,

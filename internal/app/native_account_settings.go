@@ -11,7 +11,7 @@ import (
 )
 
 type accountSettingsIQSender interface {
-	sendIQ(context.Context, nativeState, string, string, chatdNode, string) (chatdNode, chatdSessionUpdate, error)
+	sendIQ(context.Context, NativeState, string, string, chatdNode, string) (chatdNode, chatdSessionUpdate, error)
 }
 
 func (e *accountSettingsService) ApplyAccountSettings(ctx context.Context, input wacore.EngineAccountSettingsInput) wacore.EngineAccountSettingsResult {
@@ -30,7 +30,7 @@ func (e *accountSettingsService) ApplyAccountSettings(ctx context.Context, input
 	return e.applyAccountSettingsWithSender(ctx, input, state, newChatdClient(accountSettingsChatdConfig(proxyURL, state)))
 }
 
-func (e *accountSettingsService) applyAccountSettingsWithSender(ctx context.Context, input wacore.EngineAccountSettingsInput, state nativeState, sender accountSettingsIQSender) wacore.EngineAccountSettingsResult {
+func (e *accountSettingsService) applyAccountSettingsWithSender(ctx context.Context, input wacore.EngineAccountSettingsInput, state NativeState, sender accountSettingsIQSender) wacore.EngineAccountSettingsResult {
 	if input.Kind == waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_PROFILE_NAME_SET {
 		return e.applyAccountProfileName(ctx, input, state, sender)
 	}
@@ -48,7 +48,7 @@ func (e *accountSettingsService) applyAccountSettingsWithSender(ctx context.Cont
 	return accountSettingsResultFromIQ(input, response)
 }
 
-func (e *accountSettingsService) applyAccountProfileName(ctx context.Context, input wacore.EngineAccountSettingsInput, state nativeState, sender accountSettingsIQSender) wacore.EngineAccountSettingsResult {
+func (e *accountSettingsService) applyAccountProfileName(ctx context.Context, input wacore.EngineAccountSettingsInput, state NativeState, sender accountSettingsIQSender) wacore.EngineAccountSettingsResult {
 	state.PushName = input.DisplayName
 	if err := e.saveState(ctx, input.ClientProfileID, state); err != nil {
 		return wacore.EngineAccountSettingsResult{Status: waappv1.AccountSettingsOperationStatus_ACCOUNT_SETTINGS_OPERATION_STATUS_REJECTED, Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL, "native account profile name could not be saved", true)}

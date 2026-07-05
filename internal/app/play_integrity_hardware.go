@@ -13,7 +13,7 @@ import (
 
 type nativeGMSHardwareContext struct {
 	Input           wamsysMaterialInput
-	State           nativeState
+	State           NativeState
 	Fields          map[string]string
 	Release         string
 	SDK             int
@@ -385,7 +385,7 @@ func nativePlayIntegrityStorage() map[string]any {
 }
 
 func nativePlayIntegrityPackageInventory(ctx nativeGMSHardwareContext) map[string]any {
-	waVersion := nativeAppVersion(ctx.Input.AppVersion)
+	waVersion := NativeAppVersion(ctx.Input.AppVersion)
 	waSourceDir := nativeStableGPIASourceDir(ctx.State)
 	return map[string]any{"packages": []map[string]any{
 		{
@@ -703,7 +703,7 @@ func nativePlayIntegrityProcStatus(ctx nativeGMSHardwareContext) string {
 	return fmt.Sprintf("Name:\troid.gms.unstable\nUmask:\t0077\nState:\tS (sleeping)\nTgid:\t%d\nPid:\t%d\nPPid:\t%d\nTracerPid:\t0\nUid:\t10123\t10123\t10123\t10123\nGid:\t10123\t10123\t10123\t10123\n", pid, pid, ppid)
 }
 
-func nativePlayIntegrityBluetoothAddress(state nativeState) string {
+func nativePlayIntegrityBluetoothAddress(state NativeState) string {
 	sum := sha256.Sum256([]byte(nativeStableRuntimeSeed(state, "bluetooth-address")))
 	raw := []byte{0x02, sum[0], sum[1], sum[2], sum[3], sum[4]}
 	parts := make([]string, 0, len(raw))
@@ -713,7 +713,7 @@ func nativePlayIntegrityBluetoothAddress(state nativeState) string {
 	return strings.Join(parts, ":")
 }
 
-func nativePlayIntegrityStableInt(state nativeState, label string, min int, spread int) int {
+func nativePlayIntegrityStableInt(state NativeState, label string, min int, spread int) int {
 	if spread <= 0 {
 		return min
 	}

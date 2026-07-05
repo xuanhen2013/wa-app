@@ -106,7 +106,7 @@ func (c *chatdClient) openTimeout() time.Duration {
 	return c.cfg.Timeout
 }
 
-func (c *chatdClient) receiveBatch(ctx context.Context, state nativeState, input wacore.EngineMessageInput, appVersion string, now time.Time) ([]*waappv1.InboundMessage, []chatdEncPayload, []*waappv1.OtpMessage, chatdSessionUpdate, error) {
+func (c *chatdClient) receiveBatch(ctx context.Context, state NativeState, input wacore.EngineMessageInput, appVersion string, now time.Time) ([]*waappv1.InboundMessage, []chatdEncPayload, []*waappv1.OtpMessage, chatdSessionUpdate, error) {
 	session, err := c.openSession(ctx, state, input.RegisteredIdentityID, defaultLoginPayload, appVersion)
 	if err != nil {
 		return nil, nil, nil, chatdSessionUpdate{}, err
@@ -115,7 +115,7 @@ func (c *chatdClient) receiveBatch(ctx context.Context, state nativeState, input
 	return session.receiveBatch(input, now)
 }
 
-func (c *chatdClient) openSession(ctx context.Context, state nativeState, registeredIdentityID string, payloadBuilder func(loginIdentity, nativeState, string) []byte, appVersion string) (*chatdSession, error) {
+func (c *chatdClient) openSession(ctx context.Context, state NativeState, registeredIdentityID string, payloadBuilder func(loginIdentity, NativeState, string) []byte, appVersion string) (*chatdSession, error) {
 	if ctx == nil {
 		ctx = context.Background()
 	}
@@ -142,7 +142,7 @@ func (c *chatdClient) openSession(ctx context.Context, state nativeState, regist
 	return nil, fmt.Errorf("no chatd endpoint candidates")
 }
 
-func (c *chatdClient) openEndpointSession(ctx context.Context, endpoint chatdEndpoint, state nativeState, registeredIdentityID string, payloadBuilder func(loginIdentity, nativeState, string) []byte, appVersion string) (*chatdSession, error) {
+func (c *chatdClient) openEndpointSession(ctx context.Context, endpoint chatdEndpoint, state NativeState, registeredIdentityID string, payloadBuilder func(loginIdentity, NativeState, string) []byte, appVersion string) (*chatdSession, error) {
 	state.ChatStatic = ensureChatStatic(state.ChatStatic)
 	privateKey, err := state.ChatStatic.privateBytes()
 	if err != nil {
@@ -407,7 +407,7 @@ func inboundMessageID(accountID string, stanzaID string, tag string, sender stri
 	return "wamsg_" + shared.StableID(strings.Join([]string{accountID, stanzaID, tag, sender, fingerprint}, ":"))
 }
 
-func (c *chatdClient) checkLoginState(ctx context.Context, state nativeState, input wacore.EngineLoginCheckInput, appVersion string) (chatdSessionUpdate, error) {
+func (c *chatdClient) checkLoginState(ctx context.Context, state NativeState, input wacore.EngineLoginCheckInput, appVersion string) (chatdSessionUpdate, error) {
 	session, err := c.openSession(ctx, state, input.RegisteredIdentityID, passiveLoginCheckPayload, appVersion)
 	if err != nil {
 		return chatdSessionUpdate{}, err
@@ -714,7 +714,7 @@ func normalizeChatRoutingInfo(value string) string {
 	return b64u(raw)
 }
 
-func resolveLoginIdentity(registeredIdentityID string, state nativeState) (loginIdentity, error) {
+func resolveLoginIdentity(registeredIdentityID string, state NativeState) (loginIdentity, error) {
 	candidates := []string{state.RegistrationJID, registeredIdentityID, state.CC + state.Phone}
 	var lastJID string
 	for _, candidate := range candidates {

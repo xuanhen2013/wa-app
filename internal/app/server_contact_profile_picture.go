@@ -46,10 +46,10 @@ func (s *serverCore) contactProfilePictureRunner(ctx context.Context, loginState
 }
 
 func contactProfilePictureRemoteTimeout(runner wacore.ProtocolEngine) time.Duration {
-	if _, ok := runner.(*longConnectionNativeEngine); ok {
-		return longConnectionWaitTimeout + defaultContactProfilePictureTimeout
+	if _, ok := runner.(*LongConnectionNativeEngine); ok {
+		return longConnectionWaitTimeout + DefaultContactProfilePictureTimeout
 	}
-	return defaultContactProfilePictureTimeout
+	return DefaultContactProfilePictureTimeout
 }
 
 func (s *accountSettingsHandler) GetAccountProfilePicture(ctx context.Context, req *waappv1.GetAccountProfilePictureRequest) (*waappv1.GetAccountProfilePictureResponse, error) {
@@ -154,7 +154,7 @@ func (s *serverCore) GetWAContactProfilePicture(ctx context.Context, contactID s
 		RegisteredIdentityID: loginState.GetRegisteredIdentityId(),
 		AppVersion:           s.loginStateAppVersion(ctx, loginState),
 		ContactJID:           contact.GetJid(),
-		ContactPNJID:         phoneNumberWAJID(contact.GetNumber()),
+		ContactPNJID:         PhoneNumberWAJID(contact.GetNumber()),
 		ContactPictureID:     contact.GetProfilePictureId(),
 		RemoteTimeout:        remoteTimeout,
 	})
@@ -311,5 +311,5 @@ func logWAProfilePictureError(scope string, err error) {
 		log.Printf("WA %s profile picture fetch failed code=%s retryable=%t", shared.SafeProxyLogToken(scope, "profile"), appErr.Code.String(), appErr.Retryable)
 		return
 	}
-	log.Printf("WA %s profile picture fetch failed code=%s retryable=false reason=%s", shared.SafeProxyLogToken(scope, "profile"), waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL.String(), contactProfilePictureFailureReason(err))
+	log.Printf("WA %s profile picture fetch failed code=%s retryable=false reason=%s", shared.SafeProxyLogToken(scope, "profile"), waappv1.WaErrorCode_WA_ERROR_CODE_INTERNAL.String(), ContactProfilePictureFailureReason(err))
 }

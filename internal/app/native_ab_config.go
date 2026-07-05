@@ -29,7 +29,7 @@ type nativePreChatdABSummary struct {
 	RequestIDRandom  bool
 }
 
-func nativePreChatdABConfigs(state nativeState) map[int]nativePreChatdABConfig {
+func nativePreChatdABConfigs(state NativeState) map[int]nativePreChatdABConfig {
 	return parseNativePreChatdABConfigs(state.PreChatdAB.ExpConfig)
 }
 
@@ -116,7 +116,7 @@ func nativeABIntFromConfigs(configs map[int]nativePreChatdABConfig, code int) (i
 	return n, true
 }
 
-func nativePreChatdABLogSummary(state nativeState) nativePreChatdABSummary {
+func nativePreChatdABLogSummary(state NativeState) nativePreChatdABSummary {
 	configs := nativePreChatdABConfigs(state)
 	return nativePreChatdABSummary{
 		ConfigCount:      len(configs),
@@ -127,15 +127,15 @@ func nativePreChatdABLogSummary(state nativeState) nativePreChatdABSummary {
 	}
 }
 
-func nativeShouldSendRegistrationGPIA(state nativeState) bool {
+func nativeShouldSendRegistrationGPIA(state NativeState) bool {
 	return nativeABBoolFromConfigs(nativePreChatdABConfigs(state), nativeABCodeGPIA, true)
 }
 
-func nativeShouldRandomizeRegistrationRequestID(state nativeState) bool {
+func nativeShouldRandomizeRegistrationRequestID(state NativeState) bool {
 	return nativeABBoolFromConfigs(nativePreChatdABConfigs(state), nativeABCodeRandomRequestID, false)
 }
 
-func applyNativePreChatdABDeviceFields(fields map[string]string, state nativeState) {
+func applyNativePreChatdABDeviceFields(fields map[string]string, state NativeState) {
 	if fields == nil {
 		return
 	}
@@ -162,7 +162,7 @@ func nativeOperatorPresent(mcc string, mnc string) bool {
 	return mcc != "" && mcc != "000" && mnc != "" && mnc != "000"
 }
 
-func nativeRecaptchaStage(state nativeState, configs map[int]nativePreChatdABConfig) string {
+func nativeRecaptchaStage(state NativeState, configs map[int]nativePreChatdABConfig) string {
 	threshold, ok := nativeABIntFromConfigs(configs, nativeABCodeRecaptchaThreshold)
 	if !ok || threshold <= 0 {
 		return "ABPROP_DISABLED"
@@ -173,7 +173,7 @@ func nativeRecaptchaStage(state nativeState, configs map[int]nativePreChatdABCon
 	return "ABPROP_DISABLED"
 }
 
-func nativeRecaptchaInstallRoll(state nativeState) int {
+func nativeRecaptchaInstallRoll(state NativeState) int {
 	seed := shared.FirstNonEmpty(state.Profile.ExpID, state.Profile.FDID, state.Profile.PhoneSHA256, state.AuthKey)
 	sum := sha256.Sum256([]byte(seed))
 	return 1 + int(binary.BigEndian.Uint16(sum[:2])%1000)

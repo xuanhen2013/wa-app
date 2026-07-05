@@ -37,7 +37,7 @@ const (
 var nativeGPIAErrorCodePool = []int{-2, -6, -1, -4}
 
 // nativeGPIAErrorCode 按账号稳定种子从池中确定性选取错误码:同账号每次构造一致,跨账号分散。
-func nativeGPIAErrorCode(state nativeState) int {
+func nativeGPIAErrorCode(state NativeState) int {
 	pool := nativeGPIAErrorCodePool
 	sum := sha256.Sum256([]byte(nativeStableRuntimeSeed(state, "gpia-error-code")))
 	return pool[int(sum[0])%len(pool)]
@@ -140,8 +140,8 @@ func nativeGPIADeviceCompactFields(input wamsysMaterialInput, sourceDir string) 
 	}
 }
 
-func nativeGPIADisplayID(state nativeState) string {
-	profile := normalizeNativePhoneProfile(state.Profile, "")
+func nativeGPIADisplayID(state NativeState) string {
+	profile := NormalizeNativePhoneProfile(state.Profile, "")
 	return shared.FirstNonEmpty(profile.BuildDisplayID, defaultNativeDeviceModel().BuildDisplayID)
 }
 
@@ -149,18 +149,18 @@ func nativeGPIASourceDir(input wamsysMaterialInput) string {
 	return nativeStableGPIASourceDir(input.State)
 }
 
-func nativeStableGPIASourceDir(state nativeState) string {
+func nativeStableGPIASourceDir(state NativeState) string {
 	first := nativeStableInstallToken(state, "source-dir-prefix")
 	second := nativeStableInstallToken(state, "source-dir-package")
 	return "/data/app/~~" + first + "==/com.whatsapp-" + second + "==/base.apk"
 }
 
-func nativeStableInstallToken(state nativeState, label string) string {
+func nativeStableInstallToken(state NativeState, label string) string {
 	sum := sha256.Sum256([]byte(nativeStableRuntimeSeed(state, label)))
 	return base64.RawURLEncoding.EncodeToString(sum[:16])
 }
 
-func nativeGPIAKeySource(state nativeState) string {
+func nativeGPIAKeySource(state NativeState) string {
 	if private, err := state.ChatStatic.privateBytes(); err == nil && len(private) == curve25519.ScalarSize {
 		if public, err := curve25519.X25519(private, curve25519.Basepoint); err == nil {
 			return base64.StdEncoding.EncodeToString(public)
@@ -175,7 +175,7 @@ func nativeGPIAKeySource(state nativeState) string {
 	return "default"
 }
 
-func nativeGPIARequestHash(state nativeState) string {
+func nativeGPIARequestHash(state NativeState) string {
 	keySource := nativeGPIAKeySource(state)
 	raw, err := base64.StdEncoding.DecodeString(keySource)
 	if err == nil && len(raw) == curve25519.PointSize {

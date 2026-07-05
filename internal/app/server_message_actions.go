@@ -211,7 +211,7 @@ func (s *serverCore) sendReadReceipts(ctx context.Context, requestContext *waapp
 		RegisteredIdentityID: loginState.GetRegisteredIdentityId(),
 		AppVersion:           s.loginStateAppVersion(ctx, loginState),
 		Messages:             receipts,
-		RemoteTimeout:        defaultMessageReadReceiptTimeout,
+		RemoteTimeout:        DefaultMessageReadReceiptTimeout,
 	})
 	return result.Sent, result.Err
 }

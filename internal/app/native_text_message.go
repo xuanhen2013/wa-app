@@ -15,7 +15,7 @@ import (
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 )
 
-const defaultTextMessageSendTimeout = 20 * time.Second
+const DefaultTextMessageSendTimeout = 20 * time.Second
 
 const textMessageAckTimeoutMessage = "WA text message send acknowledgement timed out"
 
@@ -56,7 +56,7 @@ func (e *messagingService) SendTextMessage(ctx context.Context, input wacore.Eng
 	return result.EngineTextMessageResult
 }
 
-func (e *longConnectionNativeEngine) SendTextMessage(ctx context.Context, input wacore.EngineTextMessageInput) wacore.EngineTextMessageResult {
+func (e *LongConnectionNativeEngine) SendTextMessage(ctx context.Context, input wacore.EngineTextMessageInput) wacore.EngineTextMessageResult {
 	e.mu.Lock()
 	defer e.mu.Unlock()
 	if e.closed {
@@ -86,8 +86,8 @@ func (e *longConnectionNativeEngine) SendTextMessage(ctx context.Context, input 
 	return result.EngineTextMessageResult
 }
 
-func (e *messagingService) sendTextMessageOnSession(ctx context.Context, session *chatdSession, state *nativeState, input wacore.EngineTextMessageInput, receiveInput wacore.EngineMessageInput, timeout time.Duration) chatdTextMessageSendResult {
-	providerID := newTextProviderMessageID(input.ClientMessageID)
+func (e *messagingService) sendTextMessageOnSession(ctx context.Context, session *chatdSession, state *NativeState, input wacore.EngineTextMessageInput, receiveInput wacore.EngineMessageInput, timeout time.Duration) chatdTextMessageSendResult {
+	providerID := NewTextProviderMessageID(input.ClientMessageID)
 	sentAt := e.clock.Now()
 	result := chatdTextMessageSendResult{EngineTextMessageResult: wacore.EngineTextMessageResult{ProviderMessageID: providerID, SentAt: sentAt}}
 	node, err := buildNativeTextMessageNode(state, input, providerID)
@@ -111,7 +111,7 @@ func (e *messagingService) sendTextMessageOnSession(ctx context.Context, session
 	return result
 }
 
-func (e *messagingService) applyTextMessageSendUpdate(ctx context.Context, clientProfileID string, state *nativeState, input wacore.EngineMessageInput, items []chatdReceivedItem, update chatdSessionUpdate) error {
+func (e *messagingService) applyTextMessageSendUpdate(ctx context.Context, clientProfileID string, state *NativeState, input wacore.EngineMessageInput, items []chatdReceivedItem, update chatdSessionUpdate) error {
 	if state == nil {
 		return nil
 	}
@@ -122,7 +122,7 @@ func (e *messagingService) applyTextMessageSendUpdate(ctx context.Context, clien
 	return e.saveState(ctx, clientProfileID, *state)
 }
 
-func (e *longConnectionNativeEngine) textMessageReceiveInput(input wacore.EngineTextMessageInput) wacore.EngineMessageInput {
+func (e *LongConnectionNativeEngine) textMessageReceiveInput(input wacore.EngineTextMessageInput) wacore.EngineMessageInput {
 	messageInput := e.input
 	messageInput.WAAccountID = shared.FirstNonEmpty(messageInput.WAAccountID, input.WAAccountID)
 	messageInput.ClientProfileID = shared.FirstNonEmpty(messageInput.ClientProfileID, input.ClientProfileID)
@@ -131,7 +131,7 @@ func (e *longConnectionNativeEngine) textMessageReceiveInput(input wacore.Engine
 	return messageInput
 }
 
-func buildNativeTextMessageNode(state *nativeState, input wacore.EngineTextMessageInput, providerID string) (chatdNode, error) {
+func buildNativeTextMessageNode(state *NativeState, input wacore.EngineTextMessageInput, providerID string) (chatdNode, error) {
 	contactJID := wacore.NormalizeWAJID(input.ContactJID)
 	text := strings.TrimSpace(input.Text)
 	if contactJID == "" {
@@ -155,7 +155,7 @@ func buildNativeTextMessageNode(state *nativeState, input wacore.EngineTextMessa
 	}, nil
 }
 
-func encryptNativeTextSignalMessage(state *nativeState, contactJID string, text string) ([]byte, error) {
+func encryptNativeTextSignalMessage(state *NativeState, contactJID string, text string) ([]byte, error) {
 	state.ensureMaps()
 	key, session, ok := exactSignalSession(state.Signal.Sessions, contactJID)
 	if !ok {
@@ -249,7 +249,7 @@ func latestReceiverRatchetKey(session nativeSignalSession) ([]byte, error) {
 	return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "WA text send receiver ratchet is unavailable", false)
 }
 
-func encryptSignalPlaintext(state *nativeState, session *nativeSignalSession, plaintext []byte) ([]byte, error) {
+func encryptSignalPlaintext(state *NativeState, session *nativeSignalSession, plaintext []byte) ([]byte, error) {
 	if session.SenderChain == nil {
 		return nil, fmt.Errorf("missing sender chain")
 	}
@@ -383,7 +383,7 @@ func chatdMessageSendRejection(node chatdNode, providerID string) error {
 	}
 	if errorNode, ok := chatdChild(node, "error"); ok {
 		if code := strings.TrimSpace(errorNode.Attrs["code"]); code != "" {
-			return fmt.Errorf("WA text message was rejected: code %s", safeResponseSnippet(code))
+			return fmt.Errorf("WA text message was rejected: code %s", SafeResponseSnippet(code))
 		}
 		return fmt.Errorf("WA text message was rejected")
 	}
@@ -392,7 +392,7 @@ func chatdMessageSendRejection(node chatdNode, providerID string) error {
 
 func textMessageSendTimeout(timeout time.Duration) time.Duration {
 	if timeout <= 0 {
-		return defaultTextMessageSendTimeout
+		return DefaultTextMessageSendTimeout
 	}
 	return timeout
 }
@@ -412,7 +412,7 @@ func isChatdSendError(err error) bool {
 	return errors.As(err, &appErr) && strings.HasPrefix(appErr.Message, "native chatd send failed")
 }
 
-func newTextProviderMessageID(clientID string) string {
+func NewTextProviderMessageID(clientID string) string {
 	clientID = strings.TrimSpace(clientID)
 	if validTextProviderMessageID(clientID) {
 		return clientID

@@ -9,7 +9,7 @@ import (
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 )
 
-const defaultMessageReadReceiptTimeout = 15 * time.Second
+const DefaultMessageReadReceiptTimeout = 15 * time.Second
 
 func (e *messagingService) SendReadReceipts(ctx context.Context, input wacore.EngineMessageReadReceiptInput) wacore.EngineMessageReadReceiptResult {
 	if e == nil {
@@ -29,7 +29,7 @@ func (e *messagingService) SendReadReceipts(ctx context.Context, input wacore.En
 	}
 	timeout := input.RemoteTimeout
 	if timeout <= 0 {
-		timeout = defaultMessageReadReceiptTimeout
+		timeout = DefaultMessageReadReceiptTimeout
 	}
 	client := newChatdClient(chatdConfigForState(proxyURL, state, timeout))
 	session, err := client.openSession(ctx, state, input.RegisteredIdentityID, defaultLoginPayload, input.AppVersion)

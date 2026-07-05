@@ -62,7 +62,7 @@ func buildWASafeEnvelope(plain []byte, serverPublicKeyHex string, attestation na
 	return waSafeEnvelope{Body: body + "&H=" + signature, Enc: enc, Authorization: authorization}, nil
 }
 
-func ensureNativeSoftwareAttestation(state *nativeState, now time.Time) error {
+func ensureNativeSoftwareAttestation(state *NativeState, now time.Time) error {
 	if state == nil {
 		return nil
 	}
@@ -88,7 +88,7 @@ func ensureNativeSoftwareAttestation(state *nativeState, now time.Time) error {
 	return nil
 }
 
-func nativeAttestationChallenge(state nativeState) ([]byte, error) {
+func nativeAttestationChallenge(state NativeState) ([]byte, error) {
 	if state.AuthKey != "" {
 		return decodeB64Any(state.AuthKey)
 	}

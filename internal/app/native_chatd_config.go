@@ -6,7 +6,7 @@ const (
 	chatdFallbackHost = "g-fallback.whatsapp.net"
 )
 
-func chatdConfigForState(proxyURL string, state nativeState, timeout time.Duration) chatdClientConfig {
+func chatdConfigForState(proxyURL string, state NativeState, timeout time.Duration) chatdClientConfig {
 	cfg := chatdClientConfig{
 		ProxyURL:    proxyURL,
 		RoutingInfo: state.ChatRoutingInfo,
@@ -18,13 +18,13 @@ func chatdConfigForState(proxyURL string, state nativeState, timeout time.Durati
 	return cfg
 }
 
-func accountSettingsChatdConfig(proxyURL string, state nativeState) chatdClientConfig {
+func accountSettingsChatdConfig(proxyURL string, state NativeState) chatdClientConfig {
 	cfg := chatdConfigForState(proxyURL, state, defaultAccountIQTimeout)
 	cfg.OpenTimeout = defaultAccountSettingsOpenTimeout
 	return cfg
 }
 
-func chatdEndpointsForState(state nativeState) []chatdEndpoint {
+func chatdEndpointsForState(state NativeState) []chatdEndpoint {
 	endpoints := []chatdEndpoint{}
 	if state.ChatConnection.LastHost != "" && state.ChatConnection.LastPort > 0 {
 		endpoints = append(endpoints, chatdEndpoint{Host: state.ChatConnection.LastHost, Port: state.ChatConnection.LastPort})

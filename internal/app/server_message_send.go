@@ -47,7 +47,7 @@ func (s *messagingHandler) SendTextMessage(ctx context.Context, req *waappv1.Sen
 	if !ok {
 		return &waappv1.SendTextMessageResponse{Error: shared.ToProtoError(shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "WA text message sender is not configured", false))}, nil
 	}
-	providerID := newTextProviderMessageID(req.GetClientMessageId())
+	providerID := NewTextProviderMessageID(req.GetClientMessageId())
 	result := sender.SendTextMessage(ctx, wacore.EngineTextMessageInput{
 		WAAccountID:          accountID,
 		ClientProfileID:      loginState.GetClientProfileId(),
@@ -56,7 +56,7 @@ func (s *messagingHandler) SendTextMessage(ctx context.Context, req *waappv1.Sen
 		ContactJID:           contactJID,
 		Text:                 text,
 		ClientMessageID:      providerID,
-		RemoteTimeout:        defaultTextMessageSendTimeout,
+		RemoteTimeout:        DefaultTextMessageSendTimeout,
 	})
 	if result.ProviderMessageID != "" {
 		providerID = result.ProviderMessageID
@@ -133,7 +133,7 @@ func (s *serverCore) saveOutboundTextMessage(ctx context.Context, loginState *wa
 		MessageId:          messageID,
 		Status:             waappv1.DecryptionStatus_DECRYPTION_STATUS_DECRYPTED,
 		PlaintextRef:       "outbound:" + messageID,
-		PlaintextText:      sensitiveOutput(text, "outbound-message", true),
+		PlaintextText:      SensitiveOutput(text, "outbound-message", true),
 		DecryptedAt:        timestamppb.New(sentAt.UTC()),
 	})
 }

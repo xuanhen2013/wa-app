@@ -97,7 +97,7 @@ func (s *serverCore) receiveMessageBatch(ctx context.Context, req *waappv1.Recei
 	loggedOut := result.AccountLogout
 	if loggedOut != nil {
 		session.Status = waappv1.MessageSessionStatus_MESSAGE_SESSION_STATUS_CLOSED
-		session.LastError = shared.ToProtoError(accountLoggedOutError(loggedOut.Reason))
+		session.LastError = shared.ToProtoError(AccountLoggedOutError(loggedOut.Reason))
 	} else {
 		_ = s.runtime.OpenSessionLease(ctx, session.GetMessageSessionId(), 5*time.Minute)
 	}
@@ -107,7 +107,7 @@ func (s *serverCore) receiveMessageBatch(ctx context.Context, req *waappv1.Recei
 		}
 		if loggedOut != nil {
 			loginState.Status = waappv1.LoginStateStatus_LOGIN_STATE_STATUS_REVOKED
-			loginState.LastError = shared.ToProtoError(accountLoggedOutError(loggedOut.Reason))
+			loginState.LastError = shared.ToProtoError(AccountLoggedOutError(loggedOut.Reason))
 		} else {
 			loginState.Status = waappv1.LoginStateStatus_LOGIN_STATE_STATUS_ACTIVE
 			loginState.LastVerifiedAt = timestamppb.New(now)
@@ -121,7 +121,7 @@ func (s *serverCore) receiveMessageBatch(ctx context.Context, req *waappv1.Recei
 	}
 	if loggedOut != nil {
 		s.markWAAccountTransferredOut(ctx, session.GetWaAccountId())
-		s.revokeLongConnection(session.GetRegisteredIdentityId(), accountLoggedOutError(loggedOut.Reason))
+		s.revokeLongConnection(session.GetRegisteredIdentityId(), AccountLoggedOutError(loggedOut.Reason))
 	}
 	return &waappv1.ReceiveMessageBatchResponse{Messages: result.Messages, Session: session}, nil
 }

@@ -255,7 +255,7 @@ func playIntegrityAPIRequestID(input wamsysMaterialInput, requestHash string) st
 
 func nativeGMSHardwareProfile(input wamsysMaterialInput) map[string]any {
 	state := input.State
-	profile := normalizeNativePhoneProfile(state.Profile, "")
+	profile := NormalizeNativePhoneProfile(state.Profile, "")
 	release := shared.FirstNonEmpty(profile.AndroidVersion, defaultNativeDeviceModel().Android)
 	sdk := nativeAndroidSDKInt(release)
 	vendor := shared.FirstNonEmpty(profile.DeviceVendor, defaultNativeDeviceModel().Vendor)
@@ -305,7 +305,7 @@ func nativeGMSHardwareProfile(input wamsysMaterialInput) map[string]any {
 	ctx := nativeGMSHardwareContext{
 		Input:           input,
 		State:           state,
-		Fields:          nativeDeviceMapFields(state),
+		Fields:          NativeDeviceMapFields(state),
 		Release:         release,
 		SDK:             sdk,
 		Model:           model,
@@ -453,7 +453,7 @@ func nativeGMSBuildTimeMillis(display string) int64 {
 }
 
 func nativeWAAppVersionCode(appVersion string) int {
-	if nativeAppVersion(appVersion) == defaultWAAppVersion {
+	if NativeAppVersion(appVersion) == DefaultWAAppVersion {
 		return defaultWAAppVersionCode
 	}
 	return defaultWAAppVersionCode

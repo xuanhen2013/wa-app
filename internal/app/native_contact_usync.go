@@ -15,8 +15,8 @@ import (
 )
 
 const (
-	defaultContactUsyncTimeout = 32 * time.Second
-	maxContactUsyncBatchSize   = 50
+	DefaultContactUsyncTimeout = 32 * time.Second
+	MaxContactUsyncBatchSize   = 50
 	businessProfileTimeoutText = "business profile iq timed out"
 )
 
@@ -29,7 +29,7 @@ func (e *contactsService) ResolveContacts(ctx context.Context, input wacore.Engi
 // 避免为 usync 另开一条并发 ACTIVE 连接而触发服务端 <conflict type="replaced"> 自我顶替。
 // sender 为空时回退到独立短连接(无活跃长连接的窗口)。
 func (e *contactsService) resolveContactsWithSender(ctx context.Context, input wacore.EngineContactResolveInput, sender chatdIQSender) wacore.EngineContactResolveResult {
-	jids := normalizeContactUsyncJIDs(input.JIDs)
+	jids := NormalizeContactUsyncJIDs(input.JIDs)
 	if len(jids) == 0 {
 		return wacore.EngineContactResolveResult{}
 	}
@@ -57,11 +57,11 @@ func (e *contactsService) resolveContactsWithSender(ctx context.Context, input w
 		}
 		timeout := input.RemoteTimeout
 		if timeout <= 0 {
-			timeout = defaultContactUsyncTimeout
+			timeout = DefaultContactUsyncTimeout
 		}
 		sender = newChatdClient(chatdConfigForState(proxyURL, state, timeout))
 	}
-	for _, batch := range chunkStrings(jids, maxContactUsyncBatchSize) {
+	for _, batch := range chunkStrings(jids, MaxContactUsyncBatchSize) {
 		var batchContacts []*waappv1.WAContact
 		var lastErr error
 		hadSuccess := false
@@ -100,7 +100,7 @@ func (e *contactsService) resolveContactsWithSender(ctx context.Context, input w
 	return wacore.EngineContactResolveResult{Contacts: allContacts, Queried: inputQueriedCount(input.JIDs), Resolved: contactUsyncIdentityCount(allContacts)}
 }
 
-func contactsFromNativeStateMessagePayloads(accountID string, state nativeState, jids []string, now time.Time) []*waappv1.WAContact {
+func contactsFromNativeStateMessagePayloads(accountID string, state NativeState, jids []string, now time.Time) []*waappv1.WAContact {
 	if accountID == "" || len(jids) == 0 || (len(state.MessagePayloads) == 0 && len(state.ContactHints) == 0) {
 		return nil
 	}
@@ -133,7 +133,7 @@ func contactsFromNativeStateMessagePayloads(accountID string, state nativeState,
 func unresolvedContactResolveJIDs(jids []string, contacts []*waappv1.WAContact) []string {
 	resolved := map[string]struct{}{}
 	for _, contact := range contacts {
-		if contactUsyncHasDisplayIdentity(contact) {
+		if ContactUsyncHasDisplayIdentity(contact) {
 			resolved[contact.GetJid()] = struct{}{}
 		}
 	}
@@ -148,7 +148,7 @@ func unresolvedContactResolveJIDs(jids []string, contacts []*waappv1.WAContact) 
 }
 
 func inputQueriedCount(values []string) int {
-	return len(normalizeContactUsyncJIDs(values))
+	return len(NormalizeContactUsyncJIDs(values))
 }
 
 type contactUsyncVariant struct {
@@ -597,7 +597,7 @@ func jidFromChatdValue(key string, value string) string {
 	}
 	switch key {
 	case "number", "phone", "phone_number", "business_phone_number", "wa_id", "pn":
-		return phoneNumberWAJID(value)
+		return PhoneNumberWAJID(value)
 	default:
 		return jid
 	}
@@ -669,7 +669,7 @@ func businessVerifiedNodeName(node chatdNode) string {
 	return ""
 }
 
-func (e *contactsService) resolveBusinessProfileContacts(ctx context.Context, sender chatdIQSender, state nativeState, input wacore.EngineContactResolveInput, contacts []*waappv1.WAContact) []*waappv1.WAContact {
+func (e *contactsService) resolveBusinessProfileContacts(ctx context.Context, sender chatdIQSender, state NativeState, input wacore.EngineContactResolveInput, contacts []*waappv1.WAContact) []*waappv1.WAContact {
 	refs := businessProfileRefs(contacts)
 	if len(refs) == 0 {
 		return nil
@@ -703,7 +703,7 @@ func businessProfileRefs(contacts []*waappv1.WAContact) []contactUsyncRef {
 			continue
 		}
 		queries := []string{contact.GetJid()}
-		if pnJID := phoneNumberWAJID(contact.GetNumber()); pnJID != "" {
+		if pnJID := PhoneNumberWAJID(contact.GetNumber()); pnJID != "" {
 			queries = append([]string{pnJID}, queries...)
 		}
 		for _, query := range queries {
@@ -838,7 +838,7 @@ func contactProfilePictureID(node chatdNode) string {
 	return strings.TrimSpace(shared.FirstNonEmpty(pictureNode.Attrs["id"], pictureNode.Attrs["photo_id"], pictureNode.Attrs["picture_id"]))
 }
 
-func normalizeContactUsyncJIDs(values []string) []string {
+func NormalizeContactUsyncJIDs(values []string) []string {
 	out := []string{}
 	seen := map[string]struct{}{}
 	for _, value := range values {
@@ -888,7 +888,7 @@ func contactUsyncHasIdentity(contact *waappv1.WAContact) bool {
 	return name != "" && name != "未知联系人" && !strings.HasPrefix(name, "联系人 ") && !strings.HasPrefix(name, "LID ")
 }
 
-func contactUsyncHasDisplayIdentity(contact *waappv1.WAContact) bool {
+func ContactUsyncHasDisplayIdentity(contact *waappv1.WAContact) bool {
 	if contact == nil {
 		return false
 	}
@@ -905,7 +905,7 @@ func contactNeedsDisplayResolution(contact *waappv1.WAContact) bool {
 func contactUsyncDisplayIdentityCount(contacts []*waappv1.WAContact) int {
 	count := 0
 	for _, contact := range contacts {
-		if contactUsyncHasDisplayIdentity(contact) {
+		if ContactUsyncHasDisplayIdentity(contact) {
 			count++
 		}
 	}

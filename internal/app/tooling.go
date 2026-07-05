@@ -42,7 +42,7 @@ func (e *toolingService) GeneratePhoneFingerprintProfile(ctx context.Context, re
 		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "phone is required", false)
 	}
 	profile := buildNativePhoneProfile(phone)
-	return phoneProfileToProto(phone, profile), nil
+	return PhoneProfileToProto(phone, profile), nil
 }
 
 func (e *toolingService) ImportWamsysCapture(ctx context.Context, req *waappv1.ImportWamsysCaptureRequest) (*waappv1.WamsysCapture, error) {
@@ -58,7 +58,7 @@ func (e *toolingService) BuildRegistrationRequest(ctx context.Context, req *waap
 	params := orderedParams{}
 	rawKeys := map[string]struct{}{}
 	phone := wamodel.NormalizePhone(req.GetPhone())
-	var state nativeState
+	var state NativeState
 	var hasState bool
 	if req.GetClientProfileId() != "" {
 		loaded, err := e.loadState(ctx, req.GetClientProfileId())
@@ -89,7 +89,7 @@ func (e *toolingService) BuildRegistrationRequest(ctx context.Context, req *waap
 		state = freshState
 	}
 	method := verificationMethodFromName(req.GetMethod())
-	methodName := registrationMethodName(method, "sms")
+	methodName := RegistrationMethodName(method, "sms")
 	language := shared.FirstNonEmpty(req.GetLanguage(), "en")
 	locale := shared.FirstNonEmpty(req.GetLocale(), "US")
 	switch kind {
@@ -122,7 +122,7 @@ func (e *toolingService) BuildRegistrationRequest(ctx context.Context, req *waap
 		}
 	default:
 		if hasState {
-			built, err := e.codeRequestOrderedParamsWithWamsys(ctx, phone, method, state, "", req.GetWamsysCapture(), req.GetIncludeWamsysMap(), defaultWAAppVersion, wacore.IntegrityModeErrorCode)
+			built, err := e.codeRequestOrderedParamsWithWamsys(ctx, phone, method, state, "", req.GetWamsysCapture(), req.GetIncludeWamsysMap(), DefaultWAAppVersion, wacore.IntegrityModeErrorCode)
 			if err != nil {
 				return nil, err
 			}
@@ -140,7 +140,7 @@ func (e *toolingService) BuildRegistrationRequest(ctx context.Context, req *waap
 	if kind != waappv1.RegistrationRequestKind_REGISTRATION_REQUEST_KIND_EXIST {
 		params.set("method", shared.FirstNonEmpty(params.get("method"), methodName), false)
 	}
-	wamsysCapture, err := e.wamsysProvider().RegistrationMaterial(ctx, wamsysMaterialInput{Capture: req.GetWamsysCapture(), Kind: kind, Phone: phone, State: state, AppVersion: defaultWAAppVersion, IntegrityMode: wacore.IntegrityModeErrorCode, Now: e.clock.Now()})
+	wamsysCapture, err := e.wamsysProvider().RegistrationMaterial(ctx, wamsysMaterialInput{Capture: req.GetWamsysCapture(), Kind: kind, Phone: phone, State: state, AppVersion: DefaultWAAppVersion, IntegrityMode: wacore.IntegrityModeErrorCode, Now: e.clock.Now()})
 	if err != nil {
 		return nil, err
 	}
@@ -156,10 +156,10 @@ func (e *toolingService) BuildRegistrationRequest(ctx context.Context, req *waap
 		rawKeys[key] = struct{}{}
 	}
 	plain := params.render()
-	userAgent := nativeUserAgentForState(state, defaultWAAppVersion)
+	userAgent := nativeUserAgentForState(state, DefaultWAAppVersion)
 	resp := &waappv1.BuildRegistrationRequestResponse{RawParamKeys: sortedSet(rawKeys), UserAgent: userAgent, Headers: registrationHeaders(userAgent)}
 	resp.Params = params.toProto(req.GetIncludeSensitiveValues())
-	resp.Plaintext = sensitiveOutput(plain, "registration-plaintext", req.GetIncludeSensitiveValues())
+	resp.Plaintext = SensitiveOutput(plain, "registration-plaintext", req.GetIncludeSensitiveValues())
 	if req.GetEncryptRequest() {
 		if err := ensureNativeSoftwareAttestation(&state, e.clock.Now()); err != nil {
 			return nil, err
@@ -171,7 +171,7 @@ func (e *toolingService) BuildRegistrationRequest(ctx context.Context, req *waap
 		if envelope.Authorization != "" {
 			resp.Headers["Authorization"] = envelope.Authorization
 		}
-		resp.Body = sensitiveOutput(envelope.Body, "registration-body", req.GetIncludeSensitiveValues())
+		resp.Body = SensitiveOutput(envelope.Body, "registration-body", req.GetIncludeSensitiveValues())
 		resp.EncSha256 = encHash(envelope.Enc)
 		resp.EncLength = int32(len(envelope.Enc))
 	}
@@ -188,7 +188,7 @@ func (e *toolingService) EncryptWASafeEnvelope(ctx context.Context, req *waappv1
 	if err != nil {
 		return nil, err
 	}
-	return &waappv1.EncryptWASafeEnvelopeResponse{Enc: sensitiveOutput(enc, "wasafe-enc", req.GetIncludeSensitiveValues()), EncSha256: encHash(enc), EncLength: int32(len(enc))}, nil
+	return &waappv1.EncryptWASafeEnvelopeResponse{Enc: SensitiveOutput(enc, "wasafe-enc", req.GetIncludeSensitiveValues()), EncSha256: encHash(enc), EncLength: int32(len(enc))}, nil
 }
 
 func (e *toolingService) DeriveRegistrationToken(ctx context.Context, req *waappv1.DeriveRegistrationTokenRequest) (*waappv1.DeriveRegistrationTokenResponse, error) {
@@ -197,7 +197,7 @@ func (e *toolingService) DeriveRegistrationToken(ctx context.Context, req *waapp
 	if err != nil {
 		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "registration token derivation failed", false)
 	}
-	return &waappv1.DeriveRegistrationTokenResponse{Token: sensitiveOutput(token, "registration-token", req.GetIncludeSensitiveValues())}, nil
+	return &waappv1.DeriveRegistrationTokenResponse{Token: SensitiveOutput(token, "registration-token", req.GetIncludeSensitiveValues())}, nil
 }
 
 func (e *toolingService) DeriveAuthKey(ctx context.Context, req *waappv1.DeriveAuthKeyRequest) (*waappv1.DeriveAuthKeyResponse, error) {
@@ -206,7 +206,7 @@ func (e *toolingService) DeriveAuthKey(ctx context.Context, req *waappv1.DeriveA
 	if err != nil {
 		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "authkey derivation failed", false)
 	}
-	return &waappv1.DeriveAuthKeyResponse{Authkey: sensitiveOutput(authkey, "authkey", req.GetIncludeSensitiveValues())}, nil
+	return &waappv1.DeriveAuthKeyResponse{Authkey: SensitiveOutput(authkey, "authkey", req.GetIncludeSensitiveValues())}, nil
 }
 
 type orderedParam struct {
@@ -289,7 +289,7 @@ func (p orderedParams) render() string {
 func (p orderedParams) toProto(include bool) []*waappv1.RegistrationRequestParam {
 	out := make([]*waappv1.RegistrationRequestParam, 0, len(p))
 	for _, item := range p {
-		out = append(out, &waappv1.RegistrationRequestParam{Key: item.key, Value: sensitiveOutput(item.val, "param:"+item.key, include), RawPercentEncoded: item.raw})
+		out = append(out, &waappv1.RegistrationRequestParam{Key: item.key, Value: SensitiveOutput(item.val, "param:"+item.key, include), RawPercentEncoded: item.raw})
 	}
 	return out
 }
@@ -377,7 +377,7 @@ func applyWamsysToParams(params *orderedParams, rawKeys map[string]struct{}, cap
 	}
 }
 
-func phoneProfileToProto(phone *waappv1.PhoneTarget, profile nativePhoneProfile) *waappv1.PhoneFingerprintProfile {
+func PhoneProfileToProto(phone *waappv1.PhoneTarget, profile nativePhoneProfile) *waappv1.PhoneFingerprintProfile {
 	base := map[string]string{"fdid": profile.FDID, "expid": profile.ExpID, "expid_uuid": profile.ExpIDUUID, "access_session_id": profile.AccessSessionID, "access_session_id_uuid": profile.AccessSessionIDUUID}
 	raw := map[string]string{"id": profile.ID, "id_hex": profile.IDHex, "backup_token": profile.BackupToken, "backup_token_hex": profile.BackupTokenHex}
 	device := map[string]string{}
@@ -644,7 +644,7 @@ func sensitiveInput(value *waappv1.SensitiveText) string {
 	return shared.FirstNonEmpty(value.GetValue(), value.GetRedactedValue())
 }
 
-func sensitiveOutput(value string, refPrefix string, include bool) *waappv1.SensitiveText {
+func SensitiveOutput(value string, refPrefix string, include bool) *waappv1.SensitiveText {
 	out := &waappv1.SensitiveText{RedactedValue: shared.Redacted(value), SecretRef: refPrefix + ":" + shared.StableID(value)}
 	if include {
 		out.Value = value

@@ -47,7 +47,7 @@ type signalDecryptOutput struct {
 	plaintext []byte
 }
 
-func decryptNativeSignalPayload(state *nativeState, payload nativeMessagePayload, commit bool) (signalDecryptOutput, error) {
+func decryptNativeSignalPayload(state *NativeState, payload nativeMessagePayload, commit bool) (signalDecryptOutput, error) {
 	state.ensureMaps()
 	enc, err := decodeB64Any(payload.Payload)
 	if err != nil {
@@ -83,7 +83,7 @@ func normalizeNativeSignalEncType(value string) string {
 	}
 }
 
-func decryptNativeSignalPayloadByType(state *nativeState, enc []byte, encType string, sender string, commit bool) (signalDecryptOutput, error) {
+func decryptNativeSignalPayloadByType(state *NativeState, enc []byte, encType string, sender string, commit bool) (signalDecryptOutput, error) {
 	switch encType {
 	case "pkmsg":
 		return decryptNativePKMsg(state, enc, sender, commit)
@@ -94,7 +94,7 @@ func decryptNativeSignalPayloadByType(state *nativeState, enc []byte, encType st
 	}
 }
 
-func decryptNativePKMsg(state *nativeState, enc []byte, sender string, commit bool) (signalDecryptOutput, error) {
+func decryptNativePKMsg(state *NativeState, enc []byte, sender string, commit bool) (signalDecryptOutput, error) {
 	pkmsg, err := parsePreKeySignalMessage(enc)
 	if err != nil {
 		return signalDecryptOutput{}, err
@@ -172,7 +172,7 @@ func decryptNativePKMsg(state *nativeState, enc []byte, sender string, commit bo
 	return signalDecryptOutput{}, fmt.Errorf("pkmsg decrypt failed; %s", strings.Join(errors, "; "))
 }
 
-func decryptNativeMsg(state *nativeState, enc []byte, sender string, commit bool) (signalDecryptOutput, error) {
+func decryptNativeMsg(state *NativeState, enc []byte, sender string, commit bool) (signalDecryptOutput, error) {
 	msg, err := parseSignalMessage(enc)
 	if err != nil {
 		return signalDecryptOutput{}, err
@@ -393,7 +393,7 @@ func signalMessageMAC(macKey []byte, senderIdentity []byte, receiverIdentity []b
 	return mac.Sum(nil)[:8], nil
 }
 
-func decryptSignalWithChain(state *nativeState, msg signalMessage, chainKey []byte, chainIndex int, remoteIdentity []byte) ([]byte, []byte, int, error) {
+func decryptSignalWithChain(state *NativeState, msg signalMessage, chainKey []byte, chainIndex int, remoteIdentity []byte) ([]byte, []byte, int, error) {
 	keys, nextKey, nextIndex, err := messageKeysForCounter(chainKey, chainIndex, msg.counter)
 	if err != nil {
 		return nil, nil, 0, err
@@ -416,7 +416,7 @@ func decryptSignalWithChain(state *nativeState, msg signalMessage, chainKey []by
 	return plaintext, nextKey, nextIndex, nil
 }
 
-func commitPKMsgSession(state *nativeState, sender string, pkmsg preKeySignalMessage, signedPreKey nativeSignalPreKey, rootKey []byte, nextChainKey []byte, nextIndex int) {
+func commitPKMsgSession(state *NativeState, sender string, pkmsg preKeySignalMessage, signedPreKey nativeSignalPreKey, rootKey []byte, nextChainKey []byte, nextIndex int) {
 	state.ensureMaps()
 	senderKey := signalSenderKey(sender)
 	remoteIdentity, _ := withSignalCurvePrefix(pkmsg.identityKey)

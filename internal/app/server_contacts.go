@@ -70,7 +70,7 @@ func (s *contactHandler) ResolveWAContacts(ctx context.Context, req *waappv1.Res
 		RegisteredIdentityID: loginState.GetRegisteredIdentityId(),
 		AppVersion:           s.loginStateAppVersion(ctx, loginState),
 		JIDs:                 jids,
-		RemoteTimeout:        defaultContactUsyncTimeout,
+		RemoteTimeout:        DefaultContactUsyncTimeout,
 	})
 	if len(result.Contacts) > 0 {
 		_ = s.store.SaveWAContacts(ctx, result.Contacts)
@@ -115,7 +115,7 @@ func (s *serverCore) resolveContactActionRefs(ctx context.Context, accountID str
 func (s *serverCore) resolveContactJIDs(ctx context.Context, accountID string, requested []string, limit int) ([]string, error) {
 	limit = normalizeContactResolveLimit(limit)
 	if len(requested) > 0 {
-		return firstNStrings(normalizeContactUsyncJIDs(requested), limit), nil
+		return firstNStrings(NormalizeContactUsyncJIDs(requested), limit), nil
 	}
 	contacts, _, err := s.store.ListWAContacts(ctx, accountID, "", limit)
 	if err != nil {
@@ -128,14 +128,14 @@ func (s *serverCore) resolveContactJIDs(ctx context.Context, accountID string, r
 		}
 		jids = append(jids, contact.GetJid())
 	}
-	return normalizeContactUsyncJIDs(jids), nil
+	return NormalizeContactUsyncJIDs(jids), nil
 }
 
 func needsContactResolution(contact *waappv1.WAContact) bool {
 	if contact == nil || !strings.HasSuffix(contact.GetJid(), "@lid") {
 		return false
 	}
-	return !contactUsyncHasDisplayIdentity(contact) || contact.GetProfilePictureId() == ""
+	return !ContactUsyncHasDisplayIdentity(contact) || contact.GetProfilePictureId() == ""
 }
 
 func (s *serverCore) activeContactResolveLoginState(ctx context.Context, accountID string) (*waappv1.LoginState, error) {
@@ -168,8 +168,8 @@ func normalizeContactResolveLimit(limit int) int {
 	if limit <= 0 {
 		return defaultContactResolveLimit
 	}
-	if limit > maxContactUsyncBatchSize {
-		return maxContactUsyncBatchSize
+	if limit > MaxContactUsyncBatchSize {
+		return MaxContactUsyncBatchSize
 	}
 	return limit
 }

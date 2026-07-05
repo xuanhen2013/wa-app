@@ -39,7 +39,7 @@ func newNativeAccountTransferState(phone *waappv1.PhoneTarget, codes []string, n
 		EncryptionAccountHash:  b64u(randomBytes(32)),
 		EncryptionKeySalt:      b64u(randomBytes(32)),
 		DeeplinkBase:           accountTransferDeeplinkBase,
-		AccountPhoneNumber:     fullPhoneKey(shared.PhoneCC(phone), shared.PhoneNational(phone)),
+		AccountPhoneNumber:     FullPhoneKey(shared.PhoneCC(phone), shared.PhoneNational(phone)),
 		LastChallengeIssuedSec: now.UTC().Unix(),
 	}
 }

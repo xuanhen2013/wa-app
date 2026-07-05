@@ -165,7 +165,7 @@ func (s *discoveryHandler) RecordProtocolProfile(ctx context.Context, req *waapp
 		ProtocolProfileId: s.ids.NewID("waproto_"),
 		AppArtifactId:     req.GetAppArtifactId(),
 		DisplayName:       shared.FirstNonEmpty(req.GetDisplayName(), "WA protocol profile"),
-		AppVersion:        nativeAppVersion(req.GetAppVersion()),
+		AppVersion:        NativeAppVersion(req.GetAppVersion()),
 		Status:            waappv1.ProtocolProfileStatus_PROTOCOL_PROFILE_STATUS_ACTIVE,
 		Capabilities:      req.GetCapabilities(),
 		RegistrationFlows: req.GetRegistrationFlows(),
@@ -351,21 +351,21 @@ func (s *profileHandler) RetireClientProfile(ctx context.Context, req *waappv1.R
 
 func protocolAppVersion(profile *waappv1.ProtocolProfile) string {
 	if profile == nil {
-		return defaultWAAppVersion
+		return DefaultWAAppVersion
 	}
-	return nativeAppVersion(profile.GetAppVersion())
+	return NativeAppVersion(profile.GetAppVersion())
 }
 
 func (s *serverCore) clientProfileAppVersion(ctx context.Context, profile *waappv1.ClientProfile) string {
 	if s == nil || profile == nil {
-		return defaultWAAppVersion
+		return DefaultWAAppVersion
 	}
 	protocol, err := s.store.GetProtocolProfile(ctx, profile.GetProtocolProfileId())
 	if err != nil {
-		return defaultWAAppVersion
+		return DefaultWAAppVersion
 	}
-	if protocol.GetProtocolProfileId() == "waproto_native" && nativeAppVersion(protocol.GetAppVersion()) != defaultWAAppVersion {
-		protocol.AppVersion = defaultWAAppVersion
+	if protocol.GetProtocolProfileId() == "waproto_native" && NativeAppVersion(protocol.GetAppVersion()) != DefaultWAAppVersion {
+		protocol.AppVersion = DefaultWAAppVersion
 		_ = s.store.SaveProtocolProfile(ctx, protocol)
 	}
 	return protocolAppVersion(protocol)
@@ -373,14 +373,14 @@ func (s *serverCore) clientProfileAppVersion(ctx context.Context, profile *waapp
 
 func (s *serverCore) protocolIDAppVersion(ctx context.Context, protocolProfileID string) string {
 	if s == nil || strings.TrimSpace(protocolProfileID) == "" {
-		return defaultWAAppVersion
+		return DefaultWAAppVersion
 	}
 	protocol, err := s.store.GetProtocolProfile(ctx, protocolProfileID)
 	if err != nil {
-		return defaultWAAppVersion
+		return DefaultWAAppVersion
 	}
-	if protocol.GetProtocolProfileId() == "waproto_native" && nativeAppVersion(protocol.GetAppVersion()) != defaultWAAppVersion {
-		protocol.AppVersion = defaultWAAppVersion
+	if protocol.GetProtocolProfileId() == "waproto_native" && NativeAppVersion(protocol.GetAppVersion()) != DefaultWAAppVersion {
+		protocol.AppVersion = DefaultWAAppVersion
 		_ = s.store.SaveProtocolProfile(ctx, protocol)
 	}
 	return protocolAppVersion(protocol)
@@ -388,11 +388,11 @@ func (s *serverCore) protocolIDAppVersion(ctx context.Context, protocolProfileID
 
 func (s *serverCore) loginStateAppVersion(ctx context.Context, loginState *waappv1.LoginState) string {
 	if s == nil || loginState == nil {
-		return defaultWAAppVersion
+		return DefaultWAAppVersion
 	}
 	profile, err := s.store.GetClientProfile(ctx, loginState.GetClientProfileId())
 	if err != nil {
-		return defaultWAAppVersion
+		return DefaultWAAppVersion
 	}
 	return s.clientProfileAppVersion(ctx, profile)
 }

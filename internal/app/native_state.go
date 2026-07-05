@@ -24,7 +24,7 @@ const nativeStateSchema = "byte-v-forge-wa-app-native-state/v1"
 
 var nativeUserAgentDevicePattern = regexp.MustCompile(`(?:^|\s)Android/([^ ]+)\s+Device/([^- \t/]+)-([^/\s]+)`)
 
-type nativeState struct {
+type NativeState struct {
 	Schema               string                          `json:"schema"`
 	CreatedAtUnix        int64                           `json:"created_at_unix"`
 	CC                   string                          `json:"cc"`
@@ -185,7 +185,7 @@ type nativeChatConnectionState struct {
 	ServerStaticPublic string `json:"server_static_public,omitempty"`
 }
 
-func (s *nativeState) ensureMaps() {
+func (s *NativeState) ensureMaps() {
 	if s.MessagePayloads == nil {
 		s.MessagePayloads = map[string]nativeMessagePayload{}
 	}
@@ -221,15 +221,15 @@ func buildNativeOneTimePreKeys(count int) []nativeSignalPreKey {
 	return out
 }
 
-func marshalNativeState(state nativeState) ([]byte, error) {
-	state.Profile = normalizeNativePhoneProfile(state.Profile, "")
+func MarshalNativeState(state NativeState) ([]byte, error) {
+	state.Profile = NormalizeNativePhoneProfile(state.Profile, "")
 	return json.MarshalIndent(state, "", "  ")
 }
 
-func unmarshalNativeState(data []byte) (nativeState, error) {
-	var state nativeState
+func UnmarshalNativeState(data []byte) (NativeState, error) {
+	var state NativeState
 	if err := json.Unmarshal(data, &state); err != nil {
-		return nativeState{}, err
+		return NativeState{}, err
 	}
 	var disk struct {
 		UserAgent string `json:"user_agent"`
@@ -238,55 +238,55 @@ func unmarshalNativeState(data []byte) (nativeState, error) {
 		} `json:"profile"`
 	}
 	_ = json.Unmarshal(data, &disk)
-	state.Profile = normalizeNativePhoneProfile(state.Profile, shared.FirstNonEmpty(disk.Profile.UserAgent, disk.UserAgent))
+	state.Profile = NormalizeNativePhoneProfile(state.Profile, shared.FirstNonEmpty(disk.Profile.UserAgent, disk.UserAgent))
 	state.ensureMaps()
 	return state, nil
 }
 
-func newNativeState(phone *waappv1.PhoneTarget) (nativeState, error) {
+func newNativeState(phone *waappv1.PhoneTarget) (NativeState, error) {
 	chatStatic, err := newNativeCurveKeyPair()
 	if err != nil {
-		return nativeState{}, err
+		return NativeState{}, err
 	}
 	identity, err := newNativeCurveKeyPair()
 	if err != nil {
-		return nativeState{}, err
+		return NativeState{}, err
 	}
 	signedPreKey, err := newNativeCurveKeyPair()
 	if err != nil {
-		return nativeState{}, err
+		return NativeState{}, err
 	}
 	regID := randomInt32()
 	spkID := randomInt24()
 	identityPublic, err := identity.publicBytes()
 	if err != nil {
-		return nativeState{}, err
+		return NativeState{}, err
 	}
 	identityPrivate, err := identity.privateBytes()
 	if err != nil {
-		return nativeState{}, err
+		return NativeState{}, err
 	}
 	signedPublic, err := signedPreKey.publicBytes()
 	if err != nil {
-		return nativeState{}, err
+		return NativeState{}, err
 	}
 	signedPublicWithPrefix, err := withSignalCurvePrefix(signedPublic)
 	if err != nil {
-		return nativeState{}, err
+		return NativeState{}, err
 	}
 	signature, err := xeddsaSignCurve25519(identityPrivate, signedPublicWithPrefix)
 	if err != nil {
-		return nativeState{}, err
+		return NativeState{}, err
 	}
 	verified, err := xeddsaVerifyCurve25519(identityPublic, signedPublicWithPrefix, signature)
 	if err != nil {
-		return nativeState{}, err
+		return NativeState{}, err
 	}
 	if !verified {
-		return nativeState{}, fmt.Errorf("generated signed prekey signature did not verify")
+		return NativeState{}, fmt.Errorf("generated signed prekey signature did not verify")
 	}
 	profile := buildNativePhoneProfile(phone)
-	state := nativeState{
+	state := NativeState{
 		Schema:        nativeStateSchema,
 		CreatedAtUnix: time.Now().UTC().Unix(),
 		CC:            shared.PhoneCC(phone),
@@ -344,7 +344,7 @@ func buildNativePhoneProfile(phone *waappv1.PhoneTarget) nativePhoneProfile {
 	accessUUID, accessID := uuidPair()
 	id := randomBytes(20)
 	backup := randomBytes(20)
-	phoneHash := sha256.Sum256([]byte(fullPhoneKey(shared.PhoneCC(phone), shared.PhoneNational(phone))))
+	phoneHash := sha256.Sum256([]byte(FullPhoneKey(shared.PhoneCC(phone), shared.PhoneNational(phone))))
 	additionalFields := map[string]string{
 		"network_radio_type":    "1",
 		"simnum":                "0",
@@ -383,7 +383,7 @@ func nativeRegistrationEphemeralID() string {
 	return pctBytes(randomBytes(20))
 }
 
-func nativeRegistrationRequestID(state nativeState) string {
+func nativeRegistrationRequestID(state NativeState) string {
 	if nativeShouldRandomizeRegistrationRequestID(state) {
 		return nativeRegistrationEphemeralID()
 	}
@@ -393,7 +393,7 @@ func nativeRegistrationRequestID(state nativeState) string {
 	return nativeRegistrationEphemeralID()
 }
 
-func nativeAdvertisingID(state nativeState) string {
+func nativeAdvertisingID(state NativeState) string {
 	if value := strings.TrimSpace(state.Profile.AdvertisingID); value != "" {
 		return value
 	}
@@ -548,22 +548,22 @@ func nativeUserAgent(appVersion string) string {
 	return nativeUserAgentForProfile(nativePhoneProfile{}, appVersion)
 }
 
-func nativeUserAgentForState(state nativeState, appVersion string) string {
+func nativeUserAgentForState(state NativeState, appVersion string) string {
 	return nativeUserAgentForProfile(state.Profile, appVersion)
 }
 
 func nativeUserAgentForProfile(profile nativePhoneProfile, appVersion string) string {
-	return "WhatsApp/" + nativeAppVersion(appVersion) + " " + nativeDeviceUserAgent(profile)
+	return "WhatsApp/" + NativeAppVersion(appVersion) + " " + nativeDeviceUserAgent(profile)
 }
 
 func nativeDeviceUserAgent(profile nativePhoneProfile) string {
-	profile = normalizeNativePhoneProfile(profile, "")
+	profile = NormalizeNativePhoneProfile(profile, "")
 	return "Android/" + profile.AndroidVersion + " Device/" + profile.DeviceVendor + "-" + profile.DeviceModel
 }
 
-func nativeAppVersion(appVersion string) string {
+func NativeAppVersion(appVersion string) string {
 	if strings.TrimSpace(appVersion) == "" {
-		return defaultWAAppVersion
+		return DefaultWAAppVersion
 	}
 	return strings.TrimSpace(appVersion)
 }
@@ -581,7 +581,7 @@ func nativeAppVersionFromUserAgent(userAgent string) string {
 	return strings.TrimSpace(version)
 }
 
-func normalizeNativePhoneProfile(profile nativePhoneProfile, userAgent string) nativePhoneProfile {
+func NormalizeNativePhoneProfile(profile nativePhoneProfile, userAgent string) nativePhoneProfile {
 	if device, ok := nativeDeviceModelFromUserAgent(userAgent); ok {
 		profile.DeviceVendor = shared.FirstNonEmpty(profile.DeviceVendor, device.Vendor)
 		profile.DeviceModel = shared.FirstNonEmpty(profile.DeviceModel, device.Model)
@@ -741,8 +741,8 @@ func nativeSyntheticBuildDisplayID(model nativeDeviceModel) string {
 	return modelName + "_" + android + ".0." + strconv.Itoa(major) + "." + strconv.Itoa(minor) + "(" + branch + "01)"
 }
 
-func nativeDeviceDisplayName(state nativeState) string {
-	profile := normalizeNativePhoneProfile(state.Profile, "")
+func nativeDeviceDisplayName(state NativeState) string {
+	profile := NormalizeNativePhoneProfile(state.Profile, "")
 	value := strings.TrimSpace(strings.Join([]string{
 		strings.TrimSpace(profile.DeviceVendor),
 		strings.TrimSpace(profile.DeviceModel),
@@ -757,7 +757,7 @@ func responseStatus(data map[string]any) string {
 	return ""
 }
 
-func fullPhoneKey(cc string, phone string) string {
+func FullPhoneKey(cc string, phone string) string {
 	compact := regexp.MustCompile(`\D+`).ReplaceAllString(cc+phone, "")
 	if compact == "" {
 		return hex.EncodeToString(sha256.New().Sum(nil))

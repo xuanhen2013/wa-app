@@ -18,7 +18,7 @@ func (s *serverCore) attachClientProfileRuntime(ctx context.Context, profile *wa
 	if err != nil {
 		return profile
 	}
-	state, err := unmarshalNativeState(data)
+	state, err := UnmarshalNativeState(data)
 	if err != nil {
 		return profile
 	}
@@ -33,11 +33,11 @@ func (s *serverCore) attachClientProfilesRuntime(ctx context.Context, profiles [
 	return profiles
 }
 
-func deviceFingerprintFromState(state nativeState) *waappv1.DeviceFingerprint {
-	profile := normalizeNativePhoneProfile(state.Profile, "")
+func deviceFingerprintFromState(state NativeState) *waappv1.DeviceFingerprint {
+	profile := NormalizeNativePhoneProfile(state.Profile, "")
 	normalizedState := state
 	normalizedState.Profile = profile
-	fields := nativeDeviceMapFields(normalizedState)
+	fields := NativeDeviceMapFields(normalizedState)
 	createdAt := profile.CreatedAtUnix
 	if createdAt == 0 {
 		createdAt = state.CreatedAtUnix

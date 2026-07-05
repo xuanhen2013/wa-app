@@ -27,7 +27,7 @@ const (
 
 const waAppStateMutationKeyInfo = "WhatsApp Mutation Keys"
 
-func applyNativeAppStateKeys(state *nativeState, raw []byte) bool {
+func applyNativeAppStateKeys(state *NativeState, raw []byte) bool {
 	if state == nil || len(raw) == 0 {
 		return false
 	}
@@ -254,7 +254,7 @@ func mustDecodeNativeAppStateValue(value string) []byte {
 	return out
 }
 
-func nativeAppStateContactHints(state *nativeState, raw []byte) []wacore.WAContactHint {
+func nativeAppStateContactHints(state *NativeState, raw []byte) []wacore.WAContactHint {
 	if len(raw) == 0 {
 		return nil
 	}
@@ -263,7 +263,7 @@ func nativeAppStateContactHints(state *nativeState, raw []byte) []wacore.WAConta
 	return dedupeWAContactHints(hints)
 }
 
-func collectNativeAppStateContactHints(state *nativeState, raw []byte, depth int, hints *[]wacore.WAContactHint) {
+func collectNativeAppStateContactHints(state *NativeState, raw []byte, depth int, hints *[]wacore.WAContactHint) {
 	if depth > waAppStateProtoMaxDepth || len(raw) == 0 {
 		return
 	}
@@ -354,7 +354,7 @@ func waAppStateSnapshotRecordContactHints(raw []byte) []wacore.WAContactHint {
 	return nil
 }
 
-func waAppStatePatchContactHints(state *nativeState, raw []byte) []wacore.WAContactHint {
+func waAppStatePatchContactHints(state *NativeState, raw []byte) []wacore.WAContactHint {
 	fields, ok := waproto.ParseWAProtoFieldsWithLimit(raw, waAppStateProtoMaxFields)
 	if !ok {
 		return nil
@@ -486,7 +486,7 @@ func parseNativeAppStateRawKeyID(raw []byte) []byte {
 	return parseNativeAppStateKeyID(raw)
 }
 
-func nativeAppStateMutationContactHints(state *nativeState, collectionName string, mutation nativeAppStateMutation) []wacore.WAContactHint {
+func nativeAppStateMutationContactHints(state *NativeState, collectionName string, mutation nativeAppStateMutation) []wacore.WAContactHint {
 	if hints := waSyncdIndexedContactHints(mutation.record.value); len(hints) > 0 {
 		return hints
 	}
@@ -500,7 +500,7 @@ func nativeAppStateMutationContactHints(state *nativeState, collectionName strin
 	return waSyncdIndexedContactHints(decrypted)
 }
 
-func decryptNativeAppStateMutation(state *nativeState, collectionName string, mutation nativeAppStateMutation) ([]byte, bool) {
+func decryptNativeAppStateMutation(state *NativeState, collectionName string, mutation nativeAppStateMutation) ([]byte, bool) {
 	if state == nil || len(mutation.record.value) < 48 || collectionName == "" {
 		return nil, false
 	}
@@ -576,7 +576,7 @@ func deriveNativeAppStateMutationKeys(keyData []byte) (nativeAppStateMutationKey
 	}, true
 }
 
-func nativeAppStateKeyDataForID(state *nativeState, keyID []byte) ([]byte, bool) {
+func nativeAppStateKeyDataForID(state *NativeState, keyID []byte) ([]byte, bool) {
 	if state == nil || len(keyID) == 0 {
 		return nil, false
 	}

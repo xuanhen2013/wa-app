@@ -109,7 +109,7 @@ func (g *actionGateway) generateTransientFingerprint(ctx context.Context, payloa
 	if err != nil {
 		return nil, err
 	}
-	data, err := marshalNativeState(state)
+	data, err := MarshalNativeState(state)
 	if err != nil {
 		return nil, err
 	}
@@ -117,7 +117,7 @@ func (g *actionGateway) generateTransientFingerprint(ctx context.Context, payloa
 	if err := g.server.runtime.SaveTransientState(ctx, ref, data, transientStateTTL); err != nil {
 		return nil, err
 	}
-	profile := phoneProfileToProto(phone, state.Profile)
+	profile := PhoneProfileToProto(phone, state.Profile)
 	return map[string]any{
 		"success":                   true,
 		"fingerprint_ref":           ref,
@@ -562,7 +562,7 @@ func (g *actionGateway) checkLoginState(ctx context.Context, payload map[string]
 	return out, nil
 }
 
-func (s *serverCore) commitNativeState(ctx context.Context, phone *waappv1.PhoneTarget, state nativeState) (*waappv1.WAAccount, *waappv1.ClientProfile, *waappv1.ProtocolProfile, error) {
+func (s *serverCore) commitNativeState(ctx context.Context, phone *waappv1.PhoneTarget, state NativeState) (*waappv1.WAAccount, *waappv1.ClientProfile, *waappv1.ProtocolProfile, error) {
 	engine, ok := s.runner.(nativeStateSaver)
 	if !ok {
 		return nil, nil, nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_UNSUPPORTED_OPERATION, "native engine is required", false)
@@ -607,14 +607,14 @@ func (s *serverCore) commitNativeState(ctx context.Context, phone *waappv1.Phone
 }
 
 type nativeStateSaver interface {
-	saveState(context.Context, string, nativeState) error
+	saveState(context.Context, string, NativeState) error
 }
 
 func (s *serverCore) ensureDefaultProtocolProfile(ctx context.Context) (*waappv1.ProtocolProfile, error) {
 	protocolID := "waproto_native"
 	if profile, err := s.store.GetProtocolProfile(ctx, protocolID); err == nil {
-		if nativeAppVersion(profile.GetAppVersion()) != defaultWAAppVersion {
-			profile.AppVersion = defaultWAAppVersion
+		if NativeAppVersion(profile.GetAppVersion()) != DefaultWAAppVersion {
+			profile.AppVersion = DefaultWAAppVersion
 			_ = s.store.SaveProtocolProfile(ctx, profile)
 		}
 		return profile, nil
@@ -629,7 +629,7 @@ func (s *serverCore) ensureDefaultProtocolProfile(ctx context.Context) (*waappv1
 		ProtocolProfileId: protocolID,
 		AppArtifactId:     artifactID,
 		DisplayName:       "WA native protocol",
-		AppVersion:        defaultWAAppVersion,
+		AppVersion:        DefaultWAAppVersion,
 		Status:            waappv1.ProtocolProfileStatus_PROTOCOL_PROFILE_STATUS_ACTIVE,
 		Capabilities: []waappv1.ProtocolCapability{
 			waappv1.ProtocolCapability_PROTOCOL_CAPABILITY_ACCOUNT_PROBE,
@@ -755,12 +755,12 @@ func (g *actionGateway) nativeEngine() (*NativeEngine, error) {
 	return engine, nil
 }
 
-func (g *actionGateway) loadTransientState(ctx context.Context, ref string) (nativeState, error) {
+func (g *actionGateway) loadTransientState(ctx context.Context, ref string) (NativeState, error) {
 	data, err := g.server.runtime.GetTransientState(ctx, ref)
 	if err != nil {
-		return nativeState{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_PROFILE_NOT_FOUND, "transient fingerprint state not found", false)
+		return NativeState{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_PROFILE_NOT_FOUND, "transient fingerprint state not found", false)
 	}
-	return unmarshalNativeState(data)
+	return UnmarshalNativeState(data)
 }
 
 func readActionPayload(w http.ResponseWriter, r *http.Request) (map[string]any, bool) {

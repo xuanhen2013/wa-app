@@ -51,7 +51,7 @@ func accountLogoutFromUpdate(l *chatdDeviceLogout) *wacore.EngineAccountLogout {
 	}
 }
 
-func accountLoggedOutError(reason string) error {
+func AccountLoggedOutError(reason string) error {
 	if strings.TrimSpace(reason) == "" {
 		reason = "account registered on another device"
 	}
@@ -116,7 +116,7 @@ func accountLoggedOutMessage(l *chatdDeviceLogout) string {
 // <stream:error>/<failure> 里带 <conflict type="device_removed"|"replaced">,表示本设备登录态已失效
 // (号码已在其他设备注册)。对齐 APK ErrorStanzaHandler(X.1FJ)对 conflict type 的登出判定。
 // 经 chatdReceiveError 保留为非可重试 CONFLICT,消息含 account_takeover 标记,区别于 generic failure。
-func isAccountTakeoverError(err error) bool {
+func IsAccountTakeoverError(err error) bool {
 	if err == nil {
 		return false
 	}

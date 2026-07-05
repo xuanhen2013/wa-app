@@ -5,7 +5,7 @@ import (
 	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 )
 
-func nativeIntegrityModeFromPayload(payload map[string]any) wacore.IntegrityMode {
+func NativeIntegrityModeFromPayload(payload map[string]any) wacore.IntegrityMode {
 	mode := shared.FirstNonEmpty(
 		shared.TextField(payload, "integrity_mode"),
 		shared.TextField(payload, "integrityMode"),

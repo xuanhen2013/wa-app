@@ -122,7 +122,7 @@ func dedupePrivacyTokenUpdates(updates []nativePrivacyTokenUpdate) []nativePriva
 	return out
 }
 
-func applyPrivacyTokenUpdates(state *nativeState, updates []nativePrivacyTokenUpdate) bool {
+func applyPrivacyTokenUpdates(state *NativeState, updates []nativePrivacyTokenUpdate) bool {
 	if state == nil || len(updates) == 0 {
 		return false
 	}
@@ -146,11 +146,11 @@ func applyPrivacyTokenUpdates(state *nativeState, updates []nativePrivacyTokenUp
 	return changed
 }
 
-func trustedContactTokenForProfilePicture(state nativeState, jid string, now time.Time) []byte {
+func trustedContactTokenForProfilePicture(state NativeState, jid string, now time.Time) []byte {
 	return privacyTokenForJID(state, jid, now)
 }
 
-func privacyTokenForJID(state nativeState, jid string, now time.Time) []byte {
+func privacyTokenForJID(state NativeState, jid string, now time.Time) []byte {
 	jid = wacore.NormalizeWAJID(jid)
 	if jid == "" || len(state.PrivacyTokens) == 0 {
 		return nil

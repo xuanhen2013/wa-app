@@ -326,7 +326,7 @@ func (c *nativeHTTPClient) postWASafeEnvelope(ctx context.Context, endpoint stri
 	if endpointURL.Scheme != "https" || endpointURL.Host == "" {
 		return nil, "", fmt.Errorf("native endpoint must be https")
 	}
-	effectiveUserAgent := shared.FirstNonEmpty(userAgent, nativeUserAgent(defaultWAAppVersion))
+	effectiveUserAgent := shared.FirstNonEmpty(userAgent, nativeUserAgent(DefaultWAAppVersion))
 	logWASafeEnvelopeShape(endpointURL, envelope, effectiveUserAgent)
 	resp, err := c.postOrderedForm(ctx, endpointURL, envelope.Body, effectiveUserAgent, envelope.Authorization)
 	if err != nil {

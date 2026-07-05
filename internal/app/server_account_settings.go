@@ -177,7 +177,7 @@ func (s *accountSettingsHandler) SetAccountProfilePicture(ctx context.Context, r
 	if err != nil {
 		return &waappv1.SetAccountProfilePictureResponse{Error: shared.ToProtoError(err)}, nil
 	}
-	contentType, _ := profilePictureContentType(image, req.GetContentType())
+	contentType, _ := ProfilePictureContentType(image, req.GetContentType())
 	op, result, err := s.applyAccountSettingsResult(ctx, req.GetContext(), req.GetSelector(), waappv1.AccountSettingsOperationKind_ACCOUNT_SETTINGS_OPERATION_KIND_ACCOUNT_PROFILE_PICTURE_SET, func(input wacore.EngineAccountSettingsInput) wacore.EngineAccountSettingsInput {
 		input.ProfilePicture = image
 		return input
@@ -407,7 +407,7 @@ func accountSettingsOperationContext(ctx context.Context) (context.Context, cont
 	if ctx == nil {
 		ctx = context.Background()
 	}
-	return context.WithTimeout(ctx, defaultAccountSettingsOperationTimeout)
+	return context.WithTimeout(ctx, DefaultAccountSettingsOperationTimeout)
 }
 
 func (s *serverCore) accountSettingsRunner(ctx context.Context, requestContext *waappv1.RequestContext, loginState *waappv1.LoginState, kind waappv1.AccountSettingsOperationKind) (wacore.ProtocolEngine, func(), error) {
@@ -544,10 +544,10 @@ func requiredAccountProfilePicture(image []byte, contentType string) ([]byte, er
 	if len(image) == 0 {
 		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "image is required", false)
 	}
-	if len(image) > profilePictureDownloadMaxBytes {
+	if len(image) > ProfilePictureDownloadMaxBytes {
 		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "WA profile picture is too large", false)
 	}
-	if _, err := profilePictureContentType(image, contentType); err != nil {
+	if _, err := ProfilePictureContentType(image, contentType); err != nil {
 		return nil, err
 	}
 	return append([]byte(nil), image...), nil

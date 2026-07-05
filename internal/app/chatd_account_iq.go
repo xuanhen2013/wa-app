@@ -17,17 +17,17 @@ import (
 const (
 	defaultAccountIQTimeout                = 32 * time.Second
 	defaultAccountSettingsOpenTimeout      = 8 * time.Second
-	defaultAccountSettingsOperationTimeout = 45 * time.Second
-	defaultAccountSettingsProxyTTL         = defaultAccountSettingsOperationTimeout + 5*time.Second
+	DefaultAccountSettingsOperationTimeout = 45 * time.Second
+	defaultAccountSettingsProxyTTL         = DefaultAccountSettingsOperationTimeout + 5*time.Second
 	accountSettingsRequestTimeoutMessage   = "WA account settings request timed out"
 	accountSettingsIQTimeoutMessage        = "account settings iq timed out"
 )
 
-func (c *chatdClient) sendAccountIQ(ctx context.Context, state nativeState, input wacore.EngineAccountSettingsInput, appVersion string, request chatdNode) (chatdNode, chatdSessionUpdate, error) {
+func (c *chatdClient) sendAccountIQ(ctx context.Context, state NativeState, input wacore.EngineAccountSettingsInput, appVersion string, request chatdNode) (chatdNode, chatdSessionUpdate, error) {
 	return c.sendIQ(ctx, state, input.RegisteredIdentityID, appVersion, request, accountSettingsIQTimeoutMessage)
 }
 
-func (c *chatdClient) sendIQ(ctx context.Context, state nativeState, registeredIdentityID string, appVersion string, request chatdNode, timeoutMessage string) (chatdNode, chatdSessionUpdate, error) {
+func (c *chatdClient) sendIQ(ctx context.Context, state NativeState, registeredIdentityID string, appVersion string, request chatdNode, timeoutMessage string) (chatdNode, chatdSessionUpdate, error) {
 	session, err := c.openSession(ctx, state, registeredIdentityID, defaultLoginPayload, appVersion)
 	if err != nil {
 		return chatdNode{}, chatdSessionUpdate{}, err

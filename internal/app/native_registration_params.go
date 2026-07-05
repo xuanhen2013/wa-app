@@ -40,7 +40,7 @@ func registrationDeviceCountryISO(phone *waappv1.PhoneTarget) string {
 	return "US"
 }
 
-func (e *engineCore) existParams(phone *waappv1.PhoneTarget, state nativeState) (map[string]string, map[string]struct{}) {
+func (e *engineCore) existParams(phone *waappv1.PhoneTarget, state NativeState) (map[string]string, map[string]struct{}) {
 	lg, lc := registrationLocale(phone)
 	params := map[string]string{
 		"cc":                shared.PhoneCC(phone),
@@ -68,20 +68,20 @@ func (e *engineCore) existParams(phone *waappv1.PhoneTarget, state nativeState) 
 	return params, raw
 }
 
-func (e *engineCore) registrationToken(phone *waappv1.PhoneTarget, state nativeState) string {
+func (e *engineCore) registrationToken(phone *waappv1.PhoneTarget, state NativeState) string {
 	if token := deriveDefaultRegistrationToken(shared.PhoneNational(phone)); token != "" {
 		return token
 	}
 	return state.LastCodeParams["token"]
 }
 
-func (e *engineCore) codeRequestOrderedParams(ctx context.Context, phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, state nativeState, authCodeContext string, appVersion string, integrityMode wacore.IntegrityMode) (orderedParams, error) {
+func (e *engineCore) codeRequestOrderedParams(ctx context.Context, phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, state NativeState, authCodeContext string, appVersion string, integrityMode wacore.IntegrityMode) (orderedParams, error) {
 	return e.codeRequestOrderedParamsWithWamsys(ctx, phone, method, state, authCodeContext, nil, true, appVersion, integrityMode)
 }
 
-func (e *engineCore) codeRequestOrderedParamsWithWamsys(ctx context.Context, phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, state nativeState, authCodeContext string, wamsysCapture *waappv1.WamsysCapture, includeWamsys bool, appVersion string, integrityMode wacore.IntegrityMode) (orderedParams, error) {
-	methodName := registrationMethodName(method, "sms")
-	fields := nativeDeviceMapFields(state)
+func (e *engineCore) codeRequestOrderedParamsWithWamsys(ctx context.Context, phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, state NativeState, authCodeContext string, wamsysCapture *waappv1.WamsysCapture, includeWamsys bool, appVersion string, integrityMode wacore.IntegrityMode) (orderedParams, error) {
+	methodName := RegistrationMethodName(method, "sms")
+	fields := NativeDeviceMapFields(state)
 	attempts := nativeCodeRequestAttempts(state)
 	lg, lc := registrationLocale(phone)
 	params := orderedParams{}
@@ -135,7 +135,7 @@ func nativeRegistrationMethodUsesAuthContext(methodName string) bool {
 	return methodName != "acc_tr"
 }
 
-func applyNativeE2EParams(params *orderedParams, state nativeState) {
+func applyNativeE2EParams(params *orderedParams, state NativeState) {
 	params.set("authkey", state.AuthKey, false)
 	params.set("e_ident", state.KeyBundle.IdentityPublic, false)
 	params.set("e_keytype", state.KeyBundle.KeyType, false)
@@ -195,7 +195,7 @@ func addRawParam(params *orderedParams, key string, value string) {
 	params.set(key, pctBytes([]byte(value)), true)
 }
 
-func registrationMethodName(method waappv1.VerificationDeliveryMethod, fallback string) string {
+func RegistrationMethodName(method waappv1.VerificationDeliveryMethod, fallback string) string {
 	switch method {
 	case waappv1.VerificationDeliveryMethod_VERIFICATION_DELIVERY_METHOD_SMS:
 		return "sms"
@@ -254,8 +254,8 @@ func applyNativeRawParamMap(params map[string]string, raw map[string]struct{}, v
 	}
 }
 
-func codeDeviceMap(method string, state nativeState) map[string]string {
-	fields := nativeDeviceMapFields(state)
+func codeDeviceMap(method string, state NativeState) map[string]string {
+	fields := NativeDeviceMapFields(state)
 	out := map[string]string{
 		"reason":                     nativeCodeRequestReason(state),
 		"client_metrics":             nativeCodeClientMetrics(nativeCodeRequestAttempts(state)),
@@ -294,8 +294,8 @@ func addNonEmptyNativeCodeField(out map[string]string, fields map[string]string,
 	}
 }
 
-func registerDeviceMap(method string, state nativeState) map[string]string {
-	fields := nativeDeviceMapFields(state)
+func registerDeviceMap(method string, state NativeState) map[string]string {
+	fields := NativeDeviceMapFields(state)
 	return map[string]string{
 		"mistyped":              "7",
 		"client_metrics":        nativeRegisterClientMetrics(method),
@@ -314,7 +314,7 @@ func registerDeviceMap(method string, state nativeState) map[string]string {
 	}
 }
 
-func nativeDeviceMapFields(state nativeState) map[string]string {
+func NativeDeviceMapFields(state NativeState) map[string]string {
 	fields := map[string]string{}
 	for key, value := range state.Profile.AdditionalMapFields {
 		if isOpaqueWamsysMapKey(key) {
@@ -335,7 +335,7 @@ func nativeDeviceMapFields(state nativeState) map[string]string {
 	return fields
 }
 
-func nativeRuntimeDeviceMapFields(state nativeState) map[string]string {
+func nativeRuntimeDeviceMapFields(state NativeState) map[string]string {
 	return map[string]string{
 		"pid":               nativeRuntimeProcessID(state),
 		"feo2_query_status": nativeDefaultFeo2QueryStatus,
@@ -351,7 +351,7 @@ func isRuntimeNativeDeviceMapKey(key string) bool {
 	}
 }
 
-func nativeRuntimeProcessID(state nativeState) string {
+func nativeRuntimeProcessID(state NativeState) string {
 	_ = state
 	return strconv.Itoa(os.Getpid())
 }
@@ -384,14 +384,14 @@ func nativeDefaultDeviceMapFields() map[string]string {
 	}
 }
 
-func nativeCodeRequestAttempts(state nativeState) int {
+func nativeCodeRequestAttempts(state NativeState) int {
 	if state.GenerateCodeAttempts > 0 {
 		return state.GenerateCodeAttempts
 	}
 	return nativeCodeClientMetricAttempts(nativeCodeRequestAttemptsFromLastParams(state.LastCodeParams))
 }
 
-func (s *nativeState) nextGenerateCodeAttempt() int {
+func (s *NativeState) nextGenerateCodeAttempt() int {
 	previous := s.GenerateCodeAttempts
 	if previous < 1 {
 		previous = nativeCodeRequestAttemptsFromLastParams(s.LastCodeParams)
@@ -417,7 +417,7 @@ func nativeCodeRequestAttemptsFromLastParams(params map[string]string) int {
 	return payload.Attempts
 }
 
-func nativeCodeRequestReason(state nativeState) string {
+func nativeCodeRequestReason(state NativeState) string {
 	if len(state.LastCodeResult) == 0 {
 		return ""
 	}
@@ -533,8 +533,8 @@ func deriveDefaultRegistrationToken(phone string) string {
 // 与 verify(A0F)调用,A0h 全链不调(已 smali 核验);exist 用 sim_state /
 // network_operator_name / sim_operator_name / device_name 表征网络态。误发运营商码
 // (且默认 000)会让 exist 请求偏离官方端 shape,服务端判 incorrect、检测失准。
-func existDeviceMap(state nativeState) map[string]string {
-	fields := nativeDeviceMapFields(state)
+func existDeviceMap(state NativeState) map[string]string {
+	fields := NativeDeviceMapFields(state)
 	return map[string]string{
 		"mistyped":                        "7",
 		"offline_ab":                      `{"exposure":[],"exp_hash":[],"metrics":{}}`,
@@ -567,8 +567,8 @@ func parseExistProbeResult(data map[string]any) wacore.EngineProbeResult {
 	smsWaitExhausted := verificationSMSWaitExhausted(data)
 	baseProtocolRejected := existProtocolRejected(status, reason)
 	blocked := status == "blocked" || reason == "blocked" || existConsentBlockedReason(reason)
-	invalidNumber := existInvalidNumberReason(reason)
-	rateLimited := existRateLimitedReason(reason)
+	invalidNumber := ExistInvalidNumberReason(reason)
+	rateLimited := ExistRateLimitedReason(reason)
 	consentRequired := !baseProtocolRejected && !blocked && existConsentReason(reason)
 	challengeRequired := !baseProtocolRejected && !blocked && existChallengeReason(reason)
 	gated := consentRequired || challengeRequired
@@ -659,7 +659,7 @@ func existProtocolRejected(status string, reason string) bool {
 	}
 }
 
-func existInvalidNumberReason(reason string) bool {
+func ExistInvalidNumberReason(reason string) bool {
 	switch reason {
 	case "format_wrong", "length_short", "length_long":
 		return true
@@ -668,7 +668,7 @@ func existInvalidNumberReason(reason string) bool {
 	}
 }
 
-func existRateLimitedReason(reason string) bool {
+func ExistRateLimitedReason(reason string) bool {
 	switch reason {
 	case "too_recent", "too_many", "temporarily_unavailable":
 		return true
@@ -754,23 +754,23 @@ type existFlowClass struct {
 func existAccountFlow(c existFlowClass) string {
 	switch {
 	case c.protocolRejected:
-		return accountProbeFlowProbeFailed
+		return AccountProbeFlowProbeFailed
 	case c.blocked:
-		return accountProbeFlowBlocked
+		return AccountProbeFlowBlocked
 	case c.invalidNumber:
-		return accountProbeFlowInvalidNumber
+		return AccountProbeFlowInvalidNumber
 	case c.rateLimited:
-		return accountProbeFlowRateLimited
+		return AccountProbeFlowRateLimited
 	case c.consentRequired:
-		return accountProbeFlowConsentRequired
+		return AccountProbeFlowConsentRequired
 	case c.challengeRequired:
-		return accountProbeFlowChallengeRequired
+		return AccountProbeFlowChallengeRequired
 	case c.registered:
-		return accountProbeFlowRegistered
+		return AccountProbeFlowRegistered
 	case c.notRegistered:
-		return accountProbeFlowNotRegistered
+		return AccountProbeFlowNotRegistered
 	default:
-		return accountProbeFlowUnknown
+		return AccountProbeFlowUnknown
 	}
 }
 
@@ -880,7 +880,7 @@ type verificationWaitStatus struct {
 	Present   bool
 }
 
-var apkDefaultRegistrationMethodOrder = []string{"flash", "sms", "voice", "wa_old", "acc_tr", "send_sms", "email_otp"}
+var ApkDefaultRegistrationMethodOrder = []string{"flash", "sms", "voice", "wa_old", "acc_tr", "send_sms", "email_otp"}
 
 func verificationMethodStatuses(data map[string]any, _ []waappv1.VerificationDeliveryMethod) []wacore.VerificationMethodStatus {
 	out := []wacore.VerificationMethodStatus{}
@@ -958,7 +958,7 @@ func prefRegistrationMethodOrderCodes(data map[string]any) []string {
 	if codes := verificationMethodCodesFromValue(data["pref_reg_methods_order"]); len(codes) > 0 {
 		return codes
 	}
-	return append([]string(nil), apkDefaultRegistrationMethodOrder...)
+	return append([]string(nil), ApkDefaultRegistrationMethodOrder...)
 }
 
 func verificationMethodCodesFromValue(value any) []string {
@@ -1151,7 +1151,7 @@ func stringList(value any) []string {
 	}
 }
 
-func jsonInt64(value any) int64 {
+func JsonInt64(value any) int64 {
 	switch v := value.(type) {
 	case float64:
 		return int64(v)
@@ -1173,7 +1173,7 @@ func jsonInt64(value any) int64 {
 func firstPresentJSONInt64(values ...any) (int64, bool) {
 	for _, value := range values {
 		if jsonValuePresent(value) {
-			return jsonInt64(value), true
+			return JsonInt64(value), true
 		}
 	}
 	return 0, false
@@ -1184,16 +1184,16 @@ func firstJSONWaitStatus(values ...any) verificationWaitStatus {
 		if !jsonValuePresent(value) {
 			continue
 		}
-		raw := jsonInt64(value)
+		raw := JsonInt64(value)
 		if raw < 0 {
 			return verificationWaitStatus{Exhausted: true, Present: true}
 		}
-		return verificationWaitStatus{Seconds: normalizeWaitSeconds(raw), Present: true}
+		return verificationWaitStatus{Seconds: NormalizeWaitSeconds(raw), Present: true}
 	}
 	return verificationWaitStatus{}
 }
 
-func normalizeWaitSeconds(value int64) int64 {
+func NormalizeWaitSeconds(value int64) int64 {
 	if value <= 0 {
 		return 0
 	}

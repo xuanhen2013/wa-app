@@ -29,7 +29,7 @@ const (
 	waAppStateKeyUnavailable     = "WA app-state key is not available; reconnect the account before changing profile name"
 )
 
-func buildNativePushNamePatch(state *nativeState, displayName string, timestampMS uint64) (chatdNode, nativeAppStateCollection, error) {
+func buildNativePushNamePatch(state *NativeState, displayName string, timestampMS uint64) (chatdNode, nativeAppStateCollection, error) {
 	keyID, keyData, err := selectedNativeAppStateKey(state)
 	if err != nil {
 		return chatdNode{}, nativeAppStateCollection{}, err
@@ -93,7 +93,7 @@ func buildNativeAppStatePatchIQ(id string, collectionName string, version uint64
 	}
 }
 
-func selectedNativeAppStateKey(state *nativeState) ([]byte, []byte, error) {
+func selectedNativeAppStateKey(state *NativeState) ([]byte, []byte, error) {
 	if state == nil || len(state.AppState.Keys) == 0 {
 		return nil, nil, appStatePatchError(waAppStateKeyUnavailable)
 	}
@@ -128,7 +128,7 @@ func selectedNativeAppStateKey(state *nativeState) ([]byte, []byte, error) {
 	return keyID, keyData, nil
 }
 
-func normalizedNativeAppStateCollection(state *nativeState, name string) nativeAppStateCollection {
+func normalizedNativeAppStateCollection(state *NativeState, name string) nativeAppStateCollection {
 	if state == nil {
 		return nativeAppStateCollection{}
 	}

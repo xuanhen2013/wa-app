@@ -18,7 +18,7 @@ type chatdOldRegistrationOTP struct {
 	expiresAt time.Time
 }
 
-func chatdDeviceIDFromState(state nativeState) string {
+func chatdDeviceIDFromState(state NativeState) string {
 	return chatdDeviceIDFromUUID(state.Profile.FDID)
 }
 

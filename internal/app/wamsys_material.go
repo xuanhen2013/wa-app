@@ -18,7 +18,7 @@ type wamsysMaterialInput struct {
 	Capture       *waappv1.WamsysCapture
 	Kind          waappv1.RegistrationRequestKind
 	Phone         *waappv1.PhoneTarget
-	State         nativeState
+	State         NativeState
 	AppVersion    string
 	IntegrityMode wacore.IntegrityMode
 	Now           time.Time
@@ -98,12 +98,12 @@ func (p localWamsysMaterialProvider) registrationGPIAMaterial(ctx context.Contex
 	return buildNativeGPIASuccessMaterial(input, token)
 }
 
-func nativeWamsysAID(state nativeState) string {
+func nativeWamsysAID(state NativeState) string {
 	sum := sha256.Sum256([]byte(nativeSyntheticAndroidID(state)))
 	return b64Std(sum[:])
 }
 
-func nativeSyntheticAndroidID(state nativeState) string {
+func nativeSyntheticAndroidID(state NativeState) string {
 	sum := sha256.Sum256([]byte(strings.Join([]string{
 		"byte-v-forge-wa-wamsys-android-id/v1",
 		state.Profile.PhoneSHA256,
@@ -162,7 +162,7 @@ func nativeWamsysDataPathAgeSeconds(input wamsysMaterialInput) int64 {
 	return nativeWamsysRuntimeOffset(input, "data-dir-age", nativeWamsysDataAgeBaseSeconds, nativeWamsysDataAgeSpreadSeconds)
 }
 
-func nativeWamsysStateCreatedUnix(state nativeState) int64 {
+func nativeWamsysStateCreatedUnix(state NativeState) int64 {
 	if state.Profile.CreatedAtUnix > 0 {
 		return state.Profile.CreatedAtUnix
 	}
@@ -190,7 +190,7 @@ func nativeWamsysRuntimeOffset(input wamsysMaterialInput, label string, base int
 	return base + int64(binary.BigEndian.Uint64(sum[:8])%spread)
 }
 
-func nativeStableRuntimeSeed(state nativeState, label string) string {
+func nativeStableRuntimeSeed(state NativeState, label string) string {
 	return strings.Join([]string{
 		"byte-v-forge-wa-native-runtime/v1",
 		strings.TrimSpace(label),
@@ -219,11 +219,11 @@ func nativeWamsysBootIDMaterial(input wamsysMaterialInput) string {
 	return b64Std(sum[:])
 }
 
-func nativeWamsysBootIDFileBytes(state nativeState) []byte {
+func nativeWamsysBootIDFileBytes(state NativeState) []byte {
 	return []byte(nativeStableWamsysBootID(state) + "\n")
 }
 
-func nativeStableWamsysBootID(state nativeState) string {
+func nativeStableWamsysBootID(state NativeState) string {
 	sum := sha256.Sum256([]byte(nativeStableRuntimeSeed(state, "boot-id")))
 	id := append([]byte(nil), sum[:16]...)
 	id[6] = (id[6] & 0x0f) | 0x40
@@ -242,7 +242,7 @@ func (e *engineCore) applyRuntimeWamsys(
 	ctx context.Context,
 	kind waappv1.RegistrationRequestKind,
 	phone *waappv1.PhoneTarget,
-	state nativeState,
+	state NativeState,
 	appVersion string,
 	integrityMode wacore.IntegrityMode,
 	params map[string]string,

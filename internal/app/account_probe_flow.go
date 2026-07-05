@@ -1,13 +1,13 @@
 package app
 
 const (
-	accountProbeFlowUnknown           = "unknown"
-	accountProbeFlowProbeFailed       = "probe_failed"
-	accountProbeFlowRegistered        = "registered"
-	accountProbeFlowNotRegistered     = "not_registered"
-	accountProbeFlowBlocked           = "blocked"
-	accountProbeFlowInvalidNumber     = "invalid_number"
-	accountProbeFlowRateLimited       = "rate_limited"
-	accountProbeFlowConsentRequired   = "consent_required"
-	accountProbeFlowChallengeRequired = "challenge_required"
+	AccountProbeFlowUnknown           = "unknown"
+	AccountProbeFlowProbeFailed       = "probe_failed"
+	AccountProbeFlowRegistered        = "registered"
+	AccountProbeFlowNotRegistered     = "not_registered"
+	AccountProbeFlowBlocked           = "blocked"
+	AccountProbeFlowInvalidNumber     = "invalid_number"
+	AccountProbeFlowRateLimited       = "rate_limited"
+	AccountProbeFlowConsentRequired   = "consent_required"
+	AccountProbeFlowChallengeRequired = "challenge_required"
 )

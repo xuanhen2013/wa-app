@@ -19,9 +19,9 @@ import (
 )
 
 const (
-	defaultContactProfilePictureTimeout = 20 * time.Second
+	DefaultContactProfilePictureTimeout = 20 * time.Second
 	profilePictureDirectPathHost        = "https://pps.whatsapp.net"
-	profilePictureDownloadMaxBytes      = 2 << 20
+	ProfilePictureDownloadMaxBytes      = 2 << 20
 	profilePictureTypeImage             = "image"
 	profilePictureTypePreview           = "preview"
 )
@@ -36,7 +36,7 @@ type contactProfilePictureLocation struct {
 }
 
 type chatdIQSender interface {
-	sendIQ(context.Context, nativeState, string, string, chatdNode, string) (chatdNode, chatdSessionUpdate, error)
+	sendIQ(context.Context, NativeState, string, string, chatdNode, string) (chatdNode, chatdSessionUpdate, error)
 }
 
 func (e *contactsService) ResolveContactProfilePicture(ctx context.Context, input wacore.EngineContactProfilePictureInput) wacore.EngineContactProfilePictureResult {
@@ -61,7 +61,7 @@ func (e *contactsService) resolveContactProfilePictureWithSender(ctx context.Con
 	}
 	timeout := input.RemoteTimeout
 	if timeout <= 0 {
-		timeout = defaultContactProfilePictureTimeout
+		timeout = DefaultContactProfilePictureTimeout
 	}
 	operationCtx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
@@ -88,7 +88,7 @@ func (e *contactsService) resolveContactProfilePictureWithSender(ctx context.Con
 			continue
 		}
 		if len(location.InlineData) > 0 {
-			contentType, err := profilePictureContentType(location.InlineData, "")
+			contentType, err := ProfilePictureContentType(location.InlineData, "")
 			return wacore.EngineContactProfilePictureResult{ProfilePictureID: location.ID, ContentType: contentType, Data: location.InlineData, Err: err}
 		}
 		data, contentType, downloadErr := e.downloadContactProfilePicture(operationCtx, location, nativeUserAgentForState(state, input.AppVersion))
@@ -106,7 +106,7 @@ func (e *contactsService) resolveContactProfilePictureWithSender(ctx context.Con
 	return wacore.EngineContactProfilePictureResult{Err: shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_MESSAGE_NOT_FOUND, "WA profile picture not found", false)}
 }
 
-func (e *contactsService) contactProfilePictureLocationsFromProfileIQ(ctx context.Context, sender chatdIQSender, state nativeState, input wacore.EngineContactProfilePictureInput, jid string) ([]contactProfilePictureLocation, chatdSessionUpdate, error) {
+func (e *contactsService) contactProfilePictureLocationsFromProfileIQ(ctx context.Context, sender chatdIQSender, state NativeState, input wacore.EngineContactProfilePictureInput, jid string) ([]contactProfilePictureLocation, chatdSessionUpdate, error) {
 	targets := contactProfilePictureTargets(jid, input.ContactPNJID)
 	if len(targets) == 0 {
 		return nil, chatdSessionUpdate{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "WA contact profile picture target is incomplete", false)
@@ -259,7 +259,7 @@ func logWAContactProfilePictureIQFailure(target string, pictureType string, requ
 	if err == nil {
 		return
 	}
-	log.Printf("WA contact profile picture iq failed target_kind=%s picture_type=%s request_id=%t reason=%s", contactProfilePictureTargetKind(target), shared.SafeProxyLogToken(pictureType, "unknown"), requestIDPresent, contactProfilePictureFailureReason(err))
+	log.Printf("WA contact profile picture iq failed target_kind=%s picture_type=%s request_id=%t reason=%s", contactProfilePictureTargetKind(target), shared.SafeProxyLogToken(pictureType, "unknown"), requestIDPresent, ContactProfilePictureFailureReason(err))
 }
 
 func logWAContactProfilePictureIQLocation(target string, pictureType string, requestIDPresent bool, location contactProfilePictureLocation) {
@@ -267,7 +267,7 @@ func logWAContactProfilePictureIQLocation(target string, pictureType string, req
 }
 
 func logWAContactProfilePictureDownloadFallback(err error) {
-	log.Printf("WA contact profile picture download retry without proxy reason=%s", contactProfilePictureFailureReason(err))
+	log.Printf("WA contact profile picture download retry without proxy reason=%s", ContactProfilePictureFailureReason(err))
 }
 
 func contactProfilePictureTargetKind(jid string) string {
@@ -383,7 +383,7 @@ func (c *nativeHTTPClient) getProfilePictureOnce(ctx context.Context, endpoint s
 	if err != nil {
 		return nil, "", err
 	}
-	req.Header.Set("User-Agent", shared.FirstNonEmpty(userAgent, nativeUserAgent(defaultWAAppVersion)))
+	req.Header.Set("User-Agent", shared.FirstNonEmpty(userAgent, nativeUserAgent(DefaultWAAppVersion)))
 	resp, err := c.client.Do(req)
 	if err != nil {
 		return nil, "", err
@@ -399,7 +399,7 @@ func (c *nativeHTTPClient) getProfilePictureOnce(ctx context.Context, endpoint s
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
 		return nil, "", profilePictureHTTPError(resp.StatusCode)
 	}
-	contentType, err := profilePictureContentType(data, resp.Header.Get("Content-Type"))
+	contentType, err := ProfilePictureContentType(data, resp.Header.Get("Content-Type"))
 	if err != nil {
 		return nil, "", err
 	}
@@ -477,18 +477,18 @@ func profilePictureURLHostAllowed(host string) bool {
 
 func readLimitedProfilePicture(reader io.Reader) ([]byte, error) {
 	var buf bytes.Buffer
-	limited := io.LimitReader(reader, profilePictureDownloadMaxBytes+1)
+	limited := io.LimitReader(reader, ProfilePictureDownloadMaxBytes+1)
 	if _, err := buf.ReadFrom(limited); err != nil {
 		return nil, err
 	}
 	data := buf.Bytes()
-	if len(data) > profilePictureDownloadMaxBytes {
+	if len(data) > ProfilePictureDownloadMaxBytes {
 		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "WA profile picture is too large", false)
 	}
 	return data, nil
 }
 
-func profilePictureContentType(data []byte, header string) (string, error) {
+func ProfilePictureContentType(data []byte, header string) (string, error) {
 	contentType := strings.ToLower(strings.TrimSpace(strings.Split(header, ";")[0]))
 	if profilePictureContentTypeAllowed(contentType) {
 		return contentType, nil
@@ -533,7 +533,7 @@ func sleepWithContext(ctx context.Context, duration time.Duration) error {
 	}
 }
 
-func contactProfilePictureFailureReason(err error) string {
+func ContactProfilePictureFailureReason(err error) string {
 	if err == nil {
 		return "unknown"
 	}

@@ -20,7 +20,7 @@ import (
 )
 
 const (
-	defaultWAAppVersion     = "2.26.24.77"
+	DefaultWAAppVersion     = "2.26.24.77"
 	defaultWAAppVersionCode = 262407730
 	defaultWAABPropURL      = "https://y9yrsygcg6.execute-api.us-east-1.amazonaws.com/s/s?_=/v2/reg_onboard_abprop&"
 	defaultWAExistURL       = "https://y9yrsygcg6.execute-api.us-east-1.amazonaws.com/s/s?_=/v2/exist&"
@@ -169,7 +169,7 @@ func (e *registrationService) ProbeAccount(ctx context.Context, input wacore.Eng
 	return result
 }
 
-func (e *registrationService) probeAccountWithState(ctx context.Context, input wacore.EngineRegistrationInput, state nativeState) (wacore.EngineProbeResult, nativeState) {
+func (e *registrationService) probeAccountWithState(ctx context.Context, input wacore.EngineRegistrationInput, state NativeState) (wacore.EngineProbeResult, NativeState) {
 	if err := ensureNativeSoftwareAttestation(&state, e.clock.Now()); err != nil {
 		return wacore.EngineProbeResult{Status: waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED, Err: err}, state
 	}
@@ -200,7 +200,7 @@ func (e *registrationService) probeAccountWithState(ctx context.Context, input w
 			return result, state
 		}
 		result.Status = waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_REJECTED
-		result.AccountFlow = accountProbeFlowProbeFailed
+		result.AccountFlow = AccountProbeFlowProbeFailed
 		result.Err = classifyHTTPError(data, err)
 	}
 	return result, state
@@ -208,7 +208,7 @@ func (e *registrationService) probeAccountWithState(ctx context.Context, input w
 
 func parsedExistApplicationOutcome(result wacore.EngineProbeResult) bool {
 	return result.Status != waappv1.AccountProbeStatus_ACCOUNT_PROBE_STATUS_UNKNOWN ||
-		result.AccountFlow != accountProbeFlowUnknown ||
+		result.AccountFlow != AccountProbeFlowUnknown ||
 		result.RawStatus != "" ||
 		result.RawReason != "" ||
 		len(result.MethodStatuses) > 0
@@ -224,7 +224,7 @@ func (e *registrationService) RequestVerificationCode(ctx context.Context, input
 	return result
 }
 
-func (e *registrationService) requestVerificationCodeWithState(ctx context.Context, input wacore.EngineRegistrationInput, state nativeState) (wacore.EngineCodeResult, nativeState) {
+func (e *registrationService) requestVerificationCodeWithState(ctx context.Context, input wacore.EngineRegistrationInput, state NativeState) (wacore.EngineCodeResult, NativeState) {
 	if err := ensureNativeSoftwareAttestation(&state, e.clock.Now()); err != nil {
 		return wacore.EngineCodeResult{Status: waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_REJECTED, Err: err}, state
 	}
@@ -297,7 +297,7 @@ func (e *registrationService) requestVerificationCodeWithState(ctx context.Conte
 	return result, state
 }
 
-func (e *registrationService) prepareAccountTransferChallenge(phone *waappv1.PhoneTarget, state *nativeState, data map[string]any, now time.Time) (*waappv1.AccountTransferChallenge, error) {
+func (e *registrationService) prepareAccountTransferChallenge(phone *waappv1.PhoneTarget, state *NativeState, data map[string]any, now time.Time) (*waappv1.AccountTransferChallenge, error) {
 	codes := accountTransferCodesFromResponse(data)
 	if len(codes) == 0 {
 		return nil, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, "account transfer code list is missing", false)
@@ -505,7 +505,7 @@ func (e *messagingService) ReceiveMessageBatch(ctx context.Context, input wacore
 	return wacore.EngineMessageBatchResult{Messages: messages, Contacts: wamodel.ContactsFromContactHints(input.WAAccountID, nil, update.ContactHints, now), OTPMessages: otps, AccountLogout: accountLogoutFromUpdate(update.AccountLogout)}
 }
 
-func applyChatdReceiveState(state *nativeState, input wacore.EngineMessageInput, payloads []chatdEncPayload, update chatdSessionUpdate) bool {
+func applyChatdReceiveState(state *NativeState, input wacore.EngineMessageInput, payloads []chatdEncPayload, update chatdSessionUpdate) bool {
 	if state == nil {
 		return false
 	}
@@ -537,7 +537,7 @@ func applyChatdReceiveState(state *nativeState, input wacore.EngineMessageInput,
 	return changed
 }
 
-func applyChatdSessionUpdateState(state *nativeState, update chatdSessionUpdate) bool {
+func applyChatdSessionUpdateState(state *NativeState, update chatdSessionUpdate) bool {
 	changed := false
 	if applyChatdConnectionState(state, update) {
 		changed = true
@@ -574,7 +574,7 @@ func hasChatdSessionUpdate(update chatdSessionUpdate) bool {
 	return update.RoutingInfo != "" || update.Endpoint.Host != "" || update.ServerStaticPublic != "" || len(update.ContactHints) > 0 || len(update.PrivacyTokens) > 0 || update.AccountLogout != nil
 }
 
-func applyChatdConnectionState(state *nativeState, update chatdSessionUpdate) bool {
+func applyChatdConnectionState(state *NativeState, update chatdSessionUpdate) bool {
 	if state == nil {
 		return false
 	}
@@ -621,7 +621,7 @@ func chatdReceiveError(err error) error {
 	message := chatdFailureMessage("native chatd receive failed", err)
 	// 账号被接管(device_removed/replaced)是不可重试的登出终态(号码已在其他设备注册),透传为
 	// CONFLICT 并保留标记,使长连接据此持久化"已转出"而非无限重连;其余 chatd 收包失败仍为可重试 REJECTED。
-	if isAccountTakeoverError(err) {
+	if IsAccountTakeoverError(err) {
 		return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_CONFLICT, chatdAccountTakeoverMarker+" "+message, false)
 	}
 	return shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_REJECTED, message, true)
@@ -640,7 +640,7 @@ func chatdSafeFailureMessage(err error) string {
 	case phase != "":
 		return phase
 	default:
-		return safeResponseSnippet(upstreamFailureMessage(nil, err))
+		return SafeResponseSnippet(upstreamFailureMessage(nil, err))
 	}
 }
 
@@ -805,8 +805,8 @@ func omitEmptyNativeOperatorField(key string, value string) bool {
 	}
 }
 
-func (e *engineCore) registerParams(phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, code string, state nativeState, authCodeContext string) (map[string]string, map[string]struct{}) {
-	methodName := shared.FirstNonEmpty(state.LastCodeParams["method"], registrationMethodName(method, "sms"))
+func (e *engineCore) registerParams(phone *waappv1.PhoneTarget, method waappv1.VerificationDeliveryMethod, code string, state NativeState, authCodeContext string) (map[string]string, map[string]struct{}) {
+	methodName := shared.FirstNonEmpty(state.LastCodeParams["method"], RegistrationMethodName(method, "sms"))
 	lg, lc := registrationLocale(phone)
 	params := map[string]string{
 		"cc":                shared.PhoneCC(phone),
@@ -846,7 +846,7 @@ func (e *engineCore) registerParams(phone *waappv1.PhoneTarget, method waappv1.V
 	return params, raw
 }
 
-func applyRegisterCodeResultParams(params map[string]string, state nativeState) {
+func applyRegisterCodeResultParams(params map[string]string, state NativeState) {
 	for _, key := range []string{"auth_response", "context", "advertising_id", "login", "type"} {
 		value := jsonString(state.LastCodeResult[key])
 		if value == "" {
@@ -856,24 +856,24 @@ func applyRegisterCodeResultParams(params map[string]string, state nativeState) 
 	}
 }
 
-func (e *engineCore) loadState(ctx context.Context, clientProfileID string) (nativeState, error) {
+func (e *engineCore) loadState(ctx context.Context, clientProfileID string) (NativeState, error) {
 	data, err := e.stateStore.GetNativeState(ctx, clientProfileID)
 	if err != nil {
-		return nativeState{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_PROFILE_NOT_FOUND, "native client profile state not found", false)
+		return NativeState{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_PROFILE_NOT_FOUND, "native client profile state not found", false)
 	}
-	state, err := unmarshalNativeState(data)
+	state, err := UnmarshalNativeState(data)
 	if err != nil {
-		return nativeState{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_PROFILE_NOT_FOUND, "native client profile state not found", false)
+		return NativeState{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_PROFILE_NOT_FOUND, "native client profile state not found", false)
 	}
 	return state, nil
 }
 
-func (e *engineCore) newState(phone *waappv1.PhoneTarget) (nativeState, error) {
+func (e *engineCore) newState(phone *waappv1.PhoneTarget) (NativeState, error) {
 	return newNativeState(phone)
 }
 
-func (e *engineCore) saveState(ctx context.Context, clientProfileID string, state nativeState) error {
-	data, err := marshalNativeState(state)
+func (e *engineCore) saveState(ctx context.Context, clientProfileID string, state NativeState) error {
+	data, err := MarshalNativeState(state)
 	if err != nil {
 		return err
 	}
@@ -889,7 +889,7 @@ func sanitizeResponse(data map[string]any) map[string]any {
 			continue
 		}
 		if lower == "response_text" {
-			out[key] = safeResponseSnippet(jsonString(value))
+			out[key] = SafeResponseSnippet(jsonString(value))
 			continue
 		}
 		out[key] = value
@@ -936,7 +936,7 @@ func verificationCodeRateLimited(data map[string]any) bool {
 }
 
 func verificationCodeRetryAfter(data map[string]any, method waappv1.VerificationDeliveryMethod) time.Duration {
-	seconds := verificationMethodWaitStatus(data, registrationMethodName(method, "sms"), true).Seconds
+	seconds := verificationMethodWaitStatus(data, RegistrationMethodName(method, "sms"), true).Seconds
 	if seconds <= 0 {
 		return 0
 	}
@@ -965,7 +965,7 @@ func jsonString(value any) string {
 
 func upstreamFailureMessage(data map[string]any, err error) string {
 	if statusCode := jsonNumber(data["status_code"]); statusCode > 0 {
-		if snippet := safeResponseSnippet(jsonString(data["response_text"])); snippet != "" {
+		if snippet := SafeResponseSnippet(jsonString(data["response_text"])); snippet != "" {
 			return fmt.Sprintf("wasafe upstream http %d: %s", statusCode, snippet)
 		}
 		return fmt.Sprintf("wasafe upstream http %d", statusCode)
@@ -973,7 +973,7 @@ func upstreamFailureMessage(data map[string]any, err error) string {
 	return err.Error()
 }
 
-func safeResponseSnippet(text string) string {
+func SafeResponseSnippet(text string) string {
 	text = strings.Join(strings.Fields(text), " ")
 	if text == "" {
 		return ""
