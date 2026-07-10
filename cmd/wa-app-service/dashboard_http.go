@@ -28,19 +28,21 @@ import (
 )
 
 type dashboardHTTP struct {
-	staticDir     string
-	service       *rpc.Server
-	actionHandler http.Handler
+	staticDir            string
+	service              *rpc.Server
+	actionHandler        http.Handler
+	registrationFeatures *bff.RegistrationFeatures
 }
 
-func runDashboardHTTP(ctx context.Context, listenAddr, staticDir string, service *rpc.Server, actionHandler http.Handler, auth dashboardAuthConfig) error {
+func runDashboardHTTP(ctx context.Context, listenAddr, staticDir string, service *rpc.Server, registrationFeatures *bff.RegistrationFeatures, auth dashboardAuthConfig) error {
 	if strings.TrimSpace(listenAddr) == "" {
 		return nil
 	}
 	server := &dashboardHTTP{
-		staticDir:     firstNonEmpty(staticDir, "/app/dashboard/wa"),
-		service:       service,
-		actionHandler: actionHandler,
+		staticDir:            firstNonEmpty(staticDir, "/app/dashboard/wa"),
+		service:              service,
+		actionHandler:        registrationFeatures.ActionHandler(),
+		registrationFeatures: registrationFeatures,
 	}
 	mux := http.NewServeMux()
 	mux.HandleFunc("/api/wa/health", server.handleHealth)
@@ -69,6 +71,7 @@ func runDashboardHTTP(ctx context.Context, listenAddr, staticDir string, service
 	mux.HandleFunc("/api/wa/contacts/", server.handleContactResource)
 	mux.HandleFunc("/api/wa/contacts", server.handleContacts)
 	mux.HandleFunc("/api/wa/long-connections", server.handleLongConnections)
+	mux.Handle("/api/wa/bulk-registration/", registrationFeatures.BulkRegistrationHandler())
 	mux.Handle("/api/wa/actions/", server.actionHandler)
 	mux.HandleFunc("/mf/wa/", http.NotFound)
 	mux.HandleFunc("/healthz", server.handleHealth)
@@ -592,10 +595,6 @@ func (s *dashboardHTTP) handleResolveContacts(w http.ResponseWriter, r *http.Req
 	writeProtoJSON(w, http.StatusOK, resp)
 }
 
-func newWAActionHandler(service *rpc.Server) http.Handler {
-	return bff.NewActionGateway(service)
-}
-
 func (s *dashboardHTTP) handleHealth(w http.ResponseWriter, _ *http.Request) {
 	playIntegrityConfigured := false
 	if s.service != nil {
@@ -693,7 +692,7 @@ func (s *dashboardHTTP) handleRegister(w http.ResponseWriter, r *http.Request) {
 	}
 	ctx, cancel := context.WithTimeout(r.Context(), 90*time.Second)
 	defer cancel()
-	result, err := bff.StartRegistration(s.service, ctx, payload)
+	result, err := s.registrationFeatures.StartRegistration(ctx, payload)
 	if err != nil {
 		writeJSON(w, http.StatusOK, map[string]any{"success": false, "status": "REGISTRATION_START_FAILED", "error_message": err.Error()})
 		return

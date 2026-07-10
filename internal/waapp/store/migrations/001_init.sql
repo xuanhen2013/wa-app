@@ -281,3 +281,33 @@ CREATE INDEX IF NOT EXISTS wa_inbound_messages_delete_status_idx ON wa_inbound_m
 CREATE INDEX IF NOT EXISTS wa_decrypted_messages_message_decrypted_idx ON wa_decrypted_messages (message_id, decrypted_at DESC, decrypted_message_id DESC);
 CREATE INDEX IF NOT EXISTS wa_contacts_account_updated_idx ON wa_contacts (wa_account_id, updated_at DESC, contact_id DESC);
 CREATE INDEX IF NOT EXISTS wa_contacts_account_jid_idx ON wa_contacts (wa_account_id, jid);
+
+CREATE TABLE IF NOT EXISTS wa_bulk_registration_tasks (
+  task_id TEXT PRIMARY KEY,
+  status TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  payload JSONB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS wa_bulk_registration_tasks_updated_idx ON wa_bulk_registration_tasks (updated_at DESC, task_id DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS wa_bulk_registration_tasks_one_active_idx ON wa_bulk_registration_tasks ((1))
+  WHERE status IN ('DRAFT','RUNNING','CANCEL_REQUESTED','CANCELING','PAUSED');
+
+CREATE TABLE IF NOT EXISTS wa_bulk_registration_items (
+  item_id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES wa_bulk_registration_tasks(task_id) ON DELETE CASCADE,
+  status TEXT NOT NULL,
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  updated_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  payload JSONB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS wa_bulk_registration_items_task_idx ON wa_bulk_registration_items (task_id, created_at ASC, item_id ASC);
+
+CREATE TABLE IF NOT EXISTS wa_sms_activation_events (
+  event_id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL REFERENCES wa_bulk_registration_tasks(task_id) ON DELETE CASCADE,
+  item_id TEXT NOT NULL DEFAULT '',
+  created_at TIMESTAMPTZ NOT NULL DEFAULT now(),
+  payload JSONB NOT NULL
+);
+CREATE INDEX IF NOT EXISTS wa_sms_activation_events_task_idx ON wa_sms_activation_events (task_id, created_at ASC, event_id ASC);

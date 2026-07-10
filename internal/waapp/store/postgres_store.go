@@ -84,7 +84,7 @@ func (s *PostgresStore) validate(ctx context.Context) error {
 	for _, table := range []string{
 		"wa_app_artifacts", "wa_protocol_profiles", "wa_accounts", "wa_client_profiles", "wa_account_probes",
 		"wa_client_profile_states", "wa_verification_requests", "wa_registrations", "wa_login_states", "wa_message_sessions", "wa_inbound_messages",
-		"wa_decrypted_messages", "wa_extracted_candidates", "wa_otp_messages", "wa_contacts",
+		"wa_decrypted_messages", "wa_extracted_candidates", "wa_otp_messages", "wa_contacts", "wa_bulk_registration_tasks", "wa_bulk_registration_items", "wa_sms_activation_events",
 	} {
 		var exists bool
 		if err := s.pool.QueryRow(ctx, `SELECT to_regclass($1) IS NOT NULL`, table).Scan(&exists); err != nil {

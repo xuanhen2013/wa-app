@@ -5,6 +5,7 @@ import (
 	"time"
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
+	"github.com/byte-v-forge/wa-app/internal/waapp/bulkregistration"
 )
 
 // Store is the composite durable-persistence port. It is deliberately an
@@ -18,6 +19,7 @@ type Store interface {
 	RegistrationRepository
 	MessagingRepository
 	WAContactRepository
+	BulkRegistrationRepository
 	Close()
 }
 
@@ -94,6 +96,19 @@ type WAContactRepository interface {
 type NativeStateStore interface {
 	SaveNativeState(context.Context, string, []byte) error
 	GetNativeState(context.Context, string) ([]byte, error)
+}
+
+// BulkRegistrationRepository persists dashboard-only batch registration work.
+// It intentionally uses an internal model rather than changing the public
+// Proto contract for provider and proxy implementation details.
+type BulkRegistrationRepository interface {
+	CreateTask(context.Context, bulkregistration.Task, []bulkregistration.Item) (*bulkregistration.Task, bool, error)
+	GetActiveTask(context.Context) (*bulkregistration.Task, error)
+	GetTask(context.Context, string) (*bulkregistration.Task, error)
+	ListItems(context.Context, string) ([]bulkregistration.Item, error)
+	SaveTask(context.Context, bulkregistration.Task) error
+	SaveItem(context.Context, bulkregistration.Item) error
+	AppendEvent(context.Context, bulkregistration.Event) error
 }
 
 type DeleteWAContactResult struct {

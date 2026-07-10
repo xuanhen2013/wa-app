@@ -1,7 +1,7 @@
 import { useMemo, useState } from 'react';
 import type { CSSProperties, ReactNode } from 'react';
 import { useInfiniteQuery, useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
-import { Navigate, Outlet, useMatches, useNavigate, useOutletContext, useParams } from 'react-router';
+import { Navigate, Outlet, useMatches, useNavigate, useOutletContext, useParams, useSearchParams } from 'react-router';
 import { toast } from 'sonner';
 import { Loader2, Plus } from 'lucide-react';
 import { Button } from '@/components/ui/button';
@@ -12,6 +12,7 @@ import type { LongConnectionState } from '../proto/byte/v/forge/waapp/v1/messagi
 import type { WAAccount } from '../proto/byte/v/forge/waapp/v1/profile';
 import { cleanupPendingRegistrationWaAccounts, deleteWaAccount, getWaAccounts, getWaClientProfiles, waAccountID, waKeys } from './wa-api';
 import { WaAccountAdd } from './wa-account-add';
+import { WaBulkAccountAdd } from './wa-bulk-account-add';
 import { WaAccountInfoPage } from './wa-account-info-page';
 import { WaAccountRail } from './wa-account-rail';
 import { WhatsAppIcon } from './wa-brand-icon';
@@ -57,8 +58,13 @@ export function WaHomeRoute() {
 }
 
 export function WaCreateAccountRoute() {
-  const { deleting, refreshAccounts, done, error } = useWaContext();
-  return <PageShell title="添加账号"><WaAccountAdd disabled={deleting} onChanged={refreshAccounts} onDone={done} onError={error} /></PageShell>;
+	const { deleting, refreshAccounts, done, error } = useWaContext();
+	const [searchParams, setSearchParams] = useSearchParams();
+	const mode = searchParams.get('mode') === 'bulk' ? 'bulk' : 'single';
+	function setMode(nextMode: 'single' | 'bulk') {
+		setSearchParams(nextMode === 'bulk' ? { mode: 'bulk' } : {});
+	}
+	return <PageShell title="添加账号"><div className="grid gap-4"><div className="inline-flex w-fit items-center gap-1 rounded-md border bg-muted/40 p-1" role="tablist" aria-label="添加方式"><Button type="button" size="sm" variant={mode === 'single' ? 'secondary' : 'ghost'} role="tab" aria-selected={mode === 'single'} onClick={() => setMode('single')}>单个添加</Button><Button type="button" size="sm" variant={mode === 'bulk' ? 'secondary' : 'ghost'} role="tab" aria-selected={mode === 'bulk'} onClick={() => setMode('bulk')}>批量添加</Button></div>{mode === 'bulk' ? <WaBulkAccountAdd disabled={deleting} onChanged={refreshAccounts} onDone={done} onError={error} /> : <WaAccountAdd disabled={deleting} onChanged={refreshAccounts} onDone={done} onError={error} />}</div></PageShell>;
 }
 
 export function WaAccountInfoRoute() {

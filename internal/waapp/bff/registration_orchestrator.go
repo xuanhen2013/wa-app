@@ -17,7 +17,11 @@ import (
 // StartRegistration is the dashboard registration entry point; it drives the
 // multi-step orchestration on a fresh action gateway bound to the given server.
 func StartRegistration(server *rpc.Server, ctx context.Context, payload map[string]any) (map[string]any, error) {
-	return (&actionGateway{server: server}).startRegistration(ctx, payload)
+	return StartRegistrationWithRegistrationProxy(server, RegistrationProxyConfig{}, ctx, payload)
+}
+
+func StartRegistrationWithRegistrationProxy(server *rpc.Server, config RegistrationProxyConfig, ctx context.Context, payload map[string]any) (map[string]any, error) {
+	return (&actionGateway{server: server, registrationProxy: newRegistrationProxyResolver(config)}).startRegistration(ctx, payload)
 }
 
 func (g *actionGateway) startRegistration(ctx context.Context, payload map[string]any) (map[string]any, error) {
@@ -42,7 +46,7 @@ func (g *actionGateway) startRegistration(ctx context.Context, payload map[strin
 		return nil, err
 	}
 	logRegistrationAttemptState(basePayload, phone, reusedState)
-	runner, route, managedRoute, err := g.registrationRunner(basePayload)
+	runner, route, managedRoute, err := g.registrationRunner(ctx, basePayload)
 	if err != nil {
 		return nil, err
 	}
@@ -76,8 +80,9 @@ func (g *actionGateway) startRegistration(ctx context.Context, payload map[strin
 		WAAccountID:           wamodel.WAAccountID(account),
 		VerificationRequestID: verificationRequestID,
 		CreatedAtUnix:         time.Now().UTC().Unix(),
+		RegistrationProxy:     g.registrationProxyWait(route),
 	}
-	if err := g.saveRegistrationOTPWait(ctx, wait, registrationOTPWaitDefaultTTL); err != nil {
+	if err := g.saveRegistrationOTPWait(ctx, wait, g.registrationProxyWaitTTL(registrationOTPWaitDefaultTTL)); err != nil {
 		_ = g.discardRejectedRegistration(context.Background(), basePayload, wamodel.WAAccountID(account), verificationRequestID)
 		return nil, err
 	}

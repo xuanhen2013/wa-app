@@ -26,10 +26,17 @@ const transientStateTTL = 30 * time.Minute
 const registrationAttemptStateTTL = 26 * time.Hour
 const registrationOTPWaitDefaultTTL = 20 * time.Minute
 
-type actionGateway struct{ server *rpc.Server }
+type actionGateway struct {
+	server            *rpc.Server
+	registrationProxy *registrationProxyResolver
+}
 
 func NewActionGateway(server *rpc.Server) http.Handler {
-	return &actionGateway{server: server}
+	return NewActionGatewayWithRegistrationProxy(server, RegistrationProxyConfig{})
+}
+
+func NewActionGatewayWithRegistrationProxy(server *rpc.Server, config RegistrationProxyConfig) http.Handler {
+	return &actionGateway{server: server, registrationProxy: newRegistrationProxyResolver(config)}
 }
 
 func (g *actionGateway) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -186,7 +193,7 @@ func (g *actionGateway) requestSMSOTP(ctx context.Context, payload map[string]an
 	if reason := directRegistrationMethodUnsupportedReason(method); reason != "" {
 		return registrationMethodUnsupportedMap(method, reason), nil
 	}
-	runner, route, managedRoute, err := g.registrationRunner(payload)
+	runner, route, managedRoute, err := g.registrationRunner(ctx, payload)
 	if err != nil {
 		return nil, err
 	}
@@ -206,6 +213,9 @@ func (g *actionGateway) requestSMSOTP(ctx context.Context, payload map[string]an
 		return actionErrorFromProto(resp.GetError()), nil
 	}
 	record := resp.GetVerificationRequest()
+	if err := g.saveRegistrationProxyWait(ctx, record.GetWaAccountId(), record.GetVerificationRequestId(), route); err != nil {
+		return nil, err
+	}
 	success := record.GetStatus() == waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_SENT || record.GetStatus() == waappv1.VerificationRequestStatus_VERIFICATION_REQUEST_STATUS_WAITING
 	result := requestSMSOTPResultDTO{
 		Success:               success,
@@ -252,6 +262,17 @@ func (g *actionGateway) awaitOTP(ctx context.Context, payload map[string]any) (a
 	wait, ttl, err := registrationOTPWaitFromPayload(payload)
 	if err != nil {
 		return nil, err
+	}
+	if existing, err := g.loadRegistrationOTPWait(ctx, "", wait.VerificationRequestID); err == nil {
+		if wait.WAAccountID == "" {
+			wait.WAAccountID = existing.WAAccountID
+		}
+		if wait.RegistrationProxy == nil {
+			wait.RegistrationProxy = existing.RegistrationProxy
+		}
+	}
+	if wait.RegistrationProxy != nil {
+		ttl = g.registrationProxyWaitTTL(ttl)
 	}
 	if err := g.saveRegistrationOTPWait(ctx, wait, ttl); err != nil {
 		return nil, err
@@ -395,7 +416,7 @@ func postRegistrationOTPResume(ctx context.Context, wait wamodel.RegistrationOTP
 }
 
 func (g *actionGateway) submitOTP(ctx context.Context, payload map[string]any) (map[string]any, error) {
-	runner, route, managedRoute, err := g.registrationRunner(payload)
+	runner, route, managedRoute, err := g.registrationRunner(ctx, payload)
 	if err != nil {
 		return nil, err
 	}
@@ -723,25 +744,6 @@ func (g *actionGateway) nativeEngineForPayload(payload map[string]any) (*engine.
 		return engine, nil
 	}
 	return engine.WithProxyURL(proxyURL)
-}
-
-func (g *actionGateway) registrationRunner(payload map[string]any) (*engine.NativeEngine, wacore.WAProxyRoute, bool, error) {
-	engine, err := g.nativeEngine()
-	if err != nil {
-		return nil, wacore.WAProxyRoute{}, false, err
-	}
-	route, useProxy := g.resolveWAProxyRoute(waProxyResolveRequest{
-		Payload:     payload,
-		CountryCode: proxyCountryCodeFromPayload(payload),
-	})
-	if !useProxy {
-		return engine, route, false, nil
-	}
-	proxied, err := engine.WithProxyURL(route.ProxyURL)
-	if err != nil {
-		return nil, wacore.WAProxyRoute{}, false, err
-	}
-	return proxied, route, true, nil
 }
 
 func registrationProxyRouteMap(route wacore.WAProxyRoute, managed bool) map[string]any {

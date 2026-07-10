@@ -1,0 +1,22 @@
+name: wa-app-whats
+
+services:
+  wa-app-whats:
+    image: ${WA_APP_IMAGE:?set WA_APP_IMAGE before deploying}
+    container_name: wa-app-whats
+    env_file:
+      - ./wa-app.env
+    environment:
+      WA_APP_LISTEN_ADDR: :50091
+      WA_APP_DASHBOARD_HTTP_ADDR: :8080
+      WA_APP_DASHBOARD_STATIC_DIR: /app/dashboard/wa
+      WA_APP_DATA_DIR: /var/lib/wa-app
+    ports:
+      - "127.0.0.1:4399:8080"
+    volumes:
+      - wa-app-whats-data:/var/lib/wa-app
+    restart: unless-stopped
+
+volumes:
+  wa-app-whats-data:
+    name: wa-app-whats-data

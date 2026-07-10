@@ -1,0 +1,16 @@
+.git
+.agents
+.codex
+.env
+.env.*
+*.log
+*.tmp
+.tmp/
+.temp/
+node_modules/
+webui/node_modules/
+dist/
+webui/dist/
+gen/
+webui/src/proto/
+coverage/

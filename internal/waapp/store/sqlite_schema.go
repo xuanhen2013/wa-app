@@ -125,6 +125,33 @@ CREATE TABLE IF NOT EXISTS wa_sqlite_runtime_state (
   PRIMARY KEY(kind, key)
 );
 CREATE INDEX IF NOT EXISTS idx_wa_sqlite_runtime_expires ON wa_sqlite_runtime_state(expires_at);
+CREATE TABLE IF NOT EXISTS wa_sqlite_bulk_registration_tasks (
+  id TEXT PRIMARY KEY,
+  status TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  payload TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_wa_sqlite_bulk_tasks_updated ON wa_sqlite_bulk_registration_tasks(updated_at DESC, id DESC);
+CREATE UNIQUE INDEX IF NOT EXISTS idx_wa_sqlite_bulk_tasks_one_active ON wa_sqlite_bulk_registration_tasks((1))
+  WHERE status IN ('DRAFT','RUNNING','CANCEL_REQUESTED','CANCELING','PAUSED');
+CREATE TABLE IF NOT EXISTS wa_sqlite_bulk_registration_items (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  status TEXT NOT NULL,
+  created_at INTEGER NOT NULL,
+  updated_at INTEGER NOT NULL,
+  payload TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_wa_sqlite_bulk_items_task ON wa_sqlite_bulk_registration_items(task_id, created_at ASC, id ASC);
+CREATE TABLE IF NOT EXISTS wa_sqlite_sms_activation_events (
+  id TEXT PRIMARY KEY,
+  task_id TEXT NOT NULL,
+  item_id TEXT NOT NULL DEFAULT '',
+  created_at INTEGER NOT NULL,
+  payload TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_wa_sqlite_sms_events_task ON wa_sqlite_sms_activation_events(task_id, created_at ASC, id ASC);
 `
 
 var sqliteDeleteWAAccountStatements = []string{

@@ -1,14 +1,7 @@
-FROM docker.m.daocloud.io/library/node:22-bookworm-slim AS dashboard_remote_builder
+FROM docker.m.daocloud.io/library/node:22-alpine AS dashboard_remote_builder
 
 WORKDIR /app
-ENV NPM_CONFIG_REGISTRY=https://registry.npmmirror.com
-RUN find /etc/apt -type f \( -name '*.list' -o -name '*.sources' \) -exec sed -i \
-        -e 's|http://deb.debian.org/debian-security|http://mirrors.aliyun.com/debian-security|g' \
-        -e 's|http://deb.debian.org/debian|http://mirrors.aliyun.com/debian|g' \
-        -e 's|http://security.debian.org/debian-security|http://mirrors.aliyun.com/debian-security|g' {} + \
-    && apt-get update \
-    && apt-get install -y --no-install-recommends libprotobuf-dev protobuf-compiler ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache bash protobuf protobuf-dev ca-certificates
 COPY . /src
 RUN set -eux; \
     wa_src=/src; \
@@ -19,14 +12,15 @@ RUN set -eux; \
     cp -a "$wa_src/webui" /app/wa-app/webui; \
     rm -rf /src
 WORKDIR /app/wa-app/webui
-RUN npm ci --prefer-offline --no-audit --fund=false && npm run build
+RUN sed -i 's/\r$//' /app/wa-app/scripts/generate-web-proto.sh \
+    && npm ci --prefer-offline --no-audit --fund=false \
+    && npm run build
 
 FROM docker.m.daocloud.io/library/golang:1.26-alpine AS builder
 
 WORKDIR /app/wa-app
-ENV GOPROXY=https://goproxy.cn,direct
-RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories \
-    && apk add --no-cache git ca-certificates protobuf-dev
+ENV GOPROXY=https://proxy.golang.org,direct
+RUN apk add --no-cache git ca-certificates protobuf-dev
 
 COPY . /src
 RUN set -eux; \
@@ -34,19 +28,21 @@ RUN set -eux; \
     if [ -d /src/wa-app ]; then wa_src=/src/wa-app; fi; \
     cp -a "$wa_src/." /app/wa-app/; \
     rm -rf /src; \
-    go mod download
-RUN go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11 \
-    && go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2 \
+    retry() { attempts=0; until "$@"; do attempts=$((attempts + 1)); [ "$attempts" -lt 5 ] || return 1; sleep "$attempts"; done; }; \
+    retry go mod download
+RUN set -eux; \
+    retry() { attempts=0; until "$@"; do attempts=$((attempts + 1)); [ "$attempts" -lt 5 ] || return 1; sleep "$attempts"; done; }; \
+    sed -i 's/\r$//' scripts/generate-proto.sh \
+    && retry go install google.golang.org/protobuf/cmd/protoc-gen-go@v1.36.11 \
+    && retry go install google.golang.org/grpc/cmd/protoc-gen-go-grpc@v1.6.2 \
     && scripts/generate-proto.sh \
     && CGO_ENABLED=0 GOOS=linux go build -o wa-app-service ./cmd/wa-app-service
 
-FROM docker.m.daocloud.io/library/alpine:latest
-
-RUN sed -i 's/dl-cdn.alpinelinux.org/mirrors.aliyun.com/g' /etc/apk/repositories \
-    && apk add --no-cache ca-certificates
+FROM scratch
 
 WORKDIR /app
 COPY --from=builder /app/wa-app/wa-app-service .
+COPY --from=builder /etc/ssl/certs/ca-certificates.crt /etc/ssl/certs/ca-certificates.crt
 COPY --from=dashboard_remote_builder /app/wa-app/webui/dist /app/dashboard/wa
 EXPOSE 50091 8080
 CMD ["./wa-app-service"]

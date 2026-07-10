@@ -11,6 +11,7 @@ import (
 
 	waappv1 "github.com/byte-v-forge/wa-app/gen/go/byte/v/forge/waapp/v1"
 	"github.com/byte-v-forge/wa-app/internal/config"
+	"github.com/byte-v-forge/wa-app/internal/waapp/bff"
 	"github.com/byte-v-forge/wa-app/internal/waapp/engine"
 	"github.com/byte-v-forge/wa-app/internal/waapp/rpc"
 	"github.com/byte-v-forge/wa-app/internal/waapp/runtime"
@@ -70,6 +71,13 @@ func main() {
 	}
 	service := rpc.NewServer(store, runtime, nativeEngine, clock, ids)
 	service.SetCommonProxyURL(cfg.CommonProxy)
+	registrationProxyConfig := registrationProxyConfigFrom(cfg)
+	registrationFeatures := bff.NewRegistrationFeatures(service, registrationProxyConfig, bff.BulkRegistrationConfig{
+		Enabled:     cfg.BulkRegistrationEnabled,
+		MaxItems:    cfg.BulkRegistrationMaxItems,
+		Concurrency: cfg.BulkRegistrationConcurrency,
+		HeroSMSKey:  cfg.HeroSMSAPIKey,
+	})
 	authConfig := newDashboardAuthConfig(cfg.DashboardAuthPass)
 	grpcListenAddr := configValue(cfg.GRPCListenAddr, defaultGRPCListenAddr)
 	dashboardHTTPAddr := configValue(cfg.DashboardHTTPAddr, defaultDashboardHTTPAddr)
@@ -105,7 +113,10 @@ func main() {
 		return nil
 	})
 	group.Go(func() error {
-		return runDashboardHTTP(groupCtx, dashboardHTTPAddr, dashboardStaticDir, service, newWAActionHandler(service), authConfig)
+		return runDashboardHTTP(groupCtx, dashboardHTTPAddr, dashboardStaticDir, service, registrationFeatures, authConfig)
+	})
+	group.Go(func() error {
+		return registrationFeatures.Run(groupCtx)
 	})
 	group.Go(func() error {
 		return service.RunLongConnections(groupCtx)
@@ -113,6 +124,19 @@ func main() {
 	if err := group.Wait(); err != nil {
 		stop()
 		log.Fatalf("wa-app-service failed: %v", err)
+	}
+}
+
+func registrationProxyConfigFrom(cfg config.Config) bff.RegistrationProxyConfig {
+	return bff.RegistrationProxyConfig{
+		Enabled:               cfg.RegistrationProxyEnabled,
+		SourceOrder:           cfg.RegistrationProxySourceOrder,
+		Fallback:              cfg.RegistrationProxyFallback,
+		StickyMinutes:         cfg.RegistrationProxyStickyMinutes,
+		SourceRetryMax:        cfg.RegistrationProxySourceRetryMax,
+		Source1024Enabled:     cfg.RegistrationProxySource1024Enabled,
+		Source1024UsernameTpl: cfg.RegistrationProxySource1024UsernameTemplate,
+		Source1024Password:    cfg.RegistrationProxySource1024Password,
 	}
 }
 

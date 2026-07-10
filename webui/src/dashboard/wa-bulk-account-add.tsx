@@ -1,0 +1,154 @@
+import { useEffect, useMemo, useState } from 'react';
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
+import { Ban, CheckCircle2, Loader2, RefreshCw, WandSparkles } from 'lucide-react';
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardHeader, CardTitle } from '@/components/ui/card';
+import { Field, FieldGroup, FieldLabel } from '@/components/ui/field';
+import { Input } from '@/components/ui/input';
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from '@/components/ui/select';
+import { Table, TableBody, TableCell, TableHead, TableHeader, TableRow } from '@/components/ui/table';
+import { DEFAULT_WA_INTEGRITY_MODE, type WaIntegrityMode } from './wa-integrity';
+import { WaIntegrityModeSelect } from './wa-integrity-mode-select';
+import { waPlayIntegrityAvailable } from './wa-dashboard-config';
+import { useWaDashboardHealth, useWaPlayIntegrityAPIStatus } from './wa-dashboard-hooks';
+import { cancelBulkRegistrationTask, createBulkRegistrationTask, getBulkRegistrationOffers, getBulkRegistrationTask, type BulkRegistrationItem, type BulkRegistrationOffer, type BulkRegistrationTask, waKeys } from './wa-api';
+
+type Props = { disabled?: boolean; onChanged: () => void | Promise<void>; onDone: (message: string) => void; onError: (message: string) => void };
+
+export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props) {
+  const queryClient = useQueryClient();
+  const [countryISO2, setCountryISO2] = useState('PH');
+  const [targetCount, setTargetCount] = useState(10);
+  const [integrityMode, setIntegrityMode] = useState<WaIntegrityMode>(DEFAULT_WA_INTEGRITY_MODE);
+  const [quantities, setQuantities] = useState<Record<string, number>>({});
+  const health = useWaDashboardHealth();
+  const playIntegrityAvailable = waPlayIntegrityAvailable(health);
+  const { status: integrityStatus, loading: integrityStatusLoading } = useWaPlayIntegrityAPIStatus(playIntegrityAvailable, integrityMode);
+  const taskQuery = useQuery({ queryKey: waKeys.bulkRegistrationTask(), queryFn: getBulkRegistrationTask, refetchInterval: (query) => query.state.data?.task && !taskFinished(query.state.data.task) ? 2000 : false });
+  const offersQuery = useQuery({ queryKey: ['wa', 'bulk-registration', 'offers', countryISO2], queryFn: () => getBulkRegistrationOffers(countryISO2), enabled: false });
+  const { data: offersData, isError: offersFailed, isFetching: offersFetching, refetch: refetchOffers } = offersQuery;
+  const task = taskQuery.data?.task;
+  const offers = offersData?.offers || [];
+  const selectedCount = useMemo(() => Object.values(quantities).reduce((sum, quantity) => sum + Math.max(0, quantity || 0), 0), [quantities]);
+  const createTask = useMutation({
+    mutationFn: () => createBulkRegistrationTask({
+      country_iso2: countryISO2,
+      target_count: targetCount,
+      integrity_mode: playIntegrityAvailable ? integrityMode : DEFAULT_WA_INTEGRITY_MODE,
+      offers: offers.filter((offer) => (quantities[offer.offer_id] || 0) > 0).map((offer) => ({ offer_id: offer.offer_id, quantity: quantities[offer.offer_id], max_price: offer.price })),
+    }),
+    onSuccess: async (response) => {
+      await queryClient.invalidateQueries({ queryKey: waKeys.bulkRegistrationTask() });
+      if (!response.existing) onDone('批量任务已提交');
+      await onChanged();
+    },
+    onError: (error) => onError(error instanceof Error ? error.message : String(error)),
+  });
+  const cancelTask = useMutation({
+    mutationFn: cancelBulkRegistrationTask,
+    onSuccess: async () => {
+      await queryClient.invalidateQueries({ queryKey: waKeys.bulkRegistrationTask() });
+      onDone('已请求取消批量任务');
+    },
+    onError: (error) => onError(error instanceof Error ? error.message : String(error)),
+  });
+
+  useEffect(() => {
+    if (task || offersData || offersFetching || offersFailed) return;
+    void refetchOffers();
+  }, [offersData, offersFailed, offersFetching, refetchOffers, task]);
+
+  if (task) return <BulkTaskDetail task={task} items={taskQuery.data?.items || []} canceling={cancelTask.isPending} onCancel={() => void cancelTask.mutateAsync()} />;
+
+  function setQuantity(offer: BulkRegistrationOffer, nextValue: number) {
+    const bounded = Math.max(0, Math.min(offer.available_count, Number.isFinite(nextValue) ? Math.floor(nextValue) : 0));
+    setQuantities((current) => ({ ...current, [offer.offer_id]: bounded }));
+  }
+  function autoSelectLowestPrice() {
+    let remaining = targetCount;
+    const next: Record<string, number> = {};
+    for (const offer of offers) {
+      const quantity = Math.min(remaining, offer.available_count);
+      if (quantity > 0) next[offer.offer_id] = quantity;
+      remaining -= quantity;
+      if (remaining <= 0) break;
+    }
+    setQuantities(next);
+    if (remaining > 0) onError('当前报价库存不足以满足目标数量');
+  }
+  const busy = Boolean(disabled || offersQuery.isFetching || createTask.isPending);
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between gap-3">
+        <div className="grid gap-1"><CardTitle className="text-base">批量添加账号</CardTitle></div>
+        <Badge variant={offersData ? 'default' : 'outline'}>{offersFetching ? <Loader2 className="size-3 animate-spin" /> : null}{offersData ? '报价已加载' : '待加载报价'}</Badge>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <FieldGroup>
+          <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+            <Field><FieldLabel>地区</FieldLabel><Select value={countryISO2} onValueChange={setCountryISO2} disabled={busy}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="PH">菲律宾</SelectItem></SelectContent></Select></Field>
+            <Field><FieldLabel>目标数量</FieldLabel><Input type="number" min={1} max={offersData?.max_items || 10} value={targetCount} onChange={(event) => setTargetCount(Math.max(1, Number(event.target.value) || 1))} disabled={busy} /></Field>
+            <Field className="justify-end"><FieldLabel className="sr-only">刷新报价</FieldLabel><Button type="button" size="icon" variant="outline" title="刷新报价" aria-label="刷新报价" disabled={busy} onClick={() => void refetchOffers()}><RefreshCw className={offersFetching ? 'size-4 animate-spin' : 'size-4'} /></Button></Field>
+          </div>
+        </FieldGroup>
+        <WaIntegrityModeSelect available={playIntegrityAvailable} disabled={busy} status={integrityStatus} statusLoading={integrityStatusLoading} value={integrityMode} onChange={setIntegrityMode} />
+        {offersQuery.error ? <p className="text-sm text-destructive">{offersQuery.error instanceof Error ? offersQuery.error.message : '加载报价失败'}</p> : null}
+        <div className="flex items-center justify-between gap-3 border-b pb-3">
+          <span className="text-sm text-muted-foreground">已选择 {selectedCount} / {targetCount}</span>
+          <Button type="button" variant="outline" size="sm" disabled={busy || offers.length === 0} onClick={autoSelectLowestPrice}><WandSparkles className="size-4" />自动选择最低价</Button>
+        </div>
+        <OfferTable offers={offers} quantities={quantities} busy={busy} onQuantityChange={setQuantity} />
+        <Button type="button" disabled={busy || selectedCount !== targetCount || offers.length === 0} onClick={() => void createTask.mutateAsync()}>{createTask.isPending ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}提交任务</Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function OfferTable({ offers, quantities, busy, onQuantityChange }: { offers: BulkRegistrationOffer[]; quantities: Record<string, number>; busy: boolean; onQuantityChange: (offer: BulkRegistrationOffer, quantity: number) => void }) {
+  return (
+    <div className="overflow-x-auto">
+      <Table>
+        <TableHeader><TableRow><TableHead>供应商</TableHead><TableHead>地区</TableHead><TableHead>价格</TableHead><TableHead>库存</TableHead><TableHead>选择数量</TableHead></TableRow></TableHeader>
+        <TableBody>
+          {offers.map((offer) => <TableRow key={offer.offer_id}><TableCell>{offer.provider}</TableCell><TableCell>{offer.country_iso2}</TableCell><TableCell>{formatMoney(offer.price, offer.currency)}</TableCell><TableCell>{offer.available_count.toLocaleString()}</TableCell><TableCell><Input className="h-8 w-24" type="number" min={0} max={offer.available_count} value={quantities[offer.offer_id] || 0} disabled={busy} onChange={(event) => onQuantityChange(offer, Number(event.target.value))} /></TableCell></TableRow>)}
+          {offers.length === 0 ? <TableRow><TableCell colSpan={5} className="h-24 text-center text-muted-foreground">暂无可用报价</TableCell></TableRow> : null}
+        </TableBody>
+      </Table>
+    </div>
+  );
+}
+
+function BulkTaskDetail({ task, items, canceling, onCancel }: { task: BulkRegistrationTask; items: BulkRegistrationItem[]; canceling: boolean; onCancel: () => void }) {
+  const cancelable = !taskFinished(task) && task.status !== 'CANCEL_REQUESTED' && task.status !== 'CANCELING';
+  return (
+    <Card>
+      <CardHeader className="flex flex-row items-start justify-between gap-3">
+        <div className="grid gap-1"><CardTitle className="text-base">批量注册任务</CardTitle><span className="font-mono text-xs text-muted-foreground">{task.task_id}</span></div>
+        <div className="flex items-center gap-2"><Badge variant={task.status === 'RUNNING' ? 'default' : 'secondary'}>{task.status}</Badge>{cancelable ? <Button type="button" variant="destructive" size="sm" disabled={canceling} onClick={onCancel}>{canceling ? <Loader2 className="size-4 animate-spin" /> : <Ban className="size-4" />}取消任务</Button> : null}</div>
+      </CardHeader>
+      <CardContent className="grid gap-4">
+        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-5"><TaskMetric label="目标" value={task.target_count} /><TaskMetric label="成功" value={task.success_count} /><TaskMetric label="失败" value={task.failed_count} /><TaskMetric label="取消" value={task.canceled_count} /><TaskMetric label="处理中" value={task.waiting_count} /></div>
+        {task.last_error ? <p className="text-sm text-destructive">{task.last_error}</p> : null}
+        <div className="overflow-x-auto">
+          <Table>
+            <TableHeader><TableRow><TableHead>#</TableHead><TableHead>供应商</TableHead><TableHead>号码</TableHead><TableHead>阶段</TableHead><TableHead>短信</TableHead><TableHead>WA</TableHead><TableHead>错误</TableHead></TableRow></TableHeader>
+            <TableBody>{items.map((item, index) => <TableRow key={item.item_id}><TableCell>{index + 1}</TableCell><TableCell>{item.provider}</TableCell><TableCell className="font-mono">{item.phone_masked || '-'}</TableCell><TableCell>{item.status}</TableCell><TableCell>{item.sms_status || '-'}</TableCell><TableCell>{item.wa_registration_status || item.wa_verification_status || item.wa_probe_status || '-'}</TableCell><TableCell className="max-w-48 truncate" title={item.last_error}>{item.last_error || '-'}</TableCell></TableRow>)}</TableBody>
+          </Table>
+        </div>
+      </CardContent>
+    </Card>
+  );
+}
+
+function TaskMetric({ label, value }: { label: string; value: number }) {
+  return <div className="grid gap-0.5"><span className="text-xs text-muted-foreground">{label}</span><strong className="font-mono text-lg">{value}</strong></div>;
+}
+
+function taskFinished(task: BulkRegistrationTask) {
+  return ['COMPLETED', 'PARTIAL_COMPLETED', 'FAILED', 'CANCELED'].includes(task.status);
+}
+
+function formatMoney(value: number, currency: string) {
+  return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'USD', minimumFractionDigits: 2 }).format(value);
+}
