@@ -12,13 +12,13 @@ import { DEFAULT_WA_INTEGRITY_MODE, type WaIntegrityMode } from './wa-integrity'
 import { WaIntegrityModeSelect } from './wa-integrity-mode-select';
 import { waPlayIntegrityAvailable } from './wa-dashboard-config';
 import { useWaDashboardHealth, useWaPlayIntegrityAPIStatus } from './wa-dashboard-hooks';
-import { cancelBulkRegistrationTask, createBulkRegistrationTask, getBulkRegistrationOffers, getBulkRegistrationTask, type BulkRegistrationItem, type BulkRegistrationOffer, type BulkRegistrationTask, waKeys } from './wa-api';
+import { cancelBulkRegistrationTask, createBulkRegistrationTask, getBulkRegistrationCountries, getBulkRegistrationOffers, getBulkRegistrationTask, type BulkRegistrationItem, type BulkRegistrationOffer, type BulkRegistrationTask, waKeys } from './wa-api';
 
 type Props = { disabled?: boolean; onChanged: () => void | Promise<void>; onDone: (message: string) => void; onError: (message: string) => void };
 
 export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props) {
   const queryClient = useQueryClient();
-  const [countryISO2, setCountryISO2] = useState('PH');
+  const [countryISO2, setCountryISO2] = useState('');
   const [targetCount, setTargetCount] = useState(10);
   const [integrityMode, setIntegrityMode] = useState<WaIntegrityMode>(DEFAULT_WA_INTEGRITY_MODE);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
@@ -26,9 +26,11 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
   const playIntegrityAvailable = waPlayIntegrityAvailable(health);
   const { status: integrityStatus, loading: integrityStatusLoading } = useWaPlayIntegrityAPIStatus(playIntegrityAvailable, integrityMode);
   const taskQuery = useQuery({ queryKey: waKeys.bulkRegistrationTask(), queryFn: getBulkRegistrationTask, refetchInterval: (query) => query.state.data?.task && !taskFinished(query.state.data.task) ? 2000 : false });
+  const countriesQuery = useQuery({ queryKey: waKeys.bulkRegistrationCountries(), queryFn: getBulkRegistrationCountries, staleTime: 5 * 60 * 1000 });
   const offersQuery = useQuery({ queryKey: ['wa', 'bulk-registration', 'offers', countryISO2], queryFn: () => getBulkRegistrationOffers(countryISO2), enabled: false });
   const { data: offersData, isError: offersFailed, isFetching: offersFetching, refetch: refetchOffers } = offersQuery;
   const task = taskQuery.data?.task;
+  const countries = useMemo(() => countriesQuery.data?.countries || [], [countriesQuery.data?.countries]);
   const offers = offersData?.offers || [];
   const selectedCount = useMemo(() => Object.values(quantities).reduce((sum, quantity) => sum + Math.max(0, quantity || 0), 0), [quantities]);
   const createTask = useMutation({
@@ -55,15 +57,25 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
   });
 
   useEffect(() => {
-    if (task || offersData || offersFetching || offersFailed) return;
+    if (task || !countryISO2 || offersData || offersFetching || offersFailed) return;
     void refetchOffers();
-  }, [offersData, offersFailed, offersFetching, refetchOffers, task]);
+  }, [countryISO2, offersData, offersFailed, offersFetching, refetchOffers, task]);
+
+  useEffect(() => {
+    if (countries.length === 0 || countries.some((country) => country.country_iso2 === countryISO2)) return;
+    setCountryISO2(countries[0].country_iso2);
+    setQuantities({});
+  }, [countries, countryISO2]);
 
   if (task) return <BulkTaskDetail task={task} items={taskQuery.data?.items || []} canceling={cancelTask.isPending} onCancel={() => void cancelTask.mutateAsync()} />;
 
   function setQuantity(offer: BulkRegistrationOffer, nextValue: number) {
     const bounded = Math.max(0, Math.min(offer.available_count, Number.isFinite(nextValue) ? Math.floor(nextValue) : 0));
     setQuantities((current) => ({ ...current, [offer.offer_id]: bounded }));
+  }
+  function selectCountry(nextCountryISO2: string) {
+    setCountryISO2(nextCountryISO2);
+    setQuantities({});
   }
   function autoSelectLowestPrice() {
     let remaining = targetCount;
@@ -77,7 +89,7 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
     setQuantities(next);
     if (remaining > 0) onError('当前报价库存不足以满足目标数量');
   }
-  const busy = Boolean(disabled || offersQuery.isFetching || createTask.isPending);
+  const busy = Boolean(disabled || countriesQuery.isLoading || offersQuery.isFetching || createTask.isPending);
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-3">
@@ -87,12 +99,14 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
       <CardContent className="grid gap-4">
         <FieldGroup>
           <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
-            <Field><FieldLabel>地区</FieldLabel><Select value={countryISO2} onValueChange={setCountryISO2} disabled={busy}><SelectTrigger className="w-full"><SelectValue /></SelectTrigger><SelectContent><SelectItem value="PH">菲律宾</SelectItem></SelectContent></Select></Field>
+            <Field><FieldLabel>地区</FieldLabel><Select value={countryISO2} onValueChange={selectCountry} disabled={busy || countries.length === 0}><SelectTrigger className="w-full"><SelectValue placeholder={countriesQuery.isLoading ? '加载地区...' : '选择地区'} /></SelectTrigger><SelectContent>{countries.map((country) => <SelectItem key={country.country_iso2} value={country.country_iso2}>{country.name} ({country.country_iso2})</SelectItem>)}</SelectContent></Select></Field>
             <Field><FieldLabel>目标数量</FieldLabel><Input type="number" min={1} max={offersData?.max_items || 10} value={targetCount} onChange={(event) => setTargetCount(Math.max(1, Number(event.target.value) || 1))} disabled={busy} /></Field>
             <Field className="justify-end"><FieldLabel className="sr-only">刷新报价</FieldLabel><Button type="button" size="icon" variant="outline" title="刷新报价" aria-label="刷新报价" disabled={busy} onClick={() => void refetchOffers()}><RefreshCw className={offersFetching ? 'size-4 animate-spin' : 'size-4'} /></Button></Field>
           </div>
         </FieldGroup>
         <WaIntegrityModeSelect available={playIntegrityAvailable} disabled={busy} status={integrityStatus} statusLoading={integrityStatusLoading} value={integrityMode} onChange={setIntegrityMode} />
+        {countriesQuery.error ? <p className="text-sm text-destructive">{countriesQuery.error instanceof Error ? countriesQuery.error.message : '加载地区失败'}</p> : null}
+        {countriesQuery.data && countries.length === 0 ? <p className="text-sm text-muted-foreground">当前暂无可用地区</p> : null}
         {offersQuery.error ? <p className="text-sm text-destructive">{offersQuery.error instanceof Error ? offersQuery.error.message : '加载报价失败'}</p> : null}
         <div className="flex items-center justify-between gap-3 border-b pb-3">
           <span className="text-sm text-muted-foreground">已选择 {selectedCount} / {targetCount}</span>

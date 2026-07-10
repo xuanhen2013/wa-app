@@ -82,6 +82,30 @@ func TestHeroSMSProviderUsesV1OffersAndCompatibleLifecycle(t *testing.T) {
 	}
 }
 
+func TestHeroSMSProviderListsVisibleCountriesResolvedToSupportedISO2(t *testing.T) {
+	provider := NewHeroSMSProviderWithClient("test-key", &http.Client{Transport: roundTripper(func(request *http.Request) (*http.Response, error) {
+		body := `{"4":{"id":4,"eng":"Philippines","chn":"菲律宾","visible":1},"187":{"id":187,"eng":"USA","chn":"美国","visible":1},"74":{"id":74,"eng":"China","chn":"中国","visible":1},"99":{"id":99,"eng":"Philippines","chn":"菲律宾","visible":0}}`
+		return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(bytes.NewBufferString(body)), Request: request}, nil
+	})})
+	countries, err := provider.ListCountries(context.Background())
+	if err != nil {
+		t.Fatalf("list countries: %v", err)
+	}
+	byISO2 := map[string]string{}
+	for _, country := range countries {
+		byISO2[country.CountryISO2] = country.Name
+	}
+	if byISO2["PH"] != "菲律宾" || byISO2["US"] != "美国" {
+		t.Fatalf("unexpected resolved countries: %#v", countries)
+	}
+	if _, found := byISO2["CN"]; found {
+		t.Fatalf("country outside the 1024proxy catalogue must not be returned: %#v", countries)
+	}
+	if len(byISO2) != 2 {
+		t.Fatalf("visible country count=%d, want 2: %#v", len(byISO2), countries)
+	}
+}
+
 type roundTripper func(*http.Request) (*http.Response, error)
 
 func (fn roundTripper) RoundTrip(request *http.Request) (*http.Response, error) {

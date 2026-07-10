@@ -31,6 +31,13 @@ type ActivationStatus struct {
 	Code   string
 }
 
+// Country is a supplier country that has been resolved to an ISO2 code. The
+// supplier's internal country identifier never leaves its provider adapter.
+type Country struct {
+	CountryISO2 string `json:"country_iso2"`
+	Name        string `json:"name"`
+}
+
 type AcquireInput struct {
 	CountryISO2 string
 	Offer       Offer
@@ -44,6 +51,12 @@ type Provider interface {
 	PollCode(context.Context, string) (ActivationStatus, error)
 	Complete(context.Context, string) error
 	Cancel(context.Context, string) error
+}
+
+// CountryLister is optional because not every SMS supplier exposes a country
+// catalogue. Bulk registration requires it before it offers country choices.
+type CountryLister interface {
+	ListCountries(context.Context) ([]Country, error)
 }
 
 var ErrNotConfigured = errors.New("sms provider is not configured")

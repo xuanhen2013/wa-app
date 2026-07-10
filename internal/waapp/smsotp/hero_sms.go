@@ -7,10 +7,13 @@ import (
 	"io"
 	"net/http"
 	"net/url"
+	"sort"
 	"strconv"
 	"strings"
 	"sync"
 	"time"
+
+	"github.com/byte-v-forge/wa-app/internal/waapp/countrycatalog"
 )
 
 const (
@@ -18,19 +21,28 @@ const (
 	heroSMSOffersEndpoint    = "https://hero-sms.com/api/v1/activations/offers"
 	heroSMSLifecycleEndpoint = "https://hero-sms.com/stubs/handler_api.php"
 	heroSMSWhatsAppService   = "whatsapp"
+	heroSMSCountriesCacheTTL = 5 * time.Minute
 )
 
 type HeroSMSProvider struct {
 	apiKey string
 	client *http.Client
 
-	mu       sync.Mutex
-	mappings map[string]heroSMSMapping
+	mu          sync.Mutex
+	mappings    map[string]heroSMSMapping
+	countries   []heroSMSCountry
+	countriesAt time.Time
 }
 
 type heroSMSMapping struct {
 	ServiceCode string
 	CountryID   string
+}
+
+type heroSMSCountry struct {
+	ID          string
+	CountryISO2 string
+	Name        string
 }
 
 func NewHeroSMSProvider(apiKey string) *HeroSMSProvider {
@@ -45,6 +57,26 @@ func NewHeroSMSProviderWithClient(apiKey string, client *http.Client) *HeroSMSPr
 }
 
 func (p *HeroSMSProvider) Name() string { return heroSMSName }
+
+// ListCountries returns only visible HeroSMS countries that can be resolved
+// to a supported registration-proxy ISO2 code.
+func (p *HeroSMSProvider) ListCountries(ctx context.Context) ([]Country, error) {
+	countries, err := p.countriesForRegistration(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]Country, 0, len(countries))
+	for _, country := range countries {
+		result = append(result, Country{CountryISO2: country.CountryISO2, Name: country.Name})
+	}
+	sort.Slice(result, func(left, right int) bool {
+		if result[left].Name == result[right].Name {
+			return result[left].CountryISO2 < result[right].CountryISO2
+		}
+		return result[left].Name < result[right].Name
+	})
+	return result, nil
+}
 
 func (p *HeroSMSProvider) ListOffers(ctx context.Context, countryISO2 string, service string) ([]Offer, error) {
 	if !p.configured() {
@@ -218,14 +250,11 @@ func (p *HeroSMSProvider) mapping(ctx context.Context, countryISO2 string) (hero
 	if serviceStatus < http.StatusOK || serviceStatus >= http.StatusMultipleChoices {
 		return heroSMSMapping{}, heroSMSResponseError(services, serviceStatus)
 	}
-	countries, countryStatus, err := p.lifecycle(ctx, url.Values{"action": {"getCountries"}})
+	countries, err := p.countriesForRegistration(ctx)
 	if err != nil {
 		return heroSMSMapping{}, err
 	}
-	if countryStatus < http.StatusOK || countryStatus >= http.StatusMultipleChoices {
-		return heroSMSMapping{}, heroSMSResponseError(countries, countryStatus)
-	}
-	mapping := heroSMSMapping{ServiceCode: heroSMSFindServiceCode(services), CountryID: heroSMSFindCountryID(countries, countryISO2)}
+	mapping := heroSMSMapping{ServiceCode: heroSMSFindServiceCode(services), CountryID: heroSMSCountryIDForISO2(countries, countryISO2)}
 	if mapping.ServiceCode == "" || mapping.CountryID == "" {
 		return heroSMSMapping{}, fmt.Errorf("HeroSMS does not expose the requested WhatsApp country mapping")
 	}
@@ -233,6 +262,36 @@ func (p *HeroSMSProvider) mapping(ctx context.Context, countryISO2 string) (hero
 	p.mappings[countryISO2] = mapping
 	p.mu.Unlock()
 	return mapping, nil
+}
+
+func (p *HeroSMSProvider) countriesForRegistration(ctx context.Context) ([]heroSMSCountry, error) {
+	if !p.configured() {
+		return nil, ErrNotConfigured
+	}
+	now := time.Now().UTC()
+	p.mu.Lock()
+	if len(p.countries) > 0 && now.Sub(p.countriesAt) < heroSMSCountriesCacheTTL {
+		result := append([]heroSMSCountry(nil), p.countries...)
+		p.mu.Unlock()
+		return result, nil
+	}
+	p.mu.Unlock()
+	value, statusCode, err := p.lifecycle(ctx, url.Values{"action": {"getCountries"}})
+	if err != nil {
+		return nil, err
+	}
+	if statusCode < http.StatusOK || statusCode >= http.StatusMultipleChoices {
+		return nil, heroSMSResponseError(value, statusCode)
+	}
+	countries := heroSMSCountries(value)
+	if len(countries) == 0 {
+		return nil, fmt.Errorf("HeroSMS does not expose any supported registration countries")
+	}
+	p.mu.Lock()
+	p.countries = append([]heroSMSCountry(nil), countries...)
+	p.countriesAt = now
+	p.mu.Unlock()
+	return countries, nil
 }
 
 func (p *HeroSMSProvider) configured() bool {
@@ -428,50 +487,69 @@ func heroSMSContainsWhatsApp(value any) bool {
 	return false
 }
 
-func heroSMSFindCountryID(value any, countryISO2 string) string {
-	return heroSMSCountryID(value, normalizeCountryISO2(countryISO2))
+func heroSMSCountries(value any) []heroSMSCountry {
+	result := make([]heroSMSCountry, 0)
+	seen := map[string]struct{}{}
+	heroSMSCollectCountries(value, "", seen, &result)
+	return result
 }
 
-func heroSMSCountryID(value any, countryISO2 string) string {
+func heroSMSCollectCountries(value any, fallbackID string, seen map[string]struct{}, result *[]heroSMSCountry) {
 	switch typed := value.(type) {
 	case map[string]any:
-		if heroSMSCountryMatches(typed, countryISO2) {
-			return heroSMSString(typed, "id", "countryId", "country_id")
+		id := heroSMSString(typed, "id", "countryId", "country_id")
+		if id == "" {
+			id = fallbackID
+		}
+		englishName := heroSMSString(typed, "eng", "english", "name_en", "name")
+		chineseName := heroSMSString(typed, "chn", "chinese", "name_zh", "name_cn")
+		if id != "" && englishName != "" && heroSMSCountryVisible(typed) {
+			if countryISO2 := countrycatalog.ISO2FromCountryNames(englishName); countryISO2 != "" {
+				key := countryISO2 + ":" + id
+				if _, ok := seen[key]; !ok {
+					seen[key] = struct{}{}
+					*result = append(*result, heroSMSCountry{ID: id, CountryISO2: countryISO2, Name: sharedCountryName(chineseName, englishName)})
+				}
+			}
 		}
 		for key, current := range typed {
-			if text, ok := current.(string); ok && strings.EqualFold(strings.TrimSpace(text), countryName(countryISO2)) {
-				return key
-			}
-			if heroSMSCountryMatches(heroSMSObject(current), countryISO2) {
-				return key
-			}
-			if strings.EqualFold(countryName(countryISO2), strings.TrimSpace(key)) {
-				return heroSMSString(current, "id", "countryId", "country_id")
-			}
-			if result := heroSMSCountryID(current, countryISO2); result != "" {
-				return result
-			}
+			heroSMSCollectCountries(current, key, seen, result)
 		}
 	case []any:
 		for _, current := range typed {
-			if result := heroSMSCountryID(current, countryISO2); result != "" {
-				return result
-			}
+			heroSMSCollectCountries(current, fallbackID, seen, result)
+		}
+	}
+}
+
+func heroSMSCountryVisible(value map[string]any) bool {
+	visible, ok := value["visible"]
+	if !ok {
+		return true
+	}
+	if text, ok := visible.(string); ok {
+		return strings.EqualFold(strings.TrimSpace(text), "true") || strings.TrimSpace(text) == "1"
+	}
+	return heroSMSNumber(visible) > 0
+}
+
+func heroSMSCountryIDForISO2(countries []heroSMSCountry, countryISO2 string) string {
+	countryISO2 = normalizeCountryISO2(countryISO2)
+	for _, country := range countries {
+		if country.CountryISO2 == countryISO2 {
+			return country.ID
 		}
 	}
 	return ""
 }
 
-func heroSMSCountryMatches(value map[string]any, countryISO2 string) bool {
-	for _, current := range value {
-		if text, ok := current.(string); ok && strings.EqualFold(strings.TrimSpace(text), countryISO2) {
-			return true
-		}
-		if text, ok := current.(string); ok && strings.EqualFold(strings.TrimSpace(text), countryName(countryISO2)) {
-			return true
+func sharedCountryName(values ...string) string {
+	for _, value := range values {
+		if value = strings.TrimSpace(value); value != "" {
+			return value
 		}
 	}
-	return false
+	return ""
 }
 
 func normalizeCountryISO2(value string) string {
@@ -484,19 +562,6 @@ func normalizeService(value string) string {
 		return heroSMSWhatsAppService
 	}
 	return value
-}
-
-func countryName(countryISO2 string) string {
-	switch normalizeCountryISO2(countryISO2) {
-	case "PH":
-		return "Philippines"
-	case "US":
-		return "United States"
-	case "GB":
-		return "United Kingdom"
-	default:
-		return ""
-	}
 }
 
 func normalizeE164(value string) string {

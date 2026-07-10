@@ -166,6 +166,35 @@ func TestBulkTaskCreationReturnsTheExistingActiveTask(t *testing.T) {
 	}
 }
 
+func TestBulkCountriesUseHeroSMSAnd1024ProxyIntersection(t *testing.T) {
+	provider := &bulkTestProvider{countries: []smsotp.Country{
+		{CountryISO2: "PH", Name: "菲律宾"},
+		{CountryISO2: "US", Name: "美国"},
+		{CountryISO2: "CN", Name: "中国"},
+	}}
+	manager, _, _ := newBulkTestManager(t, provider, bulkregistration.ItemStatusQueued)
+	countries, err := manager.ListCountries(context.Background())
+	if err != nil {
+		t.Fatalf("list countries: %v", err)
+	}
+	byISO2 := map[string]bool{}
+	for _, country := range countries {
+		byISO2[country.CountryISO2] = true
+	}
+	if len(countries) != 2 || !byISO2["PH"] || !byISO2["US"] {
+		t.Fatalf("unexpected country intersection: %#v", countries)
+	}
+}
+
+func TestBulkOffersRejectCountriesOutsideTheCurrentIntersection(t *testing.T) {
+	provider := &bulkTestProvider{countries: []smsotp.Country{{CountryISO2: "PH", Name: "菲律宾"}}}
+	manager, _, _ := newBulkTestManager(t, provider, bulkregistration.ItemStatusQueued)
+	_, err := manager.ListOffers(context.Background(), "US", bulkRegistrationService)
+	if err == nil || provider.offerCalls != 0 {
+		t.Fatalf("unsupported country must fail before the provider offer request: err=%v calls=%d", err, provider.offerCalls)
+	}
+}
+
 func newBulkTestManager(t *testing.T, provider smsotp.Provider, itemStatus string) (*bulkRegistrationManager, *bulkregistration.Task, bulkregistration.Item) {
 	t.Helper()
 	ctx := context.Background()
@@ -217,6 +246,8 @@ type bulkTestProvider struct {
 	cancelErr    error
 	activation   smsotp.Activation
 	offers       []smsotp.Offer
+	countries    []smsotp.Country
+	offerCalls   int
 	acquireCalls int
 	cancelCalls  int
 }
@@ -224,7 +255,15 @@ type bulkTestProvider struct {
 func (p *bulkTestProvider) Name() string { return "fake" }
 
 func (p *bulkTestProvider) ListOffers(context.Context, string, string) ([]smsotp.Offer, error) {
+	p.offerCalls++
 	return p.offers, nil
+}
+
+func (p *bulkTestProvider) ListCountries(context.Context) ([]smsotp.Country, error) {
+	if p.countries != nil {
+		return p.countries, nil
+	}
+	return []smsotp.Country{{CountryISO2: "PH", Name: "菲律宾"}}, nil
 }
 
 func (p *bulkTestProvider) AcquireNumber(context.Context, smsotp.AcquireInput) (smsotp.Activation, error) {

@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/byte-v-forge/wa-app/internal/waapp/bulkregistration"
+	"github.com/byte-v-forge/wa-app/internal/waapp/countrycatalog"
 	"github.com/byte-v-forge/wa-app/internal/waapp/rpc"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/smsotp"
@@ -117,6 +118,10 @@ func (m *bulkRegistrationManager) ListOffers(ctx context.Context, countryISO2 st
 	if !m.enabled() {
 		return nil, fmt.Errorf("bulk registration is disabled")
 	}
+	countryISO2 = normalizeBulkCountry(countryISO2)
+	if err := m.requireSupportedCountry(ctx, countryISO2); err != nil {
+		return nil, err
+	}
 	offers, err := m.provider.ListOffers(ctx, countryISO2, service)
 	if err != nil {
 		return nil, err
@@ -132,6 +137,64 @@ func (m *bulkRegistrationManager) ListOffers(ctx context.Context, countryISO2 st
 		return result[left].Price < result[right].Price
 	})
 	return result, nil
+}
+
+// ListCountries returns only countries that HeroSMS currently exposes and
+// 1024proxy supports as a country-level registration exit. Rand and all
+// provider subnational locations are deliberately absent.
+func (m *bulkRegistrationManager) ListCountries(ctx context.Context) ([]smsotp.Country, error) {
+	if !m.enabled() {
+		return nil, fmt.Errorf("bulk registration is disabled")
+	}
+	lister, ok := m.provider.(smsotp.CountryLister)
+	if !ok {
+		return nil, fmt.Errorf("bulk registration provider does not expose countries")
+	}
+	providerCountries, err := lister.ListCountries(ctx)
+	if err != nil {
+		return nil, err
+	}
+	result := make([]smsotp.Country, 0, len(providerCountries))
+	seen := map[string]struct{}{}
+	for _, country := range providerCountries {
+		countryISO2 := normalizeBulkCountry(country.CountryISO2)
+		if !countrycatalog.SupportsRegistrationProxy1024Country(countryISO2) {
+			continue
+		}
+		if _, ok := seen[countryISO2]; ok {
+			continue
+		}
+		seen[countryISO2] = struct{}{}
+		name := strings.TrimSpace(country.Name)
+		if name == "" {
+			name = countryISO2
+		}
+		result = append(result, smsotp.Country{CountryISO2: countryISO2, Name: name})
+	}
+	sort.Slice(result, func(left, right int) bool {
+		if result[left].Name == result[right].Name {
+			return result[left].CountryISO2 < result[right].CountryISO2
+		}
+		return result[left].Name < result[right].Name
+	})
+	return result, nil
+}
+
+func (m *bulkRegistrationManager) requireSupportedCountry(ctx context.Context, countryISO2 string) error {
+	countryISO2 = normalizeBulkCountry(countryISO2)
+	if countryISO2 == "" || !countrycatalog.SupportsRegistrationProxy1024Country(countryISO2) {
+		return fmt.Errorf("country is not supported by the registration proxy")
+	}
+	countries, err := m.ListCountries(ctx)
+	if err != nil {
+		return err
+	}
+	for _, country := range countries {
+		if country.CountryISO2 == countryISO2 {
+			return nil
+		}
+	}
+	return fmt.Errorf("country is not currently available from HeroSMS")
 }
 
 func (m *bulkRegistrationManager) CreateTask(ctx context.Context, input bulkTaskCreateInput) (*bulkregistration.TaskDetail, bool, error) {
@@ -230,6 +293,8 @@ func (m *bulkRegistrationManager) CancelTask(ctx context.Context) (*bulkregistra
 func (m *bulkRegistrationManager) HandleHTTP(w http.ResponseWriter, r *http.Request) {
 	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/wa/bulk-registration/"), "/")
 	switch path {
+	case "countries":
+		m.handleCountries(w, r)
 	case "offers":
 		m.handleOffers(w, r)
 	case "task":
@@ -239,6 +304,19 @@ func (m *bulkRegistrationManager) HandleHTTP(w http.ResponseWriter, r *http.Requ
 	default:
 		bulkJSON(w, http.StatusNotFound, map[string]string{"error": "unknown bulk registration endpoint"})
 	}
+}
+
+func (m *bulkRegistrationManager) handleCountries(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		bulkMethodNotAllowed(w, http.MethodGet)
+		return
+	}
+	countries, err := m.ListCountries(r.Context())
+	if err != nil {
+		bulkError(w, err)
+		return
+	}
+	bulkJSON(w, http.StatusOK, map[string]any{"success": true, "countries": countries})
 }
 
 func (m *bulkRegistrationManager) handleOffers(w http.ResponseWriter, r *http.Request) {
