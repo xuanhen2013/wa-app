@@ -95,6 +95,10 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
     setCountryISO2(nextCountryISO2);
     setQuantities({});
   }
+  function refreshOffers() {
+    setQuantities({});
+    void refetchOffers();
+  }
   function setTarget(nextValue: number) {
     const bounded = Math.max(1, Math.min(maxItems, Number.isFinite(nextValue) ? Math.floor(nextValue) : 1));
     setTargetCount(bounded);
@@ -134,7 +138,7 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
             <Field><FieldLabel>地区</FieldLabel><Select value={countryISO2} onValueChange={selectCountry} disabled={busy || countries.length === 0}><SelectTrigger className="w-full"><SelectValue placeholder={countriesQuery.isLoading ? '加载地区...' : '选择地区'} /></SelectTrigger><SelectContent>{countries.map((country) => <SelectItem key={country.country_iso2} value={country.country_iso2}>{country.name} ({country.country_iso2})</SelectItem>)}</SelectContent></Select></Field>
             <Field><FieldLabel>目标数量</FieldLabel><Input type="number" min={1} max={maxItems} value={targetCount} onChange={(event) => setTarget(Number(event.target.value))} disabled={busy} /></Field>
             <Field><FieldLabel>并发数</FieldLabel><Input type="number" min={1} max={maxConcurrency} value={concurrency} onChange={(event) => setTaskConcurrency(Number(event.target.value))} disabled={busy} /></Field>
-            <Field className="justify-end"><FieldLabel className="sr-only">刷新报价</FieldLabel><Button type="button" size="icon" variant="outline" title="刷新报价" aria-label="刷新报价" disabled={busy} onClick={() => void refetchOffers()}><RefreshCw className={offersFetching ? 'size-4 animate-spin' : 'size-4'} /></Button></Field>
+            <Field className="justify-end"><FieldLabel className="sr-only">刷新报价</FieldLabel><Button type="button" size="icon" variant="outline" title="刷新报价" aria-label="刷新报价" disabled={busy} onClick={refreshOffers}><RefreshCw className={offersFetching ? 'size-4 animate-spin' : 'size-4'} /></Button></Field>
           </div>
         </FieldGroup>
         <WaIntegrityModeSelect available={playIntegrityAvailable} disabled={busy} status={integrityStatus} statusLoading={integrityStatusLoading} value={integrityMode} onChange={setIntegrityMode} />
