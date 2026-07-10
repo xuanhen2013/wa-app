@@ -12,7 +12,7 @@ import { DEFAULT_WA_INTEGRITY_MODE, type WaIntegrityMode } from './wa-integrity'
 import { WaIntegrityModeSelect } from './wa-integrity-mode-select';
 import { waPlayIntegrityAvailable } from './wa-dashboard-config';
 import { useWaDashboardHealth, useWaPlayIntegrityAPIStatus } from './wa-dashboard-hooks';
-import { cancelBulkRegistrationTask, createBulkRegistrationTask, getBulkRegistrationCountries, getBulkRegistrationOffers, getBulkRegistrationTask, type BulkRegistrationItem, type BulkRegistrationOffer, type BulkRegistrationTask, waKeys } from './wa-api';
+import { cancelBulkRegistrationTask, createBulkRegistrationTask, getBulkRegistrationCountries, getBulkRegistrationOffers, getBulkRegistrationTask, type BulkRegistrationEvent, type BulkRegistrationItem, type BulkRegistrationOffer, type BulkRegistrationTask, waKeys } from './wa-api';
 
 type Props = { disabled?: boolean; onChanged: () => void | Promise<void>; onDone: (message: string) => void; onError: (message: string) => void };
 
@@ -31,6 +31,7 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
   const offersQuery = useQuery({ queryKey: ['wa', 'bulk-registration', 'offers', countryISO2], queryFn: () => getBulkRegistrationOffers(countryISO2), enabled: false });
   const { data: offersData, isError: offersFailed, isFetching: offersFetching, refetch: refetchOffers } = offersQuery;
   const task = taskQuery.data?.task;
+  const lastTask = taskQuery.data?.last_task;
   const countries = useMemo(() => countriesQuery.data?.countries || [], [countriesQuery.data?.countries]);
   const offers = offersData?.offers || [];
   const maxItems = offersData?.max_items || 20;
@@ -82,7 +83,7 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
     setConcurrency(maxConcurrency);
   }, [concurrency, maxConcurrency]);
 
-  if (task) return <BulkTaskDetail task={task} items={taskQuery.data?.items || []} canceling={cancelTask.isPending} onCancel={() => void cancelTask.mutateAsync()} />;
+  if (task) return <BulkTaskDetail task={task} items={taskQuery.data?.items || []} events={taskQuery.data?.events || []} canceling={cancelTask.isPending} onCancel={() => void cancelTask.mutateAsync()} />;
 
   function setQuantity(offer: BulkRegistrationOffer, nextValue: number) {
     const bounded = Math.max(0, Math.min(offer.available_count, Number.isFinite(nextValue) ? Math.floor(nextValue) : 0));
@@ -115,6 +116,7 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
   }
   const busy = Boolean(disabled || countriesQuery.isLoading || offersQuery.isFetching || createTask.isPending);
   return (
+    <div className="grid gap-4">
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-3">
         <div className="grid gap-1"><CardTitle className="text-base">批量添加账号</CardTitle></div>
@@ -141,6 +143,8 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
         <Button type="button" disabled={busy || selectedCount !== targetCount || offers.length === 0} onClick={() => void createTask.mutateAsync()}>{createTask.isPending ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}提交任务</Button>
       </CardContent>
     </Card>
+    {lastTask ? <BulkTaskDetail task={lastTask} items={taskQuery.data?.last_items || []} events={taskQuery.data?.last_events || []} canceling={false} onCancel={() => undefined} history /> : null}
+    </div>
   );
 }
 
@@ -158,12 +162,13 @@ function OfferTable({ offers, quantities, busy, onQuantityChange }: { offers: Bu
   );
 }
 
-function BulkTaskDetail({ task, items, canceling, onCancel }: { task: BulkRegistrationTask; items: BulkRegistrationItem[]; canceling: boolean; onCancel: () => void }) {
+function BulkTaskDetail({ task, items, events, canceling, onCancel, history = false }: { task: BulkRegistrationTask; items: BulkRegistrationItem[]; events: BulkRegistrationEvent[]; canceling: boolean; onCancel: () => void; history?: boolean }) {
   const cancelable = !taskFinished(task) && task.status !== 'CANCEL_REQUESTED' && task.status !== 'CANCELING';
+  const itemNumbers = useMemo(() => new Map(items.map((item, index) => [item.item_id, index + 1])), [items]);
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-3">
-        <div className="grid gap-1"><CardTitle className="text-base">批量注册任务</CardTitle><span className="font-mono text-xs text-muted-foreground">{task.task_id}</span></div>
+        <div className="grid gap-1"><CardTitle className="text-base">{history ? '最近完成任务' : '批量注册任务'}</CardTitle><span className="font-mono text-xs text-muted-foreground">{task.task_id}</span></div>
         <div className="flex items-center gap-2"><Badge variant={task.status === 'RUNNING' ? 'default' : 'secondary'} title={task.status}>{taskStatusLabel(task.status)}</Badge>{cancelable ? <Button type="button" variant="destructive" size="sm" disabled={canceling} onClick={onCancel}>{canceling ? <Loader2 className="size-4 animate-spin" /> : <Ban className="size-4" />}取消任务</Button> : null}</div>
       </CardHeader>
       <CardContent className="grid gap-4">
@@ -175,6 +180,7 @@ function BulkTaskDetail({ task, items, canceling, onCancel }: { task: BulkRegist
             <TableBody>{items.map((item, index) => <TableRow key={item.item_id}><TableCell>{index + 1}</TableCell><TableCell>{item.provider}</TableCell><TableCell className="font-mono">{item.phone_masked || '-'}</TableCell><TableCell><StatusValue value={item.status} label={itemStatusLabel(item.status, item.cancel_attempt_count)} /></TableCell><TableCell><StatusValue value={item.sms_status} label={smsStatusLabel(item.sms_status)} /></TableCell><TableCell><StatusValue value={waStatus(item)} label={waStatusLabel(waStatus(item))} /></TableCell><TableCell className="max-w-64" title={item.last_error}><span className="line-clamp-2">{formatBulkFailure(item.last_error) || '-'}</span></TableCell></TableRow>)}</TableBody>
           </Table>
         </div>
+        {events.length > 0 ? <section className="grid gap-3 border-t pt-4"><h2 className="text-sm font-medium">执行日志</h2><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>时间</TableHead><TableHead>#</TableHead><TableHead>事件</TableHead><TableHead>短信</TableHead><TableHead>WA</TableHead><TableHead>根因</TableHead></TableRow></TableHeader><TableBody>{events.map((event) => <TableRow key={event.event_id}><TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatBulkTime(event.created_at)}</TableCell><TableCell>{itemNumbers.get(event.item_id) || '-'}</TableCell><TableCell>{bulkEventLabel(event.event_type)}</TableCell><TableCell>{smsStatusLabel(event.provider_status)}</TableCell><TableCell>{waStatusLabel(event.wa_status)}</TableCell><TableCell className="max-w-80" title={event.message}><span className="line-clamp-2">{formatBulkFailure(event.message) || '-'}</span></TableCell></TableRow>)}</TableBody></Table></div></section> : null}
       </CardContent>
     </Card>
   );
@@ -215,6 +221,7 @@ function formatBulkFailure(value?: string) {
   return unique.map((part) => {
     if (part.startsWith('verification request was rejected')) {
       const reason = part.match(/reason=([^\s;]+)/)?.[1];
+      if (reason === 'blocked') return 'WhatsApp 已拦截此号码或注册请求（blocked）';
       return reason ? `WA 拒绝请求验证码（${reason}）` : 'WA 拒绝请求验证码';
     }
     if (part.startsWith('SMS activation cancellation pending') || part === 'SMS activation cancellation is pending') {
@@ -223,6 +230,15 @@ function formatBulkFailure(value?: string) {
     }
     return part;
   }).join('；');
+}
+
+function bulkEventLabel(value: string) {
+  return ({ acquiring_number: '申请短信号码', number_acquired: '已获取短信号码', wa_registration_started: '开始 WA 注册', wa_otp_requested: '已请求验证码', sms_status: '短信状态更新', sms_received: '收到短信验证码', submitting_otp: '提交验证码', registered: '注册成功', failed: '注册失败', canceled: '已取消', canceling_activation: '取消短信激活', activation_canceled: '短信激活已取消', activation_cancel_pending: '短信取消待确认', activation_finish_failed: '短信激活完成确认失败' } as Record<string, string>)[value] || '状态更新';
+}
+
+function formatBulkTime(value: string) {
+  const date = new Date(value);
+  return Number.isNaN(date.getTime()) ? '-' : new Intl.DateTimeFormat('zh-CN', { dateStyle: 'short', timeStyle: 'medium' }).format(date);
 }
 
 function taskFinished(task: BulkRegistrationTask) {

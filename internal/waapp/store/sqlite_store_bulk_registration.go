@@ -67,6 +67,10 @@ func (s *SQLiteStore) GetTask(ctx context.Context, taskID string) (*bulkregistra
 	return sqliteBulkTask(s.db.QueryRowContext(ctx, `SELECT payload FROM wa_sqlite_bulk_registration_tasks WHERE id=?`, taskID))
 }
 
+func (s *SQLiteStore) GetLatestTask(ctx context.Context) (*bulkregistration.Task, error) {
+	return sqliteBulkTask(s.db.QueryRowContext(ctx, `SELECT payload FROM wa_sqlite_bulk_registration_tasks ORDER BY updated_at DESC, id DESC LIMIT 1`))
+}
+
 func (s *SQLiteStore) ListItems(ctx context.Context, taskID string) ([]bulkregistration.Item, error) {
 	rows, err := s.db.QueryContext(ctx, `SELECT payload FROM wa_sqlite_bulk_registration_items WHERE task_id=? ORDER BY created_at ASC, id ASC`, taskID)
 	if err != nil {
@@ -86,6 +90,30 @@ func (s *SQLiteStore) ListItems(ctx context.Context, taskID string) ([]bulkregis
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (s *SQLiteStore) ListEvents(ctx context.Context, taskID string, limit int) ([]bulkregistration.Event, error) {
+	if limit <= 0 {
+		return []bulkregistration.Event{}, nil
+	}
+	rows, err := s.db.QueryContext(ctx, `SELECT payload FROM wa_sqlite_sms_activation_events WHERE task_id=? ORDER BY created_at DESC, id DESC LIMIT ?`, taskID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	events := []bulkregistration.Event{}
+	for rows.Next() {
+		var payload string
+		if err := rows.Scan(&payload); err != nil {
+			return nil, err
+		}
+		event, err := unmarshalBulkEvent([]byte(payload))
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, event)
+	}
+	return events, rows.Err()
 }
 
 func (s *SQLiteStore) SaveTask(ctx context.Context, task bulkregistration.Task) error {
@@ -218,4 +246,20 @@ func unmarshalBulkItem(data []byte) (bulkregistration.Item, error) {
 
 func marshalBulkEvent(event bulkregistration.Event) ([]byte, error) {
 	return json.Marshal(bulkEventPayload{Event: event, ActivationID: event.ActivationID})
+}
+
+func unmarshalBulkEvent(data []byte) (bulkregistration.Event, error) {
+	payload := bulkEventPayload{}
+	if err := json.Unmarshal(data, &payload); err != nil {
+		return bulkregistration.Event{}, err
+	}
+	if payload.Event.EventID == "" {
+		event := bulkregistration.Event{}
+		if err := json.Unmarshal(data, &event); err != nil {
+			return bulkregistration.Event{}, err
+		}
+		return event, nil
+	}
+	payload.Event.ActivationID = payload.ActivationID
+	return payload.Event, nil
 }

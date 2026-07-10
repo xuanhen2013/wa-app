@@ -114,8 +114,9 @@ type Event struct {
 }
 
 type TaskDetail struct {
-	Task  *Task  `json:"task,omitempty"`
-	Items []Item `json:"items"`
+	Task   *Task   `json:"task,omitempty"`
+	Items  []Item  `json:"items"`
+	Events []Event `json:"events"`
 }
 
 func IsActiveTaskStatus(status string) bool {

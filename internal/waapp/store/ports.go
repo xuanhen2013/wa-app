@@ -105,7 +105,9 @@ type BulkRegistrationRepository interface {
 	CreateTask(context.Context, bulkregistration.Task, []bulkregistration.Item) (*bulkregistration.Task, bool, error)
 	GetActiveTask(context.Context) (*bulkregistration.Task, error)
 	GetTask(context.Context, string) (*bulkregistration.Task, error)
+	GetLatestTask(context.Context) (*bulkregistration.Task, error)
 	ListItems(context.Context, string) ([]bulkregistration.Item, error)
+	ListEvents(context.Context, string, int) ([]bulkregistration.Event, error)
 	SaveTask(context.Context, bulkregistration.Task) error
 	SaveItem(context.Context, bulkregistration.Item) error
 	AppendEvent(context.Context, bulkregistration.Event) error

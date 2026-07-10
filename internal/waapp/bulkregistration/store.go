@@ -9,7 +9,9 @@ type Store interface {
 	CreateTask(context.Context, Task, []Item) (*Task, bool, error)
 	GetActiveTask(context.Context) (*Task, error)
 	GetTask(context.Context, string) (*Task, error)
+	GetLatestTask(context.Context) (*Task, error)
 	ListItems(context.Context, string) ([]Item, error)
+	ListEvents(context.Context, string, int) ([]Event, error)
 	SaveTask(context.Context, Task) error
 	SaveItem(context.Context, Item) error
 	AppendEvent(context.Context, Event) error

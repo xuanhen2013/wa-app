@@ -24,6 +24,7 @@ import (
 const (
 	bulkRegistrationService          = "whatsapp"
 	bulkRegistrationMaxItems         = 20
+	bulkRegistrationEventLimit       = 100
 	bulkRegistrationPollInterval     = 5 * time.Second
 	bulkRegistrationSMSWaitTimeout   = 20 * time.Minute
 	bulkRegistrationCancelRetryMax   = 5
@@ -276,13 +277,28 @@ func (m *bulkRegistrationManager) TaskDetail(ctx context.Context, taskID string)
 		if taskID != "" {
 			return nil, bulkregistration.ErrTaskNotFound
 		}
-		return &bulkregistration.TaskDetail{Items: []bulkregistration.Item{}}, nil
+		return &bulkregistration.TaskDetail{Items: []bulkregistration.Item{}, Events: []bulkregistration.Event{}}, nil
 	}
 	items, err := m.server.Store().ListItems(ctx, task.TaskID)
 	if err != nil {
 		return nil, err
 	}
-	return &bulkregistration.TaskDetail{Task: task, Items: items}, nil
+	events, err := m.server.Store().ListEvents(ctx, task.TaskID, bulkRegistrationEventLimit)
+	if err != nil {
+		return nil, err
+	}
+	return &bulkregistration.TaskDetail{Task: task, Items: items, Events: events}, nil
+}
+
+func (m *bulkRegistrationManager) LatestTaskDetail(ctx context.Context) (*bulkregistration.TaskDetail, error) {
+	task, err := m.server.Store().GetLatestTask(ctx)
+	if err != nil {
+		return nil, err
+	}
+	if task == nil {
+		return &bulkregistration.TaskDetail{Items: []bulkregistration.Item{}, Events: []bulkregistration.Event{}}, nil
+	}
+	return m.TaskDetail(ctx, task.TaskID)
 }
 
 func (m *bulkRegistrationManager) CancelTask(ctx context.Context) (*bulkregistration.TaskDetail, error) {
@@ -360,7 +376,15 @@ func (m *bulkRegistrationManager) handleTask(w http.ResponseWriter, r *http.Requ
 			bulkError(w, err)
 			return
 		}
-		bulkJSON(w, http.StatusOK, map[string]any{"success": true, "task": detail.Task, "items": detail.Items, "max_items": m.config.MaxItems, "max_concurrency": m.config.Concurrency})
+		latest := &bulkregistration.TaskDetail{Items: []bulkregistration.Item{}, Events: []bulkregistration.Event{}}
+		if detail.Task == nil {
+			latest, err = m.LatestTaskDetail(r.Context())
+			if err != nil {
+				bulkError(w, err)
+				return
+			}
+		}
+		bulkJSON(w, http.StatusOK, map[string]any{"success": true, "task": detail.Task, "items": detail.Items, "events": detail.Events, "last_task": latest.Task, "last_items": latest.Items, "last_events": latest.Events, "max_items": m.config.MaxItems, "max_concurrency": m.config.Concurrency})
 	case http.MethodPost:
 		input := bulkTaskCreateInput{}
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&input); err != nil {
@@ -372,7 +396,7 @@ func (m *bulkRegistrationManager) handleTask(w http.ResponseWriter, r *http.Requ
 			bulkError(w, err)
 			return
 		}
-		bulkJSON(w, http.StatusOK, map[string]any{"success": true, "existing": existing, "task": detail.Task, "items": detail.Items, "max_items": m.config.MaxItems, "max_concurrency": m.config.Concurrency})
+		bulkJSON(w, http.StatusOK, map[string]any{"success": true, "existing": existing, "task": detail.Task, "items": detail.Items, "events": detail.Events, "max_items": m.config.MaxItems, "max_concurrency": m.config.Concurrency})
 	default:
 		bulkMethodNotAllowed(w, http.MethodGet+", "+http.MethodPost)
 	}
@@ -388,7 +412,7 @@ func (m *bulkRegistrationManager) handleCancelTask(w http.ResponseWriter, r *htt
 		bulkError(w, err)
 		return
 	}
-	bulkJSON(w, http.StatusOK, map[string]any{"success": true, "task": detail.Task, "items": detail.Items})
+	bulkJSON(w, http.StatusOK, map[string]any{"success": true, "task": detail.Task, "items": detail.Items, "events": detail.Events})
 }
 
 func (m *bulkRegistrationManager) processTask(ctx context.Context, task *bulkregistration.Task) error {
@@ -771,7 +795,15 @@ func (m *bulkRegistrationManager) refreshTaskProgress(ctx context.Context, task 
 }
 
 func (m *bulkRegistrationManager) appendEvent(ctx context.Context, task *bulkregistration.Task, item bulkregistration.Item, eventType string, providerStatus string, waStatus string) error {
-	return m.server.Store().AppendEvent(ctx, bulkregistration.Event{EventID: m.server.IDs().NewID("wabulevt_"), TaskID: task.TaskID, ItemID: item.ItemID, Provider: item.Provider, ActivationID: item.ActivationID, EventType: eventType, ProviderStatus: providerStatus, WAStatus: waStatus, Message: compactBulkError(errors.New(item.LastError)), CreatedAt: time.Now().UTC()})
+	message := safeBulkEventMessage(item.LastError)
+	event := bulkregistration.Event{EventID: m.server.IDs().NewID("wabulevt_"), TaskID: task.TaskID, ItemID: item.ItemID, Provider: item.Provider, ActivationID: item.ActivationID, EventType: eventType, ProviderStatus: providerStatus, WAStatus: waStatus, Message: message, CreatedAt: time.Now().UTC()}
+	if err := m.server.Store().AppendEvent(ctx, event); err != nil {
+		return err
+	}
+	if message != "" {
+		log.Printf("wa_bulk_registration_failure task_id=%s item_id=%s stage=%s failure_kind=%s sms_status=%s wa_status=%s", shared.SafeProxyLogToken(task.TaskID, "task"), shared.SafeProxyLogToken(item.ItemID, "item"), shared.SafeProxyLogToken(eventType, "unknown"), bulkFailureKind(message), shared.SafeProxyLogToken(providerStatus, "none"), shared.SafeProxyLogToken(waStatus, "none"))
+	}
+	return nil
 }
 
 func (m *bulkRegistrationManager) enabled() bool {
@@ -954,6 +986,35 @@ func compactBulkError(err error) string {
 		return message[:180]
 	}
 	return message
+}
+
+func safeBulkEventMessage(value string) string {
+	if strings.TrimSpace(value) == "" {
+		return ""
+	}
+	return compactBulkError(errors.New(shared.SafeInternalErrorMessage(errors.New(value))))
+}
+
+func bulkFailureKind(message string) string {
+	message = strings.ToLower(message)
+	switch {
+	case strings.Contains(message, "reason=blocked"), strings.Contains(message, " blocked"):
+		return "wa_blocked"
+	case strings.Contains(message, "proxy"):
+		return "registration_proxy"
+	case strings.Contains(message, "timed out waiting for the sms"):
+		return "sms_timeout"
+	case strings.Contains(message, "sms activation cancellation"):
+		return "sms_cancel_pending"
+	case strings.Contains(message, "no_numbers"), strings.Contains(message, "no numbers"):
+		return "sms_number_unavailable"
+	case strings.Contains(message, "could not read the sms"), strings.Contains(message, "could not prepare the sms"):
+		return "sms_provider"
+	case strings.Contains(message, "invalid e.164"), strings.Contains(message, "outside the selected country"):
+		return "invalid_phone"
+	default:
+		return "unknown"
+	}
 }
 
 func bulkFailureReason(value string) string {

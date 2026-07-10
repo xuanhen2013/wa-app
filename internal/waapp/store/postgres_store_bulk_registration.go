@@ -66,6 +66,10 @@ func (s *PostgresStore) GetTask(ctx context.Context, taskID string) (*bulkregist
 	return postgresBulkTask(s.pool.QueryRow(ctx, `SELECT payload FROM wa_bulk_registration_tasks WHERE task_id=$1`, taskID))
 }
 
+func (s *PostgresStore) GetLatestTask(ctx context.Context) (*bulkregistration.Task, error) {
+	return postgresBulkTask(s.pool.QueryRow(ctx, `SELECT payload FROM wa_bulk_registration_tasks ORDER BY updated_at DESC, task_id DESC LIMIT 1`))
+}
+
 func (s *PostgresStore) ListItems(ctx context.Context, taskID string) ([]bulkregistration.Item, error) {
 	rows, err := s.pool.Query(ctx, `SELECT payload FROM wa_bulk_registration_items WHERE task_id=$1 ORDER BY created_at ASC, item_id ASC`, taskID)
 	if err != nil {
@@ -85,6 +89,30 @@ func (s *PostgresStore) ListItems(ctx context.Context, taskID string) ([]bulkreg
 		items = append(items, item)
 	}
 	return items, rows.Err()
+}
+
+func (s *PostgresStore) ListEvents(ctx context.Context, taskID string, limit int) ([]bulkregistration.Event, error) {
+	if limit <= 0 {
+		return []bulkregistration.Event{}, nil
+	}
+	rows, err := s.pool.Query(ctx, `SELECT payload FROM wa_sms_activation_events WHERE task_id=$1 ORDER BY created_at DESC, event_id DESC LIMIT $2`, taskID, limit)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	events := []bulkregistration.Event{}
+	for rows.Next() {
+		var payload []byte
+		if err := rows.Scan(&payload); err != nil {
+			return nil, err
+		}
+		event, err := unmarshalBulkEvent(payload)
+		if err != nil {
+			return nil, err
+		}
+		events = append(events, event)
+	}
+	return events, rows.Err()
 }
 
 func (s *PostgresStore) SaveTask(ctx context.Context, task bulkregistration.Task) error {

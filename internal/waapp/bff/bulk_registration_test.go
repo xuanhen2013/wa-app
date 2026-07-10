@@ -2,7 +2,10 @@ package bff
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -193,6 +196,79 @@ func TestBulkTaskCreationRejectsConcurrencyAboveTarget(t *testing.T) {
 	_, _, err := manager.CreateTask(context.Background(), bulkTaskCreateInput{CountryISO2: "PH", TargetCount: 2, Concurrency: 3})
 	if err == nil || !strings.Contains(err.Error(), "concurrency must not exceed target_count") {
 		t.Fatalf("expected concurrency validation error, got %v", err)
+	}
+}
+
+func TestBulkTaskDetailIncludesPersistedFailureEvents(t *testing.T) {
+	manager, task, item := newBulkTestManager(t, &bulkTestProvider{}, bulkregistration.ItemStatusQueued)
+	if err := manager.failItem(context.Background(), task, item, "verification request was rejected: reason=blocked", false); err != nil {
+		t.Fatalf("fail item: %v", err)
+	}
+	detail, err := manager.TaskDetail(context.Background(), task.TaskID)
+	if err != nil {
+		t.Fatalf("task detail: %v", err)
+	}
+	if len(detail.Events) != 1 {
+		t.Fatalf("expected one persisted event, got %#v", detail.Events)
+	}
+	event := detail.Events[0]
+	if event.EventType != "failed" || event.ItemID != item.ItemID || !strings.Contains(event.Message, "reason=blocked") {
+		t.Fatalf("unexpected failure event: %#v", event)
+	}
+}
+
+func TestBulkLatestTaskDetailReturnsTerminalTaskWithEvents(t *testing.T) {
+	manager, task, item := newBulkTestManager(t, &bulkTestProvider{}, bulkregistration.ItemStatusQueued)
+	if err := manager.failItem(context.Background(), task, item, "registration proxy unavailable", false); err != nil {
+		t.Fatalf("fail item: %v", err)
+	}
+	completeBulkTestTask(t, manager, task)
+	detail, err := manager.LatestTaskDetail(context.Background())
+	if err != nil {
+		t.Fatalf("latest task detail: %v", err)
+	}
+	if detail.Task == nil || detail.Task.TaskID != task.TaskID || len(detail.Events) != 1 {
+		t.Fatalf("unexpected latest task detail: %#v", detail)
+	}
+}
+
+func TestBulkTaskEventsRedactSensitiveFailureDetails(t *testing.T) {
+	manager, task, item := newBulkTestManager(t, &bulkTestProvider{}, bulkregistration.ItemStatusQueued)
+	if err := manager.failItem(context.Background(), task, item, "SMS provider rejected token=not-for-dashboard", false); err != nil {
+		t.Fatalf("fail item: %v", err)
+	}
+	detail, err := manager.TaskDetail(context.Background(), task.TaskID)
+	if err != nil {
+		t.Fatalf("task detail: %v", err)
+	}
+	if len(detail.Events) != 1 || strings.Contains(detail.Events[0].Message, "not-for-dashboard") || !strings.Contains(detail.Events[0].Message, "token=<redacted>") {
+		t.Fatalf("event failure detail was not redacted: %#v", detail.Events)
+	}
+}
+
+func TestBulkTaskEndpointReturnsLatestTerminalEvents(t *testing.T) {
+	manager, task, item := newBulkTestManager(t, &bulkTestProvider{}, bulkregistration.ItemStatusQueued)
+	if err := manager.failItem(context.Background(), task, item, "verification request was rejected: reason=blocked", false); err != nil {
+		t.Fatalf("fail item: %v", err)
+	}
+	completeBulkTestTask(t, manager, task)
+	recorder := httptest.NewRecorder()
+	request := httptest.NewRequest(http.MethodGet, "/api/wa/bulk-registration/task", nil)
+	manager.HandleHTTP(recorder, request)
+	if recorder.Code != http.StatusOK {
+		t.Fatalf("unexpected status: %d body=%s", recorder.Code, recorder.Body.String())
+	}
+	response := struct {
+		Success    bool                     `json:"success"`
+		Task       *bulkregistration.Task   `json:"task"`
+		LastTask   *bulkregistration.Task   `json:"last_task"`
+		LastEvents []bulkregistration.Event `json:"last_events"`
+	}{}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode response: %v", err)
+	}
+	if !response.Success || response.Task != nil || response.LastTask == nil || response.LastTask.TaskID != task.TaskID || len(response.LastEvents) != 1 {
+		t.Fatalf("unexpected latest task response: %#v", response)
 	}
 }
 
