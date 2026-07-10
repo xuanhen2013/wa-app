@@ -139,15 +139,15 @@ function BulkTaskDetail({ task, items, canceling, onCancel }: { task: BulkRegist
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-3">
         <div className="grid gap-1"><CardTitle className="text-base">批量注册任务</CardTitle><span className="font-mono text-xs text-muted-foreground">{task.task_id}</span></div>
-        <div className="flex items-center gap-2"><Badge variant={task.status === 'RUNNING' ? 'default' : 'secondary'}>{task.status}</Badge>{cancelable ? <Button type="button" variant="destructive" size="sm" disabled={canceling} onClick={onCancel}>{canceling ? <Loader2 className="size-4 animate-spin" /> : <Ban className="size-4" />}取消任务</Button> : null}</div>
+        <div className="flex items-center gap-2"><Badge variant={task.status === 'RUNNING' ? 'default' : 'secondary'} title={task.status}>{taskStatusLabel(task.status)}</Badge>{cancelable ? <Button type="button" variant="destructive" size="sm" disabled={canceling} onClick={onCancel}>{canceling ? <Loader2 className="size-4 animate-spin" /> : <Ban className="size-4" />}取消任务</Button> : null}</div>
       </CardHeader>
       <CardContent className="grid gap-4">
         <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-5"><TaskMetric label="目标" value={task.target_count} /><TaskMetric label="成功" value={task.success_count} /><TaskMetric label="失败" value={task.failed_count} /><TaskMetric label="取消" value={task.canceled_count} /><TaskMetric label="处理中" value={task.waiting_count} /></div>
-        {task.last_error ? <p className="text-sm text-destructive">{task.last_error}</p> : null}
+        {task.last_error ? <p className="text-sm text-destructive"><span className="font-medium">最近错误：</span>{formatBulkFailure(task.last_error)}</p> : null}
         <div className="overflow-x-auto">
           <Table>
-            <TableHeader><TableRow><TableHead>#</TableHead><TableHead>供应商</TableHead><TableHead>号码</TableHead><TableHead>阶段</TableHead><TableHead>短信</TableHead><TableHead>WA</TableHead><TableHead>错误</TableHead></TableRow></TableHeader>
-            <TableBody>{items.map((item, index) => <TableRow key={item.item_id}><TableCell>{index + 1}</TableCell><TableCell>{item.provider}</TableCell><TableCell className="font-mono">{item.phone_masked || '-'}</TableCell><TableCell>{item.status}</TableCell><TableCell>{item.sms_status || '-'}</TableCell><TableCell>{item.wa_registration_status || item.wa_verification_status || item.wa_probe_status || '-'}</TableCell><TableCell className="max-w-48 truncate" title={item.last_error}>{item.last_error || '-'}</TableCell></TableRow>)}</TableBody>
+            <TableHeader><TableRow><TableHead>#</TableHead><TableHead>供应商</TableHead><TableHead>号码</TableHead><TableHead>阶段</TableHead><TableHead>短信</TableHead><TableHead>WA</TableHead><TableHead>根因</TableHead></TableRow></TableHeader>
+            <TableBody>{items.map((item, index) => <TableRow key={item.item_id}><TableCell>{index + 1}</TableCell><TableCell>{item.provider}</TableCell><TableCell className="font-mono">{item.phone_masked || '-'}</TableCell><TableCell><StatusValue value={item.status} label={itemStatusLabel(item.status, item.cancel_attempt_count)} /></TableCell><TableCell><StatusValue value={item.sms_status} label={smsStatusLabel(item.sms_status)} /></TableCell><TableCell><StatusValue value={waStatus(item)} label={waStatusLabel(waStatus(item))} /></TableCell><TableCell className="max-w-64" title={item.last_error}><span className="line-clamp-2">{formatBulkFailure(item.last_error) || '-'}</span></TableCell></TableRow>)}</TableBody>
           </Table>
         </div>
       </CardContent>
@@ -157,6 +157,47 @@ function BulkTaskDetail({ task, items, canceling, onCancel }: { task: BulkRegist
 
 function TaskMetric({ label, value }: { label: string; value: number }) {
   return <div className="grid gap-0.5"><span className="text-xs text-muted-foreground">{label}</span><strong className="font-mono text-lg">{value}</strong></div>;
+}
+
+function StatusValue({ value, label }: { value?: string; label: string }) {
+  return <div className="grid gap-0.5"><span>{label}</span>{value ? <span className="font-mono text-xs text-muted-foreground" title={value}>{value}</span> : null}</div>;
+}
+
+function taskStatusLabel(value: string) {
+  return ({ DRAFT: '草稿', RUNNING: '执行中', CANCEL_REQUESTED: '已请求取消', CANCELING: '取消中', COMPLETED: '已完成', PARTIAL_COMPLETED: '部分完成', FAILED: '失败', CANCELED: '已取消', PAUSED: '已暂停' } as Record<string, string>)[value] || '未知状态';
+}
+
+function itemStatusLabel(value: string, cancelAttempts: number) {
+  const labels: Record<string, string> = { QUEUED: '排队中', ACQUIRING_NUMBER: '申请号码中', NUMBER_ACQUIRED: '号码已获取', WA_PROBING: 'WA 注册中', WA_REQUESTING_OTP: '请求验证码中', WAITING_SMS: '等待短信', SMS_RECEIVED: '收到验证码', SUBMITTING_OTP: '提交验证码中', REGISTERED: '注册成功', CANCELING_NUMBER: '正在取消短信号码', NUMBER_CANCELED: '短信号码已取消', FAILED: '失败', CANCELED: '已取消' };
+  if (value === 'CANCEL_PENDING') return cancelAttempts > 0 ? `短信取消待确认（已尝试 ${cancelAttempts} 次）` : '短信取消待确认';
+  return labels[value] || '未知阶段';
+}
+
+function smsStatusLabel(value: string) {
+  return ({ QUEUED: '等待申请', NUMBER_ACQUIRED: '号码已获取', STATUS_WAIT_CODE: '等待验证码', STATUS_OK: '已收到验证码', STATUS_CANCEL: '已取消', STATUS_WAIT_RETRY: '等待重试', STATUS_WAIT_RESEND: '等待重发' } as Record<string, string>)[value] || (value ? '供应商状态' : '未开始');
+}
+
+function waStatus(item: BulkRegistrationItem) {
+  return item.wa_registration_status || item.wa_verification_status || item.wa_probe_status || '';
+}
+
+function waStatusLabel(value: string) {
+  return ({ RUNNING: '进行中', REQUESTED: '已请求', SENT: '已发送', WAITING: '等待验证', SUBMITTED: '已提交', REGISTERED: '已注册', REJECTED: '已拒绝', EXPIRED: '已过期' } as Record<string, string>)[value] || (value ? 'WA 状态' : '未开始');
+}
+
+function formatBulkFailure(value?: string) {
+  const unique = [...new Set((value || '').split(';').map((part) => part.trim()).filter(Boolean))];
+  return unique.map((part) => {
+    if (part.startsWith('verification request was rejected')) {
+      const reason = part.match(/reason=([^\s;]+)/)?.[1];
+      return reason ? `WA 拒绝请求验证码（${reason}）` : 'WA 拒绝请求验证码';
+    }
+    if (part.startsWith('SMS activation cancellation pending') || part === 'SMS activation cancellation is pending') {
+      const detail = part.split(':').slice(1).join(':').trim();
+      return detail ? `短信平台取消待确认（${detail}）` : '短信平台取消待确认';
+    }
+    return part;
+  }).join('；');
 }
 
 function taskFinished(task: BulkRegistrationTask) {

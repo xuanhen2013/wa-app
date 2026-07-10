@@ -26,6 +26,7 @@ const (
 	bulkRegistrationSMSWaitTimeout   = 20 * time.Minute
 	bulkRegistrationCancelRetryMax   = 5
 	bulkRegistrationIdlePollInterval = 2 * time.Second
+	bulkCancellationPendingPrefix    = "SMS activation cancellation pending"
 )
 
 type BulkRegistrationConfig struct {
@@ -610,13 +611,18 @@ func (m *bulkRegistrationManager) cancelItem(ctx context.Context, task *bulkregi
 		item.FinishedAt = timePointer(time.Now().UTC())
 		return m.saveItem(ctx, task, &item, "canceled", item.SMSStatus, item.WARegistrationStatus)
 	}
+	// Cancellation state belongs in Status. Keep LastError focused on the
+	// registration failure and replace any older pending-cancellation detail.
+	item.LastError = bulkFailureReason(item.LastError)
 	item.Status = bulkregistration.ItemStatusCancelingNumber
 	if err := m.saveItem(ctx, task, &item, "canceling_activation", item.SMSStatus, item.WARegistrationStatus); err != nil {
 		return err
 	}
+	var cancelErr error
 	for attempt := 1; attempt <= m.cancelRetryMax; attempt++ {
 		item.CancelAttemptCount = attempt
-		if err := m.provider.Cancel(ctx, item.ActivationID); err == nil {
+		cancelErr = m.provider.Cancel(ctx, item.ActivationID)
+		if cancelErr == nil {
 			if item.WAAccountID != "" {
 				gateway := &actionGateway{server: m.server, registrationProxy: newRegistrationProxyResolver(m.registrationProxy)}
 				_, _ = gateway.cleanupFailedRegistration(context.Background(), map[string]any{"wa_account_id": item.WAAccountID, "verification_request_id": item.VerificationRequestID})
@@ -635,11 +641,7 @@ func (m *bulkRegistrationManager) cancelItem(ctx context.Context, task *bulkregi
 		}
 	}
 	item.Status = bulkregistration.ItemStatusCancelPending
-	if item.LastError != "" {
-		item.LastError += "; "
-	}
-	item.LastError += "SMS activation cancellation is pending"
-	item.LastError = compactBulkError(errors.New(item.LastError))
+	item.LastError = bulkCancellationPendingError(item.LastError, cancelErr)
 	return m.saveItem(ctx, task, &item, "activation_cancel_pending", item.SMSStatus, item.WARegistrationStatus)
 }
 
@@ -850,6 +852,36 @@ func compactBulkError(err error) string {
 		return message[:180]
 	}
 	return message
+}
+
+func bulkFailureReason(value string) string {
+	parts := strings.Split(value, ";")
+	result := make([]string, 0, len(parts))
+	seen := map[string]struct{}{}
+	for _, part := range parts {
+		part = strings.TrimSpace(part)
+		if part == "" || strings.HasPrefix(part, bulkCancellationPendingPrefix) || part == "SMS activation cancellation is pending" {
+			continue
+		}
+		if _, ok := seen[part]; ok {
+			continue
+		}
+		seen[part] = struct{}{}
+		result = append(result, part)
+	}
+	return compactBulkError(errors.New(strings.Join(result, "; ")))
+}
+
+func bulkCancellationPendingError(failureReason string, cancelErr error) string {
+	failureReason = bulkFailureReason(failureReason)
+	detail := bulkCancellationPendingPrefix
+	if message := compactBulkError(cancelErr); message != "" {
+		detail += ": " + message
+	}
+	if failureReason == "" {
+		return detail
+	}
+	return compactBulkError(errors.New(failureReason + "; " + detail))
 }
 
 func waitBulkRegistration(ctx context.Context, duration time.Duration) bool {

@@ -149,8 +149,15 @@ func TestBulkWorkerPreservesFailureReasonWhenCancellationIsPending(t *testing.T)
 		t.Fatalf("fail item: %v", err)
 	}
 	updated := bulkTestItem(t, manager, item.ItemID)
-	if updated.Status != bulkregistration.ItemStatusCancelPending || !containsAll(updated.LastError, "WA verification request rejected", "cancellation is pending") {
+	if updated.Status != bulkregistration.ItemStatusCancelPending || !containsAll(updated.LastError, "WA verification request rejected", bulkCancellationPendingPrefix, "EARLY_CANCEL_DENIED") {
 		t.Fatalf("unexpected cancellation-pending item: %#v", updated)
+	}
+	if err := manager.cancelItem(context.Background(), task, updated); err != nil {
+		t.Fatalf("retry cancellation: %v", err)
+	}
+	retried := bulkTestItem(t, manager, item.ItemID)
+	if strings.Count(retried.LastError, bulkCancellationPendingPrefix) != 1 || strings.Count(retried.LastError, "WA verification request rejected") != 1 {
+		t.Fatalf("cancellation retry duplicated the failure detail: %#v", retried)
 	}
 }
 
