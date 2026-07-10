@@ -246,6 +246,7 @@ Goal 2 验收：
 - 初版 HeroSMS adapter 将 V1 报价的运营商硬编码为 `any`，且申请号码没有传递 `operator`；因此 Dashboard 无法区分运营商，供应商也不会收到筛选条件。
 - 修正后通过 `getOperators` 读取国家级运营商列表，为每个运营商生成可选报价，并使用 `getNumberV2&operator=<code>` 申请号码；菲律宾只读验证到 `tm`、`globe_telecom`、`smart`、`dito`。
 - 同一价格档的库存按共享总量进行前后端校验，不会因运营商展开而重复计算库存。实际分配的 `activationOperator` 会写回任务条目。
+- 已发布提交 `505f423` 到独立容器 `wa-app-whats`，运行镜像为 `wa-app:whats-505f423`；公网健康检查和认证后的菲律宾报价接口均通过，返回 `104` 条按价格档和运营商展开的报价。本次未创建任务、未购号、未请求 OTP。
 
 ## 推荐 /goal 文案
 
