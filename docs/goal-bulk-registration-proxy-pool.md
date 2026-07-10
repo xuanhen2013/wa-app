@@ -94,3 +94,12 @@
 - 发布到独立容器 `wa-app-whats`，域名 `whats.example.invalid`，保留原 `wa-app` 容器不变。
 - 使用带提交短 hash 的 `wa-app:whats-<sha>` 镜像、校验和传输、健康检查与自动回滚。
 - 发布完成后删除本地和服务器镜像归档，记录镜像、验证结果和提交。
+
+## 完成记录
+
+- 实现提交：`2766f50`（`feat(bulk-registration): rotate proxy pool candidates`）。
+- 发布镜像：`wa-app:whats-2766f50`，已部署到独立容器 `wa-app-whats`。
+- 生产验证：宿主机 `127.0.0.1:4399/healthz` 与公网 `https://whats.example.invalid/healthz` 均返回 `200`；认证后的只读 `GET /api/wa/bulk-registration/task` 返回成功，未创建任务、未购号、未请求 OTP。
+- 隔离验证：旧 `wa-app` 与新 `wa-app-whats` 均持续运行，未共享容器或数据卷。
+- 构建与测试：`go test ./...`、`npm run lint`、Linux Docker 内的 proto 生成、Vite production build 与 Go service build 均通过。
+- 安全验证：生产只读响应未包含完整代理 URL、1024proxy 用户名或密码；候选节点与 sticky route 只存在于运行时。
