@@ -20,6 +20,7 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
   const queryClient = useQueryClient();
   const [countryISO2, setCountryISO2] = useState('');
   const [targetCount, setTargetCount] = useState(10);
+  const [concurrency, setConcurrency] = useState(defaultBulkConcurrency(10));
   const [integrityMode, setIntegrityMode] = useState<WaIntegrityMode>(DEFAULT_WA_INTEGRITY_MODE);
   const [quantities, setQuantities] = useState<Record<string, number>>({});
   const health = useWaDashboardHealth();
@@ -32,11 +33,14 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
   const task = taskQuery.data?.task;
   const countries = useMemo(() => countriesQuery.data?.countries || [], [countriesQuery.data?.countries]);
   const offers = offersData?.offers || [];
+  const maxItems = offersData?.max_items || 20;
+  const maxConcurrency = Math.min(targetCount, offersData?.max_concurrency || 20);
   const selectedCount = useMemo(() => Object.values(quantities).reduce((sum, quantity) => sum + Math.max(0, quantity || 0), 0), [quantities]);
   const createTask = useMutation({
     mutationFn: () => createBulkRegistrationTask({
       country_iso2: countryISO2,
       target_count: targetCount,
+      concurrency,
       integrity_mode: playIntegrityAvailable ? integrityMode : DEFAULT_WA_INTEGRITY_MODE,
       offers: offers.filter((offer) => (quantities[offer.offer_id] || 0) > 0).map((offer) => ({ offer_id: offer.offer_id, quantity: quantities[offer.offer_id], max_price: offer.price })),
     }),
@@ -67,6 +71,17 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
     setQuantities({});
   }, [countries, countryISO2]);
 
+  useEffect(() => {
+    if (targetCount <= maxItems) return;
+    setTargetCount(maxItems);
+    setConcurrency(defaultBulkConcurrency(maxItems));
+  }, [maxItems, targetCount]);
+
+  useEffect(() => {
+    if (concurrency <= maxConcurrency) return;
+    setConcurrency(maxConcurrency);
+  }, [concurrency, maxConcurrency]);
+
   if (task) return <BulkTaskDetail task={task} items={taskQuery.data?.items || []} canceling={cancelTask.isPending} onCancel={() => void cancelTask.mutateAsync()} />;
 
   function setQuantity(offer: BulkRegistrationOffer, nextValue: number) {
@@ -76,6 +91,15 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
   function selectCountry(nextCountryISO2: string) {
     setCountryISO2(nextCountryISO2);
     setQuantities({});
+  }
+  function setTarget(nextValue: number) {
+    const bounded = Math.max(1, Math.min(maxItems, Number.isFinite(nextValue) ? Math.floor(nextValue) : 1));
+    setTargetCount(bounded);
+    setConcurrency(Math.min(defaultBulkConcurrency(bounded), Math.min(bounded, offersData?.max_concurrency || 20)));
+  }
+  function setTaskConcurrency(nextValue: number) {
+    const bounded = Math.max(1, Math.min(maxConcurrency, Number.isFinite(nextValue) ? Math.floor(nextValue) : 1));
+    setConcurrency(bounded);
   }
   function autoSelectLowestPrice() {
     let remaining = targetCount;
@@ -98,9 +122,10 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
       </CardHeader>
       <CardContent className="grid gap-4">
         <FieldGroup>
-          <div className="grid gap-3 sm:grid-cols-[1fr_1fr_auto]">
+          <div className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr_auto]">
             <Field><FieldLabel>地区</FieldLabel><Select value={countryISO2} onValueChange={selectCountry} disabled={busy || countries.length === 0}><SelectTrigger className="w-full"><SelectValue placeholder={countriesQuery.isLoading ? '加载地区...' : '选择地区'} /></SelectTrigger><SelectContent>{countries.map((country) => <SelectItem key={country.country_iso2} value={country.country_iso2}>{country.name} ({country.country_iso2})</SelectItem>)}</SelectContent></Select></Field>
-            <Field><FieldLabel>目标数量</FieldLabel><Input type="number" min={1} max={offersData?.max_items || 10} value={targetCount} onChange={(event) => setTargetCount(Math.max(1, Number(event.target.value) || 1))} disabled={busy} /></Field>
+            <Field><FieldLabel>目标数量</FieldLabel><Input type="number" min={1} max={maxItems} value={targetCount} onChange={(event) => setTarget(Number(event.target.value))} disabled={busy} /></Field>
+            <Field><FieldLabel>并发数</FieldLabel><Input type="number" min={1} max={maxConcurrency} value={concurrency} onChange={(event) => setTaskConcurrency(Number(event.target.value))} disabled={busy} /></Field>
             <Field className="justify-end"><FieldLabel className="sr-only">刷新报价</FieldLabel><Button type="button" size="icon" variant="outline" title="刷新报价" aria-label="刷新报价" disabled={busy} onClick={() => void refetchOffers()}><RefreshCw className={offersFetching ? 'size-4 animate-spin' : 'size-4'} /></Button></Field>
           </div>
         </FieldGroup>
@@ -142,7 +167,7 @@ function BulkTaskDetail({ task, items, canceling, onCancel }: { task: BulkRegist
         <div className="flex items-center gap-2"><Badge variant={task.status === 'RUNNING' ? 'default' : 'secondary'} title={task.status}>{taskStatusLabel(task.status)}</Badge>{cancelable ? <Button type="button" variant="destructive" size="sm" disabled={canceling} onClick={onCancel}>{canceling ? <Loader2 className="size-4 animate-spin" /> : <Ban className="size-4" />}取消任务</Button> : null}</div>
       </CardHeader>
       <CardContent className="grid gap-4">
-        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-5"><TaskMetric label="目标" value={task.target_count} /><TaskMetric label="成功" value={task.success_count} /><TaskMetric label="失败" value={task.failed_count} /><TaskMetric label="取消" value={task.canceled_count} /><TaskMetric label="处理中" value={task.waiting_count} /></div>
+        <div className="grid grid-cols-2 gap-x-4 gap-y-2 text-sm sm:grid-cols-6"><TaskMetric label="目标" value={task.target_count} /><TaskMetric label="并发" value={task.concurrency || 1} /><TaskMetric label="成功" value={task.success_count} /><TaskMetric label="失败" value={task.failed_count} /><TaskMetric label="取消" value={task.canceled_count} /><TaskMetric label="处理中" value={task.waiting_count} /></div>
         {task.last_error ? <p className="text-sm text-destructive"><span className="font-medium">最近错误：</span>{formatBulkFailure(task.last_error)}</p> : null}
         <div className="overflow-x-auto">
           <Table>
@@ -206,4 +231,8 @@ function taskFinished(task: BulkRegistrationTask) {
 
 function formatMoney(value: number, currency: string) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'USD', minimumFractionDigits: 2 }).format(value);
+}
+
+function defaultBulkConcurrency(targetCount: number) {
+  return Math.max(1, Math.floor(targetCount / 3));
 }

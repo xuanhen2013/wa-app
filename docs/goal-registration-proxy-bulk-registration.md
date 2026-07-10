@@ -118,7 +118,7 @@ git checkout -b codex/registration-proxy-bulk-registration
    - 实现任务、条目、短信事件存储。
    - 实现国家列表、报价查询、提交任务、查询任务、取消任务 API。
    - 国家列表必须是 HeroSMS 可见国家和 1024proxy 国家级出口目录的交集；`Rand` 和州/省不作为可选注册地区，直接 API 请求非交集国家也必须拒绝。
-   - worker 串行执行，默认并发为 `1`。
+   - worker 按每个任务保存的并发数执行；表单默认目标数量的三分之一，历史任务按 `1` 恢复。
    - 单条流程：报价选择、申请号码、WA probe、请求 OTP、轮询短信、提交 OTP、完成/取消短信激活。
    - 失败时尽早取消短信号码，降低扣费风险。
 
@@ -156,8 +156,8 @@ WA_REGISTRATION_PROXY_SOURCE_1024_PASSWORD=
 
 ```env
 WA_BULK_REGISTRATION_ENABLED=false
-WA_BULK_REGISTRATION_MAX_ITEMS=10
-WA_BULK_REGISTRATION_CONCURRENCY=1
+WA_BULK_REGISTRATION_MAX_ITEMS=20
+WA_BULK_REGISTRATION_CONCURRENCY=20
 WA_HERO_SMS_API_KEY=
 ```
 

@@ -10,6 +10,7 @@ import (
 	"sort"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/byte-v-forge/wa-app/internal/waapp/bulkregistration"
@@ -22,6 +23,7 @@ import (
 
 const (
 	bulkRegistrationService          = "whatsapp"
+	bulkRegistrationMaxItems         = 20
 	bulkRegistrationPollInterval     = 5 * time.Second
 	bulkRegistrationSMSWaitTimeout   = 20 * time.Minute
 	bulkRegistrationCancelRetryMax   = 5
@@ -38,15 +40,17 @@ type BulkRegistrationConfig struct {
 
 func normalizeBulkRegistrationConfig(config BulkRegistrationConfig) BulkRegistrationConfig {
 	if config.MaxItems <= 0 {
-		config.MaxItems = 10
+		config.MaxItems = bulkRegistrationMaxItems
 	}
-	if config.MaxItems > 100 {
-		config.MaxItems = 100
+	if config.MaxItems > bulkRegistrationMaxItems {
+		config.MaxItems = bulkRegistrationMaxItems
 	}
-	// The first release intentionally processes one phone at a time. The field
-	// remains part of configuration so a later concurrency-safe worker can use
-	// it without changing the deployment surface.
-	config.Concurrency = 1
+	if config.Concurrency <= 0 {
+		config.Concurrency = config.MaxItems
+	}
+	if config.Concurrency > config.MaxItems {
+		config.Concurrency = config.MaxItems
+	}
 	return config
 }
 
@@ -56,6 +60,7 @@ type bulkRegistrationManager struct {
 	config            BulkRegistrationConfig
 	provider          smsotp.Provider
 	wake              chan struct{}
+	taskMu            sync.Mutex
 	pollInterval      time.Duration
 	smsWaitTimeout    time.Duration
 	cancelRetryMax    int
@@ -105,10 +110,15 @@ func (m *bulkRegistrationManager) runNext(ctx context.Context) error {
 		return err
 	}
 	if err := m.processTask(ctx, task); err != nil {
-		if ctx.Err() == nil && task.Status == bulkregistration.TaskStatusRunning {
-			task.LastError = compactBulkError(err)
-			task.UpdatedAt = time.Now().UTC()
-			_ = m.server.Store().SaveTask(context.Background(), *task)
+		if ctx.Err() == nil {
+			m.taskMu.Lock()
+			current, loadErr := m.server.Store().GetTask(context.Background(), task.TaskID)
+			if loadErr == nil && current != nil && current.Status == bulkregistration.TaskStatusRunning {
+				current.LastError = compactBulkError(err)
+				current.UpdatedAt = time.Now().UTC()
+				_ = m.server.Store().SaveTask(context.Background(), *current)
+			}
+			m.taskMu.Unlock()
 		}
 		return err
 	}
@@ -209,6 +219,10 @@ func (m *bulkRegistrationManager) CreateTask(ctx context.Context, input bulkTask
 	if input.TargetCount <= 0 || input.TargetCount > m.config.MaxItems {
 		return nil, false, fmt.Errorf("target_count must be between 1 and %d", m.config.MaxItems)
 	}
+	concurrency, err := normalizeBulkTaskConcurrency(input.Concurrency, input.TargetCount, m.config.Concurrency)
+	if err != nil {
+		return nil, false, err
+	}
 	offers, err := m.ListOffers(ctx, countryISO2, bulkRegistrationService)
 	if err != nil {
 		return nil, false, err
@@ -223,6 +237,7 @@ func (m *bulkRegistrationManager) CreateTask(ctx context.Context, input bulkTask
 		Status:        bulkregistration.TaskStatusRunning,
 		CountryISO2:   countryISO2,
 		TargetCount:   input.TargetCount,
+		Concurrency:   concurrency,
 		IntegrityMode: strings.TrimSpace(input.IntegrityMode),
 		Selections:    selections,
 		CreatedAt:     now,
@@ -271,6 +286,8 @@ func (m *bulkRegistrationManager) TaskDetail(ctx context.Context, taskID string)
 }
 
 func (m *bulkRegistrationManager) CancelTask(ctx context.Context) (*bulkregistration.TaskDetail, error) {
+	m.taskMu.Lock()
+	defer m.taskMu.Unlock()
 	task, err := m.server.Store().GetActiveTask(ctx)
 	if err != nil {
 		return nil, err
@@ -332,7 +349,7 @@ func (m *bulkRegistrationManager) handleOffers(w http.ResponseWriter, r *http.Re
 		bulkError(w, err)
 		return
 	}
-	bulkJSON(w, http.StatusOK, map[string]any{"success": true, "country_iso2": countryISO2, "service": bulkRegistrationService, "offers": offers, "max_items": m.config.MaxItems})
+	bulkJSON(w, http.StatusOK, map[string]any{"success": true, "country_iso2": countryISO2, "service": bulkRegistrationService, "offers": offers, "max_items": m.config.MaxItems, "max_concurrency": m.config.Concurrency})
 }
 
 func (m *bulkRegistrationManager) handleTask(w http.ResponseWriter, r *http.Request) {
@@ -343,7 +360,7 @@ func (m *bulkRegistrationManager) handleTask(w http.ResponseWriter, r *http.Requ
 			bulkError(w, err)
 			return
 		}
-		bulkJSON(w, http.StatusOK, map[string]any{"success": true, "task": detail.Task, "items": detail.Items, "max_items": m.config.MaxItems})
+		bulkJSON(w, http.StatusOK, map[string]any{"success": true, "task": detail.Task, "items": detail.Items, "max_items": m.config.MaxItems, "max_concurrency": m.config.Concurrency})
 	case http.MethodPost:
 		input := bulkTaskCreateInput{}
 		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 64<<10)).Decode(&input); err != nil {
@@ -355,7 +372,7 @@ func (m *bulkRegistrationManager) handleTask(w http.ResponseWriter, r *http.Requ
 			bulkError(w, err)
 			return
 		}
-		bulkJSON(w, http.StatusOK, map[string]any{"success": true, "existing": existing, "task": detail.Task, "items": detail.Items})
+		bulkJSON(w, http.StatusOK, map[string]any{"success": true, "existing": existing, "task": detail.Task, "items": detail.Items, "max_items": m.config.MaxItems, "max_concurrency": m.config.Concurrency})
 	default:
 		bulkMethodNotAllowed(w, http.MethodGet+", "+http.MethodPost)
 	}
@@ -385,16 +402,32 @@ func (m *bulkRegistrationManager) processTask(ctx context.Context, task *bulkreg
 	if task.Status == bulkregistration.TaskStatusCancelRequested || task.Status == bulkregistration.TaskStatusCanceling {
 		return m.cancelTaskItems(ctx, task, items)
 	}
+	concurrency := taskConcurrency(*task, m.config.Concurrency)
+	workers := make(chan struct{}, concurrency)
+	errs := make(chan error, len(items))
+	var waitGroup sync.WaitGroup
 	for _, item := range items {
 		if bulkregistration.IsTerminalItemStatus(item.Status) {
 			continue
 		}
-		if err := m.processItem(ctx, task, item); err != nil {
-			return err
-		}
-		return nil
+		item := item
+		workerTask := *task
+		workers <- struct{}{}
+		waitGroup.Add(1)
+		go func() {
+			defer waitGroup.Done()
+			defer func() { <-workers }()
+			if err := m.processItem(ctx, &workerTask, item); err != nil {
+				errs <- err
+			}
+		}()
 	}
-	return m.finishTask(ctx, task)
+	waitGroup.Wait()
+	close(errs)
+	for err := range errs {
+		return err
+	}
+	return m.finishTaskIfDone(ctx, task)
 }
 
 func (m *bulkRegistrationManager) processItem(ctx context.Context, task *bulkregistration.Task, item bulkregistration.Item) error {
@@ -579,9 +612,12 @@ func (m *bulkRegistrationManager) failItem(ctx context.Context, task *bulkregist
 func (m *bulkRegistrationManager) cancelTaskItems(ctx context.Context, task *bulkregistration.Task, items []bulkregistration.Item) error {
 	task.Status = bulkregistration.TaskStatusCanceling
 	task.UpdatedAt = time.Now().UTC()
+	m.taskMu.Lock()
 	if err := m.server.Store().SaveTask(ctx, *task); err != nil {
+		m.taskMu.Unlock()
 		return err
 	}
+	m.taskMu.Unlock()
 	for _, item := range items {
 		if item.Status == bulkregistration.ItemStatusRegistered || bulkregistration.IsTerminalItemStatus(item.Status) {
 			continue
@@ -655,10 +691,27 @@ func (m *bulkRegistrationManager) finishTaskIfDone(ctx context.Context, task *bu
 			return nil
 		}
 	}
-	return m.finishTask(ctx, task)
+	current, err := m.server.Store().GetTask(ctx, task.TaskID)
+	if err != nil {
+		return err
+	}
+	if current == nil {
+		return bulkregistration.ErrTaskNotFound
+	}
+	return m.finishTask(ctx, current)
 }
 
 func (m *bulkRegistrationManager) finishTask(ctx context.Context, task *bulkregistration.Task) error {
+	m.taskMu.Lock()
+	defer m.taskMu.Unlock()
+	current, err := m.server.Store().GetTask(ctx, task.TaskID)
+	if err != nil {
+		return err
+	}
+	if current == nil {
+		return bulkregistration.ErrTaskNotFound
+	}
+	task = current
 	items, err := m.server.Store().ListItems(ctx, task.TaskID)
 	if err != nil {
 		return err
@@ -695,17 +748,26 @@ func (m *bulkRegistrationManager) saveItem(ctx context.Context, task *bulkregist
 }
 
 func (m *bulkRegistrationManager) refreshTaskProgress(ctx context.Context, task *bulkregistration.Task) error {
+	m.taskMu.Lock()
+	defer m.taskMu.Unlock()
 	items, err := m.server.Store().ListItems(ctx, task.TaskID)
 	if err != nil {
 		return err
 	}
+	current, err := m.server.Store().GetTask(ctx, task.TaskID)
+	if err != nil {
+		return err
+	}
+	if current == nil {
+		return bulkregistration.ErrTaskNotFound
+	}
 	success, failed, canceled, waiting := bulkTaskCounts(items)
-	task.SuccessCount = success
-	task.FailedCount = failed
-	task.CanceledCount = canceled
-	task.WaitingCount = waiting
-	task.UpdatedAt = time.Now().UTC()
-	return m.server.Store().SaveTask(ctx, *task)
+	current.SuccessCount = success
+	current.FailedCount = failed
+	current.CanceledCount = canceled
+	current.WaitingCount = waiting
+	current.UpdatedAt = time.Now().UTC()
+	return m.server.Store().SaveTask(ctx, *current)
 }
 
 func (m *bulkRegistrationManager) appendEvent(ctx context.Context, task *bulkregistration.Task, item bulkregistration.Item, eventType string, providerStatus string, waStatus string) error {
@@ -729,8 +791,48 @@ func (m *bulkRegistrationManager) signal() {
 type bulkTaskCreateInput struct {
 	CountryISO2   string                            `json:"country_iso2"`
 	TargetCount   int                               `json:"target_count"`
+	Concurrency   int                               `json:"concurrency"`
 	IntegrityMode string                            `json:"integrity_mode"`
 	Selections    []bulkregistration.OfferSelection `json:"offers"`
+}
+
+func defaultBulkTaskConcurrency(targetCount int) int {
+	if targetCount <= 1 {
+		return 1
+	}
+	return targetCount / 3
+}
+
+func normalizeBulkTaskConcurrency(value int, targetCount int, maximum int) (int, error) {
+	if value == 0 {
+		value = defaultBulkTaskConcurrency(targetCount)
+	}
+	if value < 1 {
+		return 0, fmt.Errorf("concurrency must be at least 1")
+	}
+	if value > targetCount {
+		return 0, fmt.Errorf("concurrency must not exceed target_count")
+	}
+	if value > maximum {
+		return 0, fmt.Errorf("concurrency must not exceed the configured maximum of %d", maximum)
+	}
+	return value, nil
+}
+
+func taskConcurrency(task bulkregistration.Task, maximum int) int {
+	if task.TargetCount <= 1 {
+		return 1
+	}
+	if task.Concurrency <= 0 {
+		return 1
+	}
+	if task.Concurrency > task.TargetCount {
+		return task.TargetCount
+	}
+	if task.Concurrency > maximum {
+		return maximum
+	}
+	return task.Concurrency
 }
 
 func normalizeBulkSelections(input []bulkregistration.OfferSelection, targetCount int, offers []bulkregistration.Offer) ([]bulkregistration.OfferSelection, error) {

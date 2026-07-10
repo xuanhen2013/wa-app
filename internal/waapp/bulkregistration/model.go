@@ -58,6 +58,7 @@ type Task struct {
 	Status            string           `json:"status"`
 	CountryISO2       string           `json:"country_iso2"`
 	TargetCount       int              `json:"target_count"`
+	Concurrency       int              `json:"concurrency"`
 	IntegrityMode     string           `json:"integrity_mode"`
 	Selections        []OfferSelection `json:"selections"`
 	SuccessCount      int              `json:"success_count"`

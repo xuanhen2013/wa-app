@@ -173,6 +173,71 @@ func TestBulkTaskCreationReturnsTheExistingActiveTask(t *testing.T) {
 	}
 }
 
+func TestBulkTaskCreationDefaultsConcurrencyToOneThird(t *testing.T) {
+	provider := &bulkTestProvider{offers: []smsotp.Offer{{OfferID: "fake-offer", Provider: "fake", CountryISO2: "PH", Service: "whatsapp", Price: 0.15, Currency: "USD", AvailableCount: 10}}}
+	manager, task, _ := newBulkTestManager(t, provider, bulkregistration.ItemStatusQueued)
+	completeBulkTestTask(t, manager, task)
+	detail, existing, err := manager.CreateTask(context.Background(), bulkTaskCreateInput{CountryISO2: "PH", TargetCount: 10})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	if existing || detail.Task == nil || detail.Task.Concurrency != 3 {
+		t.Fatalf("unexpected task concurrency: detail=%#v existing=%t", detail, existing)
+	}
+}
+
+func TestBulkTaskCreationRejectsConcurrencyAboveTarget(t *testing.T) {
+	provider := &bulkTestProvider{offers: []smsotp.Offer{{OfferID: "fake-offer", Provider: "fake", CountryISO2: "PH", Service: "whatsapp", Price: 0.15, Currency: "USD", AvailableCount: 10}}}
+	manager, task, _ := newBulkTestManager(t, provider, bulkregistration.ItemStatusQueued)
+	completeBulkTestTask(t, manager, task)
+	_, _, err := manager.CreateTask(context.Background(), bulkTaskCreateInput{CountryISO2: "PH", TargetCount: 2, Concurrency: 3})
+	if err == nil || !strings.Contains(err.Error(), "concurrency must not exceed target_count") {
+		t.Fatalf("expected concurrency validation error, got %v", err)
+	}
+}
+
+func TestBulkWorkerProcessesItemsAtTaskConcurrency(t *testing.T) {
+	provider := &parallelBulkTestProvider{pollStarted: make(chan struct{}, 2), releasePoll: make(chan struct{})}
+	manager, task, item := newBulkTestManager(t, provider, bulkregistration.ItemStatusWaitingSMS)
+	task.TargetCount = 2
+	task.Concurrency = 2
+	if err := manager.server.Store().SaveTask(context.Background(), *task); err != nil {
+		t.Fatalf("save task: %v", err)
+	}
+	item.ActivationID = "act_1"
+	item.PhoneE164 = "+639171234567"
+	item.CountryCallingCode = "63"
+	item.CountryISO2 = "PH"
+	second := item
+	second.ItemID = "wabulki_test_2"
+	second.ActivationID = "act_2"
+	if err := manager.server.Store().SaveItem(context.Background(), item); err != nil {
+		t.Fatalf("save first item: %v", err)
+	}
+	if err := manager.server.Store().SaveItem(context.Background(), second); err != nil {
+		t.Fatalf("save second item: %v", err)
+	}
+	done := make(chan error, 1)
+	go func() { done <- manager.processTask(context.Background(), task) }()
+	for index := 0; index < 2; index++ {
+		select {
+		case <-provider.pollStarted:
+		case <-time.After(time.Second):
+			close(provider.releasePoll)
+			t.Fatalf("item %d did not enter SMS polling concurrently", index+1)
+		}
+	}
+	close(provider.releasePoll)
+	select {
+	case err := <-done:
+		if err != nil {
+			t.Fatalf("process task: %v", err)
+		}
+	case <-time.After(time.Second):
+		t.Fatal("concurrent bulk task did not finish")
+	}
+}
+
 func TestBulkCountriesUseHeroSMSAnd1024ProxyIntersection(t *testing.T) {
 	provider := &bulkTestProvider{countries: []smsotp.Country{
 		{CountryISO2: "PH", Name: "菲律宾"},
@@ -248,6 +313,16 @@ func bulkTestItem(t *testing.T, manager *bulkRegistrationManager, itemID string)
 	return bulkregistration.Item{}
 }
 
+func completeBulkTestTask(t *testing.T, manager *bulkRegistrationManager, task *bulkregistration.Task) {
+	t.Helper()
+	task.Status = bulkregistration.TaskStatusCompleted
+	task.FinishedAt = timePointer(time.Now().UTC())
+	task.UpdatedAt = time.Now().UTC()
+	if err := manager.server.Store().SaveTask(context.Background(), *task); err != nil {
+		t.Fatalf("complete existing task: %v", err)
+	}
+}
+
 type bulkTestProvider struct {
 	acquireErr   error
 	cancelErr    error
@@ -296,6 +371,41 @@ func (p *bulkTestProvider) Cancel(context.Context, string) error {
 	p.cancelCalls++
 	return p.cancelErr
 }
+
+type parallelBulkTestProvider struct {
+	pollStarted chan struct{}
+	releasePoll chan struct{}
+}
+
+func (p *parallelBulkTestProvider) Name() string { return "parallel" }
+
+func (p *parallelBulkTestProvider) ListOffers(context.Context, string, string) ([]smsotp.Offer, error) {
+	return nil, nil
+}
+
+func (p *parallelBulkTestProvider) AcquireNumber(context.Context, smsotp.AcquireInput) (smsotp.Activation, error) {
+	return smsotp.Activation{}, errors.New("acquire should not be called")
+}
+
+func (p *parallelBulkTestProvider) MarkReady(context.Context, string) error { return nil }
+
+func (p *parallelBulkTestProvider) PollCode(ctx context.Context, _ string) (smsotp.ActivationStatus, error) {
+	select {
+	case p.pollStarted <- struct{}{}:
+	case <-ctx.Done():
+		return smsotp.ActivationStatus{}, ctx.Err()
+	}
+	select {
+	case <-p.releasePoll:
+		return smsotp.ActivationStatus{}, errors.New("test poll failure")
+	case <-ctx.Done():
+		return smsotp.ActivationStatus{}, ctx.Err()
+	}
+}
+
+func (p *parallelBulkTestProvider) Complete(context.Context, string) error { return nil }
+
+func (p *parallelBulkTestProvider) Cancel(context.Context, string) error { return nil }
 
 func containsAll(value string, parts ...string) bool {
 	for _, part := range parts {
