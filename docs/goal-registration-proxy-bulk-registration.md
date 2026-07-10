@@ -226,6 +226,13 @@ Goal 2 验收：
 - 宿主机 `127.0.0.1:4399/healthz`、公网 `https://whats.example.invalid/healthz`、认证后的 Dashboard 和批量任务只读 API 均返回成功；API 确认 `max_items=20`、`max_concurrency=20`，且没有 active task。
 - 本次仅进行部署和只读验证，未创建批量任务、未购号、未请求 OTP。
 
+### Goal 2 失败日志发布记录（2026-07-10）
+
+- 已发布提交 `6c4032e` 到独立容器 `wa-app-whats`，运行镜像为 `wa-app:whats-6c4032e`。
+- 批量任务 API 新增 active task 的 `events`，以及终态任务的 `last_task`、`last_items`、`last_events`；Dashboard 会在新建表单下展示最近完成任务的事件日志。
+- 线上持久化库验证到最近终态任务的 `10` 个条目和最近 `100` 条事件，说明旧失败任务的记录可被新版本直接回放；其中 `71` 条带根因的事件均归类为 `wa_blocked`，取消事件是 WA 拒绝后的清理状态，不是首要失败根因。
+- 本次仅读取既有任务和事件，未创建新任务、未购号、未请求 OTP。
+
 ## 推荐 /goal 文案
 
 Goal 1:
