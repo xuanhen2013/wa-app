@@ -25,6 +25,7 @@ const (
 	registrationProxyEndpoint1024   = "https://white.1024proxy.com/white/api"
 	registrationProxyNodeRegion1024 = "Rand"
 	registrationProxyEgressCheckURL = "https://api.country.is/"
+	registrationProxyCandidateBatch = 60
 )
 
 // RegistrationProxyConfig is the runtime configuration for the dedicated WA
@@ -75,6 +76,19 @@ type registrationProxyResolver struct {
 type registrationProxySource interface {
 	name() string
 	resolve(context.Context, string, string, int, time.Time) (wacore.WAProxyRoute, error)
+}
+
+// registrationProxyCandidate is private runtime material. It must never be
+// sent to the dashboard, persisted in a bulk item, or written to logs.
+type registrationProxyCandidate struct {
+	sourceName string
+	node       proxy1024Node
+}
+
+type registrationProxyCandidateSet struct {
+	candidates     []registrationProxyCandidate
+	rejected       map[string]int
+	duplicateCount int
 }
 
 // registrationProxyEgressChecker verifies that a provider-selected node really
@@ -141,6 +155,107 @@ func (r *registrationProxyResolver) resolve(ctx context.Context, countryCode str
 		return r.fallbackRoute(countryCode, "registration proxy source is unavailable")
 	}
 	return r.fallbackRoute(countryCode, "registration proxy source request failed")
+}
+
+// candidates obtains access relays without probing their final egress. Bulk
+// registration consumes and validates them one by one before purchasing SMS.
+func (r *registrationProxyResolver) candidates(ctx context.Context, count int) (registrationProxyCandidateSet, error) {
+	if r == nil || !r.enabled() {
+		return registrationProxyCandidateSet{}, nil
+	}
+	if count <= 0 {
+		return registrationProxyCandidateSet{candidates: []registrationProxyCandidate{}, rejected: map[string]int{}}, nil
+	}
+	result := registrationProxyCandidateSet{candidates: make([]registrationProxyCandidate, 0, count), rejected: map[string]int{}}
+	triedSource := false
+	seen := map[string]struct{}{}
+	for _, sourceName := range registrationProxySourceOrder(r.config.SourceOrder) {
+		source, ok := r.sources[sourceName]
+		if !ok {
+			continue
+		}
+		proxy1024, ok := source.(*proxy1024Source)
+		if !ok {
+			continue
+		}
+		triedSource = true
+		if !proxy1024.configured() {
+			continue
+		}
+		for len(result.candidates) < count {
+			batchSize := count - len(result.candidates)
+			if batchSize > registrationProxyCandidateBatch {
+				batchSize = registrationProxyCandidateBatch
+			}
+			nodes, err := r.candidateNodes(ctx, proxy1024, batchSize)
+			if err != nil {
+				result.rejected["source_request_failed"]++
+				if len(result.candidates) > 0 {
+					return result, nil
+				}
+				break
+			}
+			added := 0
+			for _, node := range nodes {
+				address, err := proxy1024NodeAddress(node)
+				if err != nil {
+					result.rejected["invalid_node"]++
+					continue
+				}
+				if _, found := seen[address]; found {
+					result.duplicateCount++
+					continue
+				}
+				seen[address] = struct{}{}
+				result.candidates = append(result.candidates, registrationProxyCandidate{sourceName: sourceName, node: node})
+				added++
+			}
+			if added == 0 || len(nodes) < batchSize {
+				break
+			}
+		}
+		if len(result.candidates) > 0 {
+			return result, nil
+		}
+	}
+	if !triedSource {
+		return result, fmt.Errorf("registration proxy candidate source is unavailable")
+	}
+	return result, fmt.Errorf("registration proxy candidate source request failed")
+}
+
+func (r *registrationProxyResolver) candidateNodes(ctx context.Context, source *proxy1024Source, count int) ([]proxy1024Node, error) {
+	var lastErr error
+	for attempt := 1; attempt <= r.config.SourceRetryMax; attempt++ {
+		nodes, err := source.nodes(ctx, count, r.config.StickyMinutes)
+		if err == nil {
+			return nodes, nil
+		}
+		lastErr = err
+		if attempt < r.config.SourceRetryMax && !waitRegistrationProxyRetry(ctx, attempt) {
+			return nil, ctx.Err()
+		}
+	}
+	return nil, lastErr
+}
+
+func (r *registrationProxyResolver) candidateRoute(candidate registrationProxyCandidate, countryCode string, sessionKey string) (wacore.WAProxyRoute, error) {
+	if r == nil || !r.enabled() {
+		return wacore.WAProxyRoute{}, nil
+	}
+	countryCode = normalizeProxyCountryCode(countryCode)
+	if countryCode == "" {
+		return wacore.WAProxyRoute{}, shared.NewError(waappv1.WaErrorCode_WA_ERROR_CODE_VALIDATION_FAILED, "registration proxy country is required", false)
+	}
+	source, ok := r.sources[candidate.sourceName]
+	if !ok {
+		return wacore.WAProxyRoute{}, fmt.Errorf("registration proxy candidate source is unavailable")
+	}
+	proxy1024, ok := source.(*proxy1024Source)
+	if !ok {
+		return wacore.WAProxyRoute{}, fmt.Errorf("registration proxy candidate source is unavailable")
+	}
+	return proxy1024.routeForNode(candidate.node, countryCode, registrationProxySessionID(sessionKey), r.config.StickyMinutes)
 }
 
 func (c httpRegistrationProxyEgressChecker) check(ctx context.Context, route wacore.WAProxyRoute, countryCode string) error {
@@ -252,44 +367,66 @@ func new1024ProxySource(client *http.Client, endpoint string, usernameTemplate s
 func (*proxy1024Source) name() string { return "1024proxy" }
 
 func (s *proxy1024Source) resolve(ctx context.Context, countryCode string, sessionID string, stickyMinutes int, now time.Time) (wacore.WAProxyRoute, error) {
-	username := render1024Username(s.usernameTemplate, countryCode, sessionID, stickyMinutes)
-	if username == "" || strings.TrimSpace(s.password) == "" {
+	if !s.configured() {
 		return wacore.WAProxyRoute{}, fmt.Errorf("1024proxy credentials are not configured")
+	}
+	nodes, err := s.nodes(ctx, 1, stickyMinutes)
+	if err != nil {
+		return wacore.WAProxyRoute{}, err
+	}
+	if len(nodes) == 0 {
+		return wacore.WAProxyRoute{}, fmt.Errorf("1024proxy returned no usable node")
+	}
+	return s.routeForNode(nodes[0], countryCode, sessionID, stickyMinutes)
+}
+
+func (s *proxy1024Source) configured() bool {
+	return strings.TrimSpace(s.usernameTemplate) != "" && strings.TrimSpace(s.password) != ""
+}
+
+func (s *proxy1024Source) nodes(ctx context.Context, count int, stickyMinutes int) ([]proxy1024Node, error) {
+	if count <= 0 || count > registrationProxyCandidateBatch {
+		return nil, fmt.Errorf("1024proxy candidate count is invalid")
 	}
 	endpoint, err := url.Parse(s.endpoint)
 	if err != nil {
-		return wacore.WAProxyRoute{}, fmt.Errorf("parse 1024proxy endpoint: %w", err)
+		return nil, fmt.Errorf("parse 1024proxy endpoint: %w", err)
 	}
 	query := endpoint.Query()
 	// 1024proxy's white API returns an access relay. The requested exit country
 	// is selected only by the authenticated proxy username, not this query.
 	query.Set("region", registrationProxyNodeRegion1024)
-	query.Set("num", "1")
+	query.Set("num", strconv.Itoa(count))
 	query.Set("time", strconv.Itoa(stickyMinutes))
 	query.Set("format", "1")
 	query.Set("type", "json")
 	endpoint.RawQuery = query.Encode()
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, endpoint.String(), nil)
 	if err != nil {
-		return wacore.WAProxyRoute{}, err
+		return nil, err
 	}
 	resp, err := s.client.Do(req)
 	if err != nil {
-		return wacore.WAProxyRoute{}, fmt.Errorf("request 1024proxy node: %w", err)
+		return nil, fmt.Errorf("request 1024proxy node: %w", err)
 	}
 	defer resp.Body.Close()
 	if resp.StatusCode < http.StatusOK || resp.StatusCode >= http.StatusMultipleChoices {
-		return wacore.WAProxyRoute{}, fmt.Errorf("request 1024proxy node returned HTTP %d", resp.StatusCode)
+		return nil, fmt.Errorf("request 1024proxy node returned HTTP %d", resp.StatusCode)
 	}
 	var nodes []proxy1024Node
 	decoder := json.NewDecoder(io.LimitReader(resp.Body, 64<<10))
 	if err := decoder.Decode(&nodes); err != nil {
-		return wacore.WAProxyRoute{}, fmt.Errorf("decode 1024proxy node: %w", err)
+		return nil, fmt.Errorf("decode 1024proxy node: %w", err)
 	}
-	if len(nodes) == 0 {
-		return wacore.WAProxyRoute{}, fmt.Errorf("1024proxy returned no usable node")
+	return nodes, nil
+}
+
+func (s *proxy1024Source) routeForNode(node proxy1024Node, countryCode string, sessionID string, stickyMinutes int) (wacore.WAProxyRoute, error) {
+	username := render1024Username(s.usernameTemplate, countryCode, sessionID, stickyMinutes)
+	if username == "" || strings.TrimSpace(s.password) == "" {
+		return wacore.WAProxyRoute{}, fmt.Errorf("1024proxy credentials are not configured")
 	}
-	address, err := proxy1024NodeAddress(nodes[0])
+	address, err := proxy1024NodeAddress(node)
 	if err != nil {
 		return wacore.WAProxyRoute{}, err
 	}
@@ -360,6 +497,17 @@ func (g *actionGateway) registrationRunner(ctx context.Context, payload map[stri
 	if route, found, err := g.registrationProxyRouteFromOTPWait(ctx, payload); err != nil {
 		return nil, wacore.WAProxyRoute{}, false, err
 	} else if found {
+		proxied, err := nativeEngine.WithProxyURL(route.ProxyURL)
+		if err != nil {
+			return nil, wacore.WAProxyRoute{}, false, err
+		}
+		return proxied, route, true, nil
+	}
+	if g.registrationRoute != nil {
+		route := *g.registrationRoute
+		if route.ProxyURL == "" {
+			return nativeEngine, route, false, nil
+		}
 		proxied, err := nativeEngine.WithProxyURL(route.ProxyURL)
 		if err != nil {
 			return nil, wacore.WAProxyRoute{}, false, err

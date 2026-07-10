@@ -29,6 +29,7 @@ const registrationOTPWaitDefaultTTL = 20 * time.Minute
 type actionGateway struct {
 	server            *rpc.Server
 	registrationProxy *registrationProxyResolver
+	registrationRoute *wacore.WAProxyRoute
 }
 
 func NewActionGateway(server *rpc.Server) http.Handler {

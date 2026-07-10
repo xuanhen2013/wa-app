@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"net/url"
+	"strconv"
 	"strings"
 	"sync/atomic"
 	"testing"
@@ -45,6 +46,140 @@ func Test1024ProxySourceBuildsHTTPRoute(t *testing.T) {
 	}
 	if proxyURL.Scheme != "http" || proxyURL.Host != "165.0.173.183:7098" || proxyURL.User.Username() != "account-region-US-sid-Ab12Cd34-t-30" {
 		t.Fatalf("unexpected proxy URL shape: %#v", proxyURL)
+	}
+}
+
+func TestRegistrationProxyCandidatesBatchRequestsAtSixty(t *testing.T) {
+	requests := []string{}
+	nextNode := 1
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.URL.Query().Get("num"))
+		count, _ := strconv.Atoi(r.URL.Query().Get("num"))
+		_, _ = w.Write([]byte(proxy1024NodesJSONStartingAt(nextNode, count)))
+		nextNode += count
+	}))
+	defer server.Close()
+	resolver := newRegistrationProxyResolver(RegistrationProxyConfig{Enabled: true, Source1024Enabled: true, Source1024UsernameTpl: "account-region-{country}-sid-{session_id}", Source1024Password: "test-password"})
+	resolver.sources["1024proxy"] = new1024ProxySource(server.Client(), server.URL, resolver.config.Source1024UsernameTpl, resolver.config.Source1024Password)
+	candidateSet, err := resolver.candidates(context.Background(), 65)
+	if err != nil {
+		t.Fatalf("resolve candidates: %v", err)
+	}
+	if len(candidateSet.candidates) != 65 || strings.Join(requests, ",") != "60,5" {
+		t.Fatalf("unexpected candidate batches: candidates=%d requests=%#v", len(candidateSet.candidates), requests)
+	}
+}
+
+func TestBulkRegistrationProxyPoolUsesNextCandidateAfterEgressFailure(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(proxy1024NodesJSON(2)))
+	}))
+	defer server.Close()
+	resolver := newRegistrationProxyResolver(RegistrationProxyConfig{Enabled: true, Source1024Enabled: true, Source1024UsernameTpl: "account-region-{country}-sid-{session_id}", Source1024Password: "test-password"})
+	resolver.sources["1024proxy"] = new1024ProxySource(server.Client(), server.URL, resolver.config.Source1024UsernameTpl, resolver.config.Source1024Password)
+	var checks atomic.Int32
+	resolver.egressChecker = registrationProxyEgressCheckerFunc(func(context.Context, wacore.WAProxyRoute, string) error {
+		if checks.Add(1) == 1 {
+			return fmt.Errorf("registration proxy egress country mismatch")
+		}
+		return nil
+	})
+	pool := newBulkRegistrationProxyPool(bulkregistration.Task{TaskID: "wabulk_pool", CountryISO2: "PH", TargetCount: 1}, resolver)
+	route, err := pool.lease(context.Background(), "wabulki_1")
+	if err != nil {
+		t.Fatalf("lease candidate: %v", err)
+	}
+	proxyURL, err := url.Parse(route.ProxyURL)
+	if err != nil || proxyURL.Host != "198.51.100.2:7002" || checks.Load() != 2 {
+		t.Fatalf("unexpected next-candidate route=%#v checks=%d err=%v", route, checks.Load(), err)
+	}
+	if !strings.Contains(pool.summary(), "egress_country_mismatch=1") {
+		t.Fatalf("missing redacted rejection summary: %s", pool.summary())
+	}
+}
+
+func TestBulkRegistrationProxyPoolFetchesSixCandidatesPerTarget(t *testing.T) {
+	requests := []string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		requests = append(requests, r.URL.Query().Get("num"))
+		_, _ = w.Write([]byte(proxy1024NodesJSON(60)))
+	}))
+	defer server.Close()
+	resolver := newRegistrationProxyResolver(RegistrationProxyConfig{Enabled: true, Source1024Enabled: true, Source1024UsernameTpl: "account-region-{country}-sid-{session_id}", Source1024Password: "test-password"})
+	resolver.sources["1024proxy"] = new1024ProxySource(server.Client(), server.URL, resolver.config.Source1024UsernameTpl, resolver.config.Source1024Password)
+	resolver.egressChecker = registrationProxyEgressCheckerFunc(func(context.Context, wacore.WAProxyRoute, string) error { return nil })
+	pool := newBulkRegistrationProxyPool(bulkregistration.Task{TaskID: "wabulk_pool", CountryISO2: "PH", TargetCount: 10}, resolver)
+	if _, err := pool.lease(context.Background(), "wabulki_1"); err != nil {
+		t.Fatalf("lease candidate: %v", err)
+	}
+	if pool.planned != 60 || strings.Join(requests, ",") != "60" {
+		t.Fatalf("unexpected candidate pool: planned=%d requests=%#v", pool.planned, requests)
+	}
+}
+
+func TestBulkRegistrationProxyPoolSummarizesInvalidNodes(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`[{"host":" ","port":"7001"}]`))
+	}))
+	defer server.Close()
+	resolver := newRegistrationProxyResolver(RegistrationProxyConfig{Enabled: true, Source1024Enabled: true, Source1024UsernameTpl: "account-region-{country}-sid-{session_id}", Source1024Password: "test-password"})
+	resolver.sources["1024proxy"] = new1024ProxySource(server.Client(), server.URL, resolver.config.Source1024UsernameTpl, resolver.config.Source1024Password)
+	pool := newBulkRegistrationProxyPool(bulkregistration.Task{TaskID: "wabulk_pool", CountryISO2: "PH", TargetCount: 1}, resolver)
+	if _, err := pool.lease(context.Background(), "wabulki_1"); err == nil || !strings.Contains(err.Error(), "invalid_node=1") || strings.Contains(err.Error(), "source_request_failed") {
+		t.Fatalf("unexpected invalid-node result: %v", err)
+	}
+}
+
+func TestBulkRegistrationProxyPoolSummarizesDuplicateCandidates(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(`[{"host":"198.51.100.1","port":"7001"},{"host":"198.51.100.1","port":"7001"}]`))
+	}))
+	defer server.Close()
+	resolver := newRegistrationProxyResolver(RegistrationProxyConfig{Enabled: true, Source1024Enabled: true, Source1024UsernameTpl: "account-region-{country}-sid-{session_id}", Source1024Password: "test-password"})
+	resolver.sources["1024proxy"] = new1024ProxySource(server.Client(), server.URL, resolver.config.Source1024UsernameTpl, resolver.config.Source1024Password)
+	resolver.egressChecker = registrationProxyEgressCheckerFunc(func(context.Context, wacore.WAProxyRoute, string) error { return nil })
+	pool := newBulkRegistrationProxyPool(bulkregistration.Task{TaskID: "wabulk_pool", CountryISO2: "PH", TargetCount: 1}, resolver)
+	if _, err := pool.lease(context.Background(), "wabulki_1"); err != nil {
+		t.Fatalf("lease candidate: %v", err)
+	}
+	if summary := pool.summary(); !strings.Contains(summary, "duplicates=1") || !strings.Contains(summary, "remaining=0") {
+		t.Fatalf("unexpected duplicate summary: %s", summary)
+	}
+}
+
+func TestBulkRegistrationProxyPoolLeasesDistinctCandidatesConcurrently(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		_, _ = w.Write([]byte(proxy1024NodesJSON(6)))
+	}))
+	defer server.Close()
+	resolver := newRegistrationProxyResolver(RegistrationProxyConfig{Enabled: true, Source1024Enabled: true, Source1024UsernameTpl: "account-region-{country}-sid-{session_id}", Source1024Password: "test-password"})
+	resolver.sources["1024proxy"] = new1024ProxySource(server.Client(), server.URL, resolver.config.Source1024UsernameTpl, resolver.config.Source1024Password)
+	resolver.egressChecker = registrationProxyEgressCheckerFunc(func(context.Context, wacore.WAProxyRoute, string) error { return nil })
+	pool := newBulkRegistrationProxyPool(bulkregistration.Task{TaskID: "wabulk_pool", CountryISO2: "PH", TargetCount: 1}, resolver)
+	routes := make(chan wacore.WAProxyRoute, 2)
+	errs := make(chan error, 2)
+	for _, itemID := range []string{"wabulki_1", "wabulki_2"} {
+		itemID := itemID
+		go func() {
+			route, err := pool.lease(context.Background(), itemID)
+			if err != nil {
+				errs <- err
+				return
+			}
+			routes <- *route
+		}()
+	}
+	first := <-routes
+	second := <-routes
+	select {
+	case err := <-errs:
+		t.Fatalf("lease candidate: %v", err)
+	default:
+	}
+	firstURL, firstErr := url.Parse(first.ProxyURL)
+	secondURL, secondErr := url.Parse(second.ProxyURL)
+	if firstErr != nil || secondErr != nil || firstURL.Host == secondURL.Host || first.RouteID == second.RouteID {
+		t.Fatalf("concurrent leases must use distinct candidates: first=%#v second=%#v", first, second)
 	}
 }
 
@@ -145,6 +280,28 @@ func TestRegistrationRunnerPrefersDedicatedProxyOverCommonProxy(t *testing.T) {
 	}
 }
 
+func TestRegistrationRunnerUsesInjectedPreflightRoute(t *testing.T) {
+	manager, _, _ := newBulkTestManager(t, &bulkTestProvider{}, bulkregistration.ItemStatusQueued)
+	var sourceRequests atomic.Int32
+	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		sourceRequests.Add(1)
+		_, _ = w.Write([]byte(proxy1024NodesJSON(1)))
+	}))
+	defer provider.Close()
+	resolver := newRegistrationProxyResolver(RegistrationProxyConfig{Enabled: true, Source1024Enabled: true, Source1024UsernameTpl: "account-region-{country}", Source1024Password: "test-password"})
+	resolver.sources["1024proxy"] = new1024ProxySource(provider.Client(), provider.URL, resolver.config.Source1024UsernameTpl, resolver.config.Source1024Password)
+	preflightRoute := wacore.WAProxyRoute{ProxyURL: "http://user:password@198.51.100.8:7008", ProxyMode: registrationProxyModeDedicated, CountryCode: "PH", Source: registrationProxySource1024, RouteID: "preflight_route"}
+	gateway := &actionGateway{server: manager.server, registrationProxy: resolver, registrationRoute: &preflightRoute}
+	runner, route, managedRoute, err := gateway.registrationRunner(context.Background(), map[string]any{"country_iso2": "PH"})
+	if err != nil {
+		t.Fatalf("create registration runner: %v", err)
+	}
+	defer runner.CloseIdleConnections()
+	if !managedRoute || route.RouteID != preflightRoute.RouteID || route.ProxyURL != preflightRoute.ProxyURL || sourceRequests.Load() != 0 {
+		t.Fatalf("registration runner did not reuse the preflight route: route=%#v source_requests=%d", route, sourceRequests.Load())
+	}
+}
+
 func TestRegistrationProxyRejectsMismatchedEgress(t *testing.T) {
 	provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		_, _ = w.Write([]byte(`[{"host":"165.0.173.183","port":"7098"}]`))
@@ -220,6 +377,18 @@ func stringifyMap(value map[string]any) []byte {
 		parts = append(parts, key+"="+strings.TrimSpace(toString(current)))
 	}
 	return []byte(strings.Join(parts, ";"))
+}
+
+func proxy1024NodesJSON(count int) string {
+	return proxy1024NodesJSONStartingAt(1, count)
+}
+
+func proxy1024NodesJSONStartingAt(start int, count int) string {
+	parts := make([]string, 0, count)
+	for index := start; index < start+count; index++ {
+		parts = append(parts, fmt.Sprintf(`{"host":"198.51.100.%d","port":"%d"}`, index, 7000+index))
+	}
+	return "[" + strings.Join(parts, ",") + "]"
 }
 
 func toString(value any) string {

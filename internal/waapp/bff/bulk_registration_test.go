@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
@@ -18,6 +19,7 @@ import (
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/smsotp"
 	"github.com/byte-v-forge/wa-app/internal/waapp/store"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 )
 
 func TestBulkWorkerFailsWhenSupplierHasNoNumber(t *testing.T) {
@@ -42,6 +44,29 @@ func TestBulkWorkerFailsBeforePurchasingWhenDedicatedProxyIsUnavailable(t *testi
 	updated := bulkTestItem(t, manager, item.ItemID)
 	if updated.Status != bulkregistration.ItemStatusFailed || provider.acquireCalls != 0 || updated.LastError == "" {
 		t.Fatalf("unexpected dedicated-proxy preflight result: item=%#v acquire_calls=%d", updated, provider.acquireCalls)
+	}
+}
+
+func TestBulkWorkerDoesNotPurchaseWhenProxyCandidatePoolIsExhausted(t *testing.T) {
+	provider := &bulkTestProvider{}
+	manager, task, item := newBulkTestManager(t, provider, bulkregistration.ItemStatusQueued)
+	manager.registrationProxy = RegistrationProxyConfig{Enabled: true, Source1024Enabled: true, Source1024UsernameTpl: "account-region-{country}-sid-{session_id}", Source1024Password: "test-password"}
+	manager.proxyResolver = func(config RegistrationProxyConfig) *registrationProxyResolver {
+		resolver := newRegistrationProxyResolver(config)
+		resolver.sources["1024proxy"] = new1024ProxySource(&http.Client{Transport: roundTripper(func(*http.Request) (*http.Response, error) {
+			return &http.Response{StatusCode: http.StatusOK, Header: make(http.Header), Body: io.NopCloser(strings.NewReader(proxy1024NodesJSON(1)))}, nil
+		})}, "https://proxy-source.invalid/", config.Source1024UsernameTpl, config.Source1024Password)
+		resolver.egressChecker = registrationProxyEgressCheckerFunc(func(context.Context, wacore.WAProxyRoute, string) error {
+			return errors.New("registration proxy egress country mismatch")
+		})
+		return resolver
+	}
+	if err := manager.processTask(context.Background(), task); err != nil {
+		t.Fatalf("process task: %v", err)
+	}
+	updated := bulkTestItem(t, manager, item.ItemID)
+	if updated.Status != bulkregistration.ItemStatusFailed || provider.acquireCalls != 0 || !strings.Contains(updated.LastError, "candidate pool exhausted") || !strings.Contains(updated.LastError, "egress_country_mismatch=1") {
+		t.Fatalf("unexpected candidate-pool exhaustion result: item=%#v acquire_calls=%d", updated, provider.acquireCalls)
 	}
 }
 
@@ -463,6 +488,12 @@ type bulkTestProvider struct {
 	offerCalls   int
 	acquireCalls int
 	cancelCalls  int
+}
+
+type roundTripper func(*http.Request) (*http.Response, error)
+
+func (roundTrip roundTripper) RoundTrip(request *http.Request) (*http.Response, error) {
+	return roundTrip(request)
 }
 
 func (p *bulkTestProvider) Name() string { return "fake" }

@@ -127,7 +127,7 @@ WA_REGISTRATION_PROXY_SOURCE_1024_PASSWORD=
 说明：
 
 - `WA_REGISTRATION_PROXY_SOURCE_ORDER` 定义 source 尝试顺序；后续接入多个供应商时，每个 source 有自己的配置前缀和适配器。
-- 1024proxy 的提取 API endpoint、`format=1`、`type=json`、`num=1`、返回节点协议 `http` 都由 1024proxy source 适配器内置，不作为环境变量暴露。
+- 1024proxy 的提取 API endpoint、`format=1`、`type=json`、返回节点协议 `http` 都由 1024proxy source 适配器内置，不作为环境变量暴露。单个注册使用 `num=1`；批量注册会按任务目标数预取 `6` 倍候选、每次最多 `num=60`。
 - 1024proxy 提取 API 的 `region=Rand` 由 source adapter 固定；注册号码推导出的 ISO 国家码只填入最终代理用户名的 `{country}`。
 - 1024proxy 的 `time` 参数默认使用 `WA_REGISTRATION_PROXY_STICKY_MINUTES`，避免注册 sticky session 和提取 IP 会话时长不一致。
 - 出口检测 URL、响应格式与超时属于服务内 resolver 实现，不额外增加环境变量；检测只比较国家码，不把出口 IP、完整代理 URL 或响应体写入日志和 dashboard。
@@ -227,6 +227,7 @@ WA_REGISTRATION_PROXY_SOURCE_1024_PASSWORD=
 - 先用非敏感目标验证 `region-US` 的出口地区。
 - 再验证同一 `sid` 在 sticky session 时长内出口保持稳定。
 - 在批量注册前执行同一 resolver 的代理预检；预检失败时必须在申请短信号码之前终止条目，避免代理故障消耗短信激活费用。
+- 批量候选按 `task_id + country_iso2` 在服务进程内隔离、以节点地址去重；每个条目先领取不同候选，再生成独立 sticky session。耗尽错误只包含计划数、候选数、去重数、已分配数、剩余数与按原因聚合的失败计数。
 
 ## 开工决策
 

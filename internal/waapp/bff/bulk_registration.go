@@ -18,6 +18,7 @@ import (
 	"github.com/byte-v-forge/wa-app/internal/waapp/rpc"
 	"github.com/byte-v-forge/wa-app/internal/waapp/shared"
 	"github.com/byte-v-forge/wa-app/internal/waapp/smsotp"
+	"github.com/byte-v-forge/wa-app/internal/waapp/wacore"
 	"github.com/nyaruka/phonenumbers"
 )
 
@@ -62,6 +63,9 @@ type bulkRegistrationManager struct {
 	provider          smsotp.Provider
 	wake              chan struct{}
 	taskMu            sync.Mutex
+	proxyPoolMu       sync.Mutex
+	proxyPools        map[string]*bulkRegistrationProxyPool
+	proxyResolver     func(RegistrationProxyConfig) *registrationProxyResolver
 	pollInterval      time.Duration
 	smsWaitTimeout    time.Duration
 	cancelRetryMax    int
@@ -75,6 +79,8 @@ func newBulkRegistrationManager(server *rpc.Server, registrationProxy Registrati
 		config:            config,
 		provider:          smsotp.NewHeroSMSProvider(config.HeroSMSKey),
 		wake:              make(chan struct{}, 1),
+		proxyPools:        map[string]*bulkRegistrationProxyPool{},
+		proxyResolver:     newRegistrationProxyResolver,
 		pollInterval:      bulkRegistrationPollInterval,
 		smsWaitTimeout:    bulkRegistrationSMSWaitTimeout,
 		cancelRetryMax:    bulkRegistrationCancelRetryMax,
@@ -461,7 +467,7 @@ func (m *bulkRegistrationManager) processItem(ctx context.Context, task *bulkreg
 	case bulkregistration.ItemStatusAcquiringNumber:
 		return m.failItem(ctx, task, item, "service restarted while acquiring a number", true)
 	case bulkregistration.ItemStatusNumberAcquired, bulkregistration.ItemStatusWAProbing, bulkregistration.ItemStatusRequestingOTP:
-		return m.startWARegistration(ctx, task, item)
+		return m.startWARegistration(ctx, task, item, nil)
 	case bulkregistration.ItemStatusWaitingSMS, bulkregistration.ItemStatusSMSReceived, bulkregistration.ItemStatusSubmittingOTP:
 		return m.waitForSMSAndSubmit(ctx, task, item)
 	case bulkregistration.ItemStatusCancelPending, bulkregistration.ItemStatusCancelingNumber:
@@ -472,7 +478,8 @@ func (m *bulkRegistrationManager) processItem(ctx context.Context, task *bulkreg
 }
 
 func (m *bulkRegistrationManager) acquireAndStart(ctx context.Context, task *bulkregistration.Task, item bulkregistration.Item) error {
-	if err := m.preflightRegistrationProxy(ctx, task, item); err != nil {
+	route, err := m.preflightRegistrationProxy(ctx, task, item)
+	if err != nil {
 		return m.failItem(ctx, task, item, compactBulkError(err), false)
 	}
 	item.Status = bulkregistration.ItemStatusAcquiringNumber
@@ -507,23 +514,62 @@ func (m *bulkRegistrationManager) acquireAndStart(ctx context.Context, task *bul
 	if err := m.provider.MarkReady(ctx, item.ActivationID); err != nil {
 		return m.failItem(ctx, task, item, "could not prepare the SMS activation", true)
 	}
-	return m.startWARegistration(ctx, task, item)
+	return m.startWARegistration(ctx, task, item, route)
 }
 
 // preflightRegistrationProxy prevents an unavailable dedicated route from
 // consuming a paid SMS activation before the WA registration can begin.
-func (m *bulkRegistrationManager) preflightRegistrationProxy(ctx context.Context, task *bulkregistration.Task, item bulkregistration.Item) error {
-	resolver := newRegistrationProxyResolver(m.registrationProxy)
+func (m *bulkRegistrationManager) preflightRegistrationProxy(ctx context.Context, task *bulkregistration.Task, item bulkregistration.Item) (*wacore.WAProxyRoute, error) {
+	resolver := m.newRegistrationProxyResolver()
 	if !resolver.enabled() {
-		return nil
+		return nil, nil
 	}
-	_, err := resolver.resolve(ctx, task.CountryISO2, task.TaskID+":"+item.ItemID+":preflight")
-	return err
+	pool := m.registrationProxyPool(*task, resolver)
+	return pool.lease(ctx, item.ItemID)
 }
 
-func (m *bulkRegistrationManager) startWARegistration(ctx context.Context, task *bulkregistration.Task, item bulkregistration.Item) error {
+func (m *bulkRegistrationManager) newRegistrationProxyResolver() *registrationProxyResolver {
+	if m != nil && m.proxyResolver != nil {
+		return m.proxyResolver(m.registrationProxy)
+	}
+	return newRegistrationProxyResolver(m.registrationProxy)
+}
+
+func (m *bulkRegistrationManager) registrationProxyPool(task bulkregistration.Task, resolver *registrationProxyResolver) *bulkRegistrationProxyPool {
+	key := task.TaskID + "\x00" + normalizeBulkCountry(task.CountryISO2)
+	m.proxyPoolMu.Lock()
+	defer m.proxyPoolMu.Unlock()
+	if pool := m.proxyPools[key]; pool != nil {
+		return pool
+	}
+	pool := newBulkRegistrationProxyPool(task, resolver)
+	m.proxyPools[key] = pool
+	return pool
+}
+
+func (m *bulkRegistrationManager) discardRegistrationProxyPool(taskID string) {
+	if m == nil || strings.TrimSpace(taskID) == "" {
+		return
+	}
+	m.proxyPoolMu.Lock()
+	for key := range m.proxyPools {
+		if strings.HasPrefix(key, taskID+"\x00") {
+			delete(m.proxyPools, key)
+		}
+	}
+	m.proxyPoolMu.Unlock()
+}
+
+func (m *bulkRegistrationManager) startWARegistration(ctx context.Context, task *bulkregistration.Task, item bulkregistration.Item, route *wacore.WAProxyRoute) error {
 	if item.PhoneE164 == "" || item.ActivationID == "" {
 		return m.failItem(ctx, task, item, "item is missing a phone activation", true)
+	}
+	if route == nil {
+		var err error
+		route, err = m.preflightRegistrationProxy(ctx, task, item)
+		if err != nil {
+			return m.failItem(ctx, task, item, compactBulkError(err), true)
+		}
 	}
 	item.Status = bulkregistration.ItemStatusWAProbing
 	item.WAProbeStatus = "RUNNING"
@@ -539,7 +585,7 @@ func (m *bulkRegistrationManager) startWARegistration(ctx context.Context, task 
 		"job_id":               task.TaskID + ":" + item.ItemID,
 		"correlation_id":       task.TaskID,
 	}
-	gateway := &actionGateway{server: m.server, registrationProxy: newRegistrationProxyResolver(m.registrationProxy)}
+	gateway := &actionGateway{server: m.server, registrationProxy: m.newRegistrationProxyResolver(), registrationRoute: route}
 	result, err := gateway.startRegistration(ctx, payload)
 	if err != nil {
 		return m.failItem(ctx, task, item, compactBulkError(err), true)
@@ -757,7 +803,11 @@ func (m *bulkRegistrationManager) finishTask(ctx context.Context, task *bulkregi
 		task.Status = bulkregistration.TaskStatusFailed
 	}
 	task.FinishedAt = &now
-	return m.server.Store().SaveTask(ctx, *task)
+	if err := m.server.Store().SaveTask(ctx, *task); err != nil {
+		return err
+	}
+	m.discardRegistrationProxyPool(task.TaskID)
+	return nil
 }
 
 func (m *bulkRegistrationManager) saveItem(ctx context.Context, task *bulkregistration.Task, item *bulkregistration.Item, eventType string, providerStatus string, waStatus string) error {
