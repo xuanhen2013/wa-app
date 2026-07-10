@@ -146,9 +146,9 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
           <Button type="button" variant="outline" size="sm" disabled={busy || offers.length === 0} onClick={autoSelectLowestPrice}><WandSparkles className="size-4" />自动选择最低价</Button>
         </div>
         <OfferTable offers={offers} quantities={quantities} busy={busy} onQuantityChange={setQuantity} />
-        <div className="sticky bottom-0 z-20 -mx-6 border-t bg-card/95 px-6 py-3 backdrop-blur"><Button className="w-full" type="button" disabled={busy || selectedCount !== targetCount || offers.length === 0} onClick={() => void createTask.mutateAsync()}>{createTask.isPending ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}提交任务</Button></div>
       </CardContent>
     </Card>
+    <div className="sticky bottom-0 z-30 border-y border-border bg-background/95 py-3 shadow-[0_-8px_18px_-16px_rgb(15_23_42_/_0.55)] backdrop-blur"><Button className="w-full" type="button" disabled={busy || selectedCount !== targetCount || offers.length === 0} onClick={() => void createTask.mutateAsync()}>{createTask.isPending ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}提交任务</Button></div>
     {lastTask ? <BulkTaskDetail task={lastTask} items={taskQuery.data?.last_items || []} events={taskQuery.data?.last_events || []} canceling={false} onCancel={() => undefined} history /> : null}
     </div>
   );
