@@ -219,6 +219,13 @@ Goal 2 验收：
 - 因本次真实号码被 WA 风控拒绝，后续 10 号码任务须在人工确认成本与接受率后另行发起。
 - 同日新增批量国家目录验证：服务端以 HeroSMS `getCountries` 的可见国家和 1024proxy 国家级目录取交集，线上接口返回 178 个当前可选国家；确认包含 `PH`、`US`，不包含 `Rand` 和州/省。该验证未购号、未请求 OTP、未发起 WA 注册。
 
+### Goal 2 并发发布记录（2026-07-10）
+
+- 已发布提交 `5ad52b4` 到独立容器 `wa-app-whats`，运行镜像为 `wa-app:whats-5ad52b4`；旧 `wa-app` 容器和数据卷未变更。
+- 生产 `wa-app.env` 已设置 `WA_BULK_REGISTRATION_MAX_ITEMS=20` 与 `WA_BULK_REGISTRATION_CONCURRENCY=20`。
+- 宿主机 `127.0.0.1:4399/healthz`、公网 `https://whats.example.invalid/healthz`、认证后的 Dashboard 和批量任务只读 API 均返回成功；API 确认 `max_items=20`、`max_concurrency=20`，且没有 active task。
+- 本次仅进行部署和只读验证，未创建批量任务、未购号、未请求 OTP。
+
 ## 推荐 /goal 文案
 
 Goal 1:
