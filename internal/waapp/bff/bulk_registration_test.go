@@ -224,6 +224,26 @@ func TestBulkTaskCreationPreservesOfferOperator(t *testing.T) {
 	}
 }
 
+func TestBulkTaskCreationRejectsSelectionsAboveSharedPriceTierStock(t *testing.T) {
+	provider := &bulkTestProvider{offers: []smsotp.Offer{
+		{OfferID: "fake-offer-tm", Provider: "fake", CountryISO2: "PH", Service: "whatsapp", Price: 0.15, Currency: "USD", AvailableCount: 10, PriceTier: "0.15", Operator: "tm"},
+		{OfferID: "fake-offer-smart", Provider: "fake", CountryISO2: "PH", Service: "whatsapp", Price: 0.15, Currency: "USD", AvailableCount: 10, PriceTier: "0.15", Operator: "smart"},
+	}}
+	manager, task, _ := newBulkTestManager(t, provider, bulkregistration.ItemStatusQueued)
+	completeBulkTestTask(t, manager, task)
+	_, _, err := manager.CreateTask(context.Background(), bulkTaskCreateInput{
+		CountryISO2: "PH",
+		TargetCount: 11,
+		Selections: []bulkregistration.OfferSelection{
+			{OfferID: "fake-offer-tm", Quantity: 6},
+			{OfferID: "fake-offer-smart", Quantity: 5},
+		},
+	})
+	if err == nil || !strings.Contains(err.Error(), "available SMS stock for this price tier") {
+		t.Fatalf("expected shared-stock validation error, got %v", err)
+	}
+}
+
 func TestBulkTaskCreationRejectsConcurrencyAboveTarget(t *testing.T) {
 	provider := &bulkTestProvider{offers: []smsotp.Offer{{OfferID: "fake-offer", Provider: "fake", CountryISO2: "PH", Service: "whatsapp", Price: 0.15, Currency: "USD", AvailableCount: 10}}}
 	manager, task, _ := newBulkTestManager(t, provider, bulkregistration.ItemStatusQueued)

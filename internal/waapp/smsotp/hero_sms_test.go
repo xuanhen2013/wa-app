@@ -19,8 +19,10 @@ func TestHeroSMSProviderUsesV1OffersAndCompatibleLifecycle(t *testing.T) {
 			body = `{"status":"success","services":[{"code":"wa","name":"WhatsApp"}]}`
 		case "getCountries":
 			body = `[{"id":4,"eng":"Philippines"}]`
-		case "getNumber":
-			body = "ACCESS_NUMBER:635468024:639171234567"
+		case "getOperators":
+			body = `{"status":"success","countryOperators":{"4":["tm","smart"]}}`
+		case "getNumberV2":
+			body = `{"activationId":"635468024","phoneNumber":"639171234567","activationOperator":"smart"}`
 		case "setStatus":
 			body = "ACCESS_READY"
 		case "getStatus":
@@ -38,14 +40,14 @@ func TestHeroSMSProviderUsesV1OffersAndCompatibleLifecycle(t *testing.T) {
 	if err != nil {
 		t.Fatalf("list offers: %v", err)
 	}
-	if len(offers) != 1 || offers[0].Price != 0.15 || offers[0].AvailableCount != 22598 {
+	if len(offers) != 2 || offers[0].Price != 0.15 || offers[0].AvailableCount != 22598 || offers[0].Operator != "tm" || offers[1].Operator != "smart" {
 		t.Fatalf("unexpected offers: %#v", offers)
 	}
-	activation, err := provider.AcquireNumber(context.Background(), AcquireInput{CountryISO2: "PH", Offer: offers[0]})
+	activation, err := provider.AcquireNumber(context.Background(), AcquireInput{CountryISO2: "PH", Offer: offers[1]})
 	if err != nil {
 		t.Fatalf("acquire number: %v", err)
 	}
-	if activation.PhoneE164 != "+639171234567" || activation.ActivationID != "635468024" {
+	if activation.PhoneE164 != "+639171234567" || activation.ActivationID != "635468024" || activation.Operator != "smart" {
 		t.Fatalf("unexpected activation: %#v", activation)
 	}
 	if err := provider.MarkReady(context.Background(), activation.ActivationID); err != nil {
@@ -70,15 +72,15 @@ func TestHeroSMSProviderUsesV1OffersAndCompatibleLifecycle(t *testing.T) {
 		if request.URL.Path == "/api/v1/activations/offers" {
 			offersRequest = request
 		}
-		if request.URL.Query().Get("action") == "getNumber" {
+		if request.URL.Query().Get("action") == "getNumberV2" {
 			numberRequest = request
 		}
 	}
 	if offersRequest == nil || offersRequest.Header.Get("Authorization") != "ApiKey test-key" || offersRequest.URL.Query().Get("services") != "wa" || offersRequest.URL.Query().Get("countries") != "4" {
 		t.Fatalf("unexpected offers request: %#v", offersRequest)
 	}
-	if numberRequest == nil || numberRequest.URL.Query().Get("fixedPrice") != "true" {
-		t.Fatalf("unexpected getNumber request: %#v", numberRequest)
+	if numberRequest == nil || numberRequest.URL.Query().Get("fixedPrice") != "true" || numberRequest.URL.Query().Get("operator") != "smart" {
+		t.Fatalf("unexpected getNumberV2 request: %#v", numberRequest)
 	}
 }
 

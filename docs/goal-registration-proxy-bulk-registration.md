@@ -241,6 +241,12 @@ Goal 2 验收：
 - 报价列表下方的“提交任务”按钮固定在批量添加表单底部，长列表滚动时仍可直接提交。
 - 宿主机与公网 `https://whats.example.invalid/healthz` 均通过；认证后的只读批量任务 API 确认 `max_items=100`、`max_concurrency=100`。本次未创建任务、未购号、未请求 OTP。
 
+### Goal 2 HeroSMS 运营商报价修正（2026-07-10）
+
+- 初版 HeroSMS adapter 将 V1 报价的运营商硬编码为 `any`，且申请号码没有传递 `operator`；因此 Dashboard 无法区分运营商，供应商也不会收到筛选条件。
+- 修正后通过 `getOperators` 读取国家级运营商列表，为每个运营商生成可选报价，并使用 `getNumberV2&operator=<code>` 申请号码；菲律宾只读验证到 `tm`、`globe_telecom`、`smart`、`dito`。
+- 同一价格档的库存按共享总量进行前后端校验，不会因运营商展开而重复计算库存。实际分配的 `activationOperator` 会写回任务条目。
+
 ## 推荐 /goal 文案
 
 Goal 1:

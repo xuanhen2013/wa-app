@@ -86,7 +86,9 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
   if (task) return <BulkTaskDetail task={task} items={taskQuery.data?.items || []} events={taskQuery.data?.events || []} canceling={cancelTask.isPending} onCancel={() => void cancelTask.mutateAsync()} />;
 
   function setQuantity(offer: BulkRegistrationOffer, nextValue: number) {
-    const bounded = Math.max(0, Math.min(offer.available_count, Number.isFinite(nextValue) ? Math.floor(nextValue) : 0));
+    const selectedFromSharedStock = offers.reduce((count, candidate) => candidate.offer_id !== offer.offer_id && offerPriceTierKey(candidate) === offerPriceTierKey(offer) ? count + (quantities[candidate.offer_id] || 0) : count, 0);
+    const maximum = Math.max(0, offer.available_count - selectedFromSharedStock);
+    const bounded = Math.max(0, Math.min(maximum, Number.isFinite(nextValue) ? Math.floor(nextValue) : 0));
     setQuantities((current) => ({ ...current, [offer.offer_id]: bounded }));
   }
   function selectCountry(nextCountryISO2: string) {
@@ -105,9 +107,13 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
   function autoSelectLowestPrice() {
     let remaining = targetCount;
     const next: Record<string, number> = {};
+    const selectedPriceTiers = new Set<string>();
     for (const offer of offers) {
+      const priceTier = offerPriceTierKey(offer);
+      if (selectedPriceTiers.has(priceTier)) continue;
       const quantity = Math.min(remaining, offer.available_count);
       if (quantity > 0) next[offer.offer_id] = quantity;
+      selectedPriceTiers.add(priceTier);
       remaining -= quantity;
       if (remaining <= 0) break;
     }
@@ -250,7 +256,17 @@ function formatMoney(value: number, currency: string) {
 }
 
 function providerOperatorLabel(provider: string, operator: string) {
-  return `${provider || '供应商'} - ${operator || '不限'}`;
+  return `${provider || '供应商'} - ${heroSMSOperatorLabel(provider, operator)}`;
+}
+
+function heroSMSOperatorLabel(provider: string, operator: string) {
+  const normalized = operator.trim().toLowerCase();
+  if (provider === 'hero-sms') return ({ tm: 'TM（Globe）', globe_telecom: 'Globe Telecom', smart: 'Smart', dito: 'DITO', any: '不限' } as Record<string, string>)[normalized] || normalized || '不限';
+  return operator || '不限';
+}
+
+function offerPriceTierKey(offer: BulkRegistrationOffer) {
+  return [offer.provider, offer.country_iso2, offer.service, offer.price_tier || offer.price].join('\u0000');
 }
 
 function defaultBulkConcurrency(targetCount: number) {

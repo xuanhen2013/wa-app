@@ -37,6 +37,7 @@ type HeroSMSProvider struct {
 type heroSMSMapping struct {
 	ServiceCode string
 	CountryID   string
+	Operators   []string
 }
 
 type heroSMSCountry struct {
@@ -122,9 +123,12 @@ func (p *HeroSMSProvider) AcquireNumber(ctx context.Context, input AcquireInput)
 		return Activation{}, err
 	}
 	query := url.Values{}
-	query.Set("action", "getNumber")
+	query.Set("action", "getNumberV2")
 	query.Set("service", mapping.ServiceCode)
 	query.Set("country", mapping.CountryID)
+	if operator := normalizeHeroSMSOperator(input.Offer.Operator); operator != "" && operator != "any" {
+		query.Set("operator", operator)
+	}
 	query.Set("maxPrice", strconv.FormatFloat(input.Offer.Price, 'f', -1, 64))
 	query.Set("fixedPrice", "true")
 	value, statusCode, err := p.lifecycle(ctx, query)
@@ -134,14 +138,17 @@ func (p *HeroSMSProvider) AcquireNumber(ctx context.Context, input AcquireInput)
 	if statusCode < http.StatusOK || statusCode >= http.StatusMultipleChoices {
 		return Activation{}, heroSMSResponseError(value, statusCode)
 	}
-	activationID, phone, ok := heroSMSNumberActivation(heroSMSStatusText(value))
+	activationID, phone, operator, ok := heroSMSNumberV2Activation(value)
 	if !ok {
 		return Activation{}, heroSMSStatusError(heroSMSStatusText(value))
 	}
 	if activationID == "" || phone == "" {
 		return Activation{}, fmt.Errorf("HeroSMS returned an incomplete activation")
 	}
-	return Activation{ActivationID: activationID, PhoneE164: phone, CountryISO2: normalizeCountryISO2(input.CountryISO2), Price: input.Offer.Price, Currency: input.Offer.Currency}, nil
+	if operator == "" {
+		operator = normalizeHeroSMSOperator(input.Offer.Operator)
+	}
+	return Activation{ActivationID: activationID, PhoneE164: phone, CountryISO2: normalizeCountryISO2(input.CountryISO2), Operator: operator, Price: input.Offer.Price, Currency: input.Offer.Currency}, nil
 }
 
 func (p *HeroSMSProvider) MarkReady(ctx context.Context, activationID string) error {
@@ -258,10 +265,33 @@ func (p *HeroSMSProvider) mapping(ctx context.Context, countryISO2 string) (hero
 	if mapping.ServiceCode == "" || mapping.CountryID == "" {
 		return heroSMSMapping{}, fmt.Errorf("HeroSMS does not expose the requested WhatsApp country mapping")
 	}
+	operators, err := p.operators(ctx, mapping.CountryID)
+	if err != nil {
+		return heroSMSMapping{}, err
+	}
+	mapping.Operators = operators
 	p.mu.Lock()
 	p.mappings[countryISO2] = mapping
 	p.mu.Unlock()
 	return mapping, nil
+}
+
+func (p *HeroSMSProvider) operators(ctx context.Context, countryID string) ([]string, error) {
+	value, statusCode, err := p.lifecycle(ctx, url.Values{"action": {"getOperators"}, "country": {countryID}})
+	if err != nil {
+		return nil, err
+	}
+	if statusCode < http.StatusOK || statusCode >= http.StatusMultipleChoices {
+		return nil, heroSMSResponseError(value, statusCode)
+	}
+	operators, status := heroSMSOperators(value, countryID)
+	if len(operators) > 0 {
+		return operators, nil
+	}
+	if status == "" || strings.EqualFold(status, "OPERATORS_NOT_FOUND") || strings.EqualFold(status, "success") {
+		return []string{"any"}, nil
+	}
+	return nil, heroSMSStatusError(status)
 }
 
 func (p *HeroSMSProvider) countriesForRegistration(ctx context.Context) ([]heroSMSCountry, error) {
@@ -321,7 +351,11 @@ func heroSMSOffers(value any, countryISO2 string, mapping heroSMSMapping) []Offe
 	service := heroSMSObject(data[mapping.ServiceCode])
 	country := heroSMSObject(service[mapping.CountryID])
 	priceMap := heroSMSObject(country["map"])
-	offers := make([]Offer, 0, len(priceMap))
+	operators := mapping.Operators
+	if len(operators) == 0 {
+		operators = []string{"any"}
+	}
+	offers := make([]Offer, 0, len(priceMap)*len(operators))
 	for tier, countValue := range priceMap {
 		price, err := strconv.ParseFloat(strings.TrimSpace(tier), 64)
 		if err != nil || price <= 0 {
@@ -331,7 +365,13 @@ func heroSMSOffers(value any, countryISO2 string, mapping heroSMSMapping) []Offe
 		if count < 0 {
 			count = 0
 		}
-		offers = append(offers, Offer{OfferID: strings.Join([]string{heroSMSName, countryISO2, mapping.ServiceCode, "price", tier}, ":"), Provider: heroSMSName, CountryISO2: countryISO2, Service: heroSMSWhatsAppService, Price: price, Currency: "USD", AvailableCount: count, PriceTier: tier, Operator: "any"})
+		for _, operator := range operators {
+			operator = normalizeHeroSMSOperator(operator)
+			if operator == "" {
+				continue
+			}
+			offers = append(offers, Offer{OfferID: strings.Join([]string{heroSMSName, countryISO2, mapping.ServiceCode, "operator", operator, "price", tier}, ":"), Provider: heroSMSName, CountryISO2: countryISO2, Service: heroSMSWhatsAppService, Price: price, Currency: "USD", AvailableCount: count, PriceTier: tier, Operator: operator})
+		}
 	}
 	return offers
 }
@@ -347,17 +387,42 @@ func heroSMSStatusText(value any) string {
 	}
 }
 
-func heroSMSNumberActivation(status string) (string, string, bool) {
-	parts := strings.SplitN(strings.TrimSpace(status), ":", 3)
-	if len(parts) != 3 || !strings.EqualFold(parts[0], "ACCESS_NUMBER") {
-		return "", "", false
-	}
-	activationID := strings.TrimSpace(parts[1])
-	phone := normalizeE164(parts[2])
+func heroSMSNumberV2Activation(value any) (string, string, string, bool) {
+	activation := heroSMSObject(value)
+	activationID := heroSMSString(activation, "activationId", "activation_id", "id")
+	phone := normalizeE164(heroSMSString(activation, "phoneNumber", "phone_number", "phone"))
+	operator := normalizeHeroSMSOperator(heroSMSString(activation, "activationOperator", "activation_operator", "operator"))
 	if activationID == "" || phone == "" {
-		return "", "", false
+		return "", "", "", false
 	}
-	return activationID, phone, true
+	return activationID, phone, operator, true
+}
+
+func heroSMSOperators(value any, countryID string) ([]string, string) {
+	root := heroSMSObject(value)
+	operatorsByCountry := heroSMSObject(root["countryOperators"])
+	return heroSMSOperatorValues(operatorsByCountry[countryID]), heroSMSStatusText(value)
+}
+
+func heroSMSOperatorValues(value any) []string {
+	values, ok := value.([]any)
+	if !ok {
+		return nil
+	}
+	result := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		operator := normalizeHeroSMSOperator(fmt.Sprint(value))
+		if operator == "" {
+			continue
+		}
+		if _, ok := seen[operator]; ok {
+			continue
+		}
+		seen[operator] = struct{}{}
+		result = append(result, operator)
+	}
+	return result
 }
 
 func heroSMSResponseError(value any, statusCode int) error {
@@ -562,6 +627,10 @@ func normalizeService(value string) string {
 		return heroSMSWhatsAppService
 	}
 	return value
+}
+
+func normalizeHeroSMSOperator(value string) string {
+	return strings.ToLower(strings.TrimSpace(value))
 }
 
 func normalizeE164(value string) string {

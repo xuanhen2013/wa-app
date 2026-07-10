@@ -142,10 +142,7 @@ func (m *bulkRegistrationManager) ListOffers(ctx context.Context, countryISO2 st
 	for _, offer := range offers {
 		result = append(result, bulkOfferFromProvider(offer))
 	}
-	sort.Slice(result, func(left int, right int) bool {
-		if result[left].Price == result[right].Price {
-			return result[left].AvailableCount > result[right].AvailableCount
-		}
+	sort.SliceStable(result, func(left int, right int) bool {
 		return result[left].Price < result[right].Price
 	})
 	return result, nil
@@ -498,6 +495,9 @@ func (m *bulkRegistrationManager) acquireAndStart(ctx context.Context, task *bul
 	item.PhoneMasked = bulkregistration.MaskPhone(phone.E164Number)
 	item.CountryCallingCode = phone.CountryCallingCode
 	item.CountryISO2 = phone.CountryIso2
+	if operator := strings.TrimSpace(activation.Operator); operator != "" {
+		item.Operator = operator
+	}
 	item.Price = activation.Price
 	item.Currency = activation.Currency
 	item.SMSStatus = "NUMBER_ACQUIRED"
@@ -880,6 +880,7 @@ func normalizeBulkSelections(input []bulkregistration.OfferSelection, targetCoun
 	}
 	result := make([]bulkregistration.OfferSelection, 0, len(input))
 	count := 0
+	selectedByPriceTier := map[string]int{}
 	for _, selection := range input {
 		offer, ok := byID[selection.OfferID]
 		if !ok {
@@ -887,6 +888,11 @@ func normalizeBulkSelections(input []bulkregistration.OfferSelection, targetCoun
 		}
 		if selection.Quantity <= 0 || selection.Quantity > offer.AvailableCount {
 			return nil, fmt.Errorf("selected quantity exceeds the available SMS stock")
+		}
+		priceTier := bulkOfferPriceTierKey(offer)
+		selectedByPriceTier[priceTier] += selection.Quantity
+		if selectedByPriceTier[priceTier] > offer.AvailableCount {
+			return nil, fmt.Errorf("selected quantity exceeds the available SMS stock for this price tier")
 		}
 		count += selection.Quantity
 		selection.MaxPrice = offer.Price
@@ -896,6 +902,14 @@ func normalizeBulkSelections(input []bulkregistration.OfferSelection, targetCoun
 		return nil, fmt.Errorf("selected quantities must equal target_count")
 	}
 	return result, nil
+}
+
+func bulkOfferPriceTierKey(offer bulkregistration.Offer) string {
+	priceTier := strings.TrimSpace(offer.PriceTier)
+	if priceTier == "" {
+		priceTier = strconv.FormatFloat(offer.Price, 'f', -1, 64)
+	}
+	return strings.Join([]string{offer.Provider, offer.CountryISO2, offer.Service, priceTier}, "\x00")
 }
 
 func bulkItemsForTask(server *rpc.Server, task bulkregistration.Task, offers []bulkregistration.Offer, now time.Time) []bulkregistration.Item {

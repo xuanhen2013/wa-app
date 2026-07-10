@@ -285,6 +285,13 @@ action=getNumberV2&service=<service>&country=<country>&operator=<operator>&maxPr
 - `currency` 是 ISO 数字货币代码，文档枚举包含 `840`、`978`、`156`。
 - `canGetAnotherSms=true` 时，OTP 提交失败可考虑请求下一条短信。
 
+运营商报价规则：
+
+- 报价查询先使用 `/api/v1/activations/offers` 获取 WhatsApp 的价格档和总库存，再使用 `getOperators&country=<country_id>` 获取该国家可选的运营商代码。
+- 对菲律宾，2026-07-10 的只读验证返回 `tm`、`globe_telecom`、`smart`、`dito`。Dashboard 分别显示为 `TM（Globe）`、`Globe Telecom`、`Smart`、`DITO`。
+- 同一价格档的库存是 HeroSMS 返回的共享总量，并非每个运营商独立库存；表单和服务端均按价格档跨运营商累计限制选择数量。
+- 每个运营商会形成独立报价项；申请号码时必须使用 `getNumberV2` 并传入该项的 `operator`。成功响应中的 `activationOperator` 覆盖任务条目中的运营商，以记录供应商实际分配的线路。
+
 等待短信：
 
 ```text
@@ -501,7 +508,7 @@ POST /api/wa/bulk-registration/task/cancel
   "service": "whatsapp",
   "offers": [
     {
-      "offer_id": "hero-sms:PH:wa:price:0.1500",
+      "offer_id": "hero-sms:PH:wa:operator:tm:price:0.1500",
       "provider": "hero-sms",
       "country_iso2": "PH",
       "country_id": "4",
@@ -510,7 +517,7 @@ POST /api/wa/bulk-registration/task/cancel
       "currency": "USD",
       "available_count": 286896,
       "provider_id": "",
-      "operator": "any",
+      "operator": "tm",
       "price_tier": "0.1500"
     }
   ]

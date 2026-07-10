@@ -22,6 +22,7 @@ type Activation struct {
 	PhoneE164          string
 	CountryCallingCode string
 	CountryISO2        string
+	Operator           string
 	Price              float64
 	Currency           string
 }
