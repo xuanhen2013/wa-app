@@ -78,6 +78,7 @@ type Item struct {
 	TaskID                string     `json:"task_id"`
 	Status                string     `json:"status"`
 	Provider              string     `json:"provider"`
+	Operator              string     `json:"operator"`
 	OfferID               string     `json:"offer_id"`
 	Price                 float64    `json:"price"`
 	Currency              string     `json:"currency"`

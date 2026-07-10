@@ -156,8 +156,8 @@ WA_REGISTRATION_PROXY_SOURCE_1024_PASSWORD=
 
 ```env
 WA_BULK_REGISTRATION_ENABLED=false
-WA_BULK_REGISTRATION_MAX_ITEMS=20
-WA_BULK_REGISTRATION_CONCURRENCY=20
+WA_BULK_REGISTRATION_MAX_ITEMS=100
+WA_BULK_REGISTRATION_CONCURRENCY=100
 WA_HERO_SMS_API_KEY=
 ```
 
@@ -232,6 +232,12 @@ Goal 2 验收：
 - 批量任务 API 新增 active task 的 `events`，以及终态任务的 `last_task`、`last_items`、`last_events`；Dashboard 会在新建表单下展示最近完成任务的事件日志。
 - 线上持久化库验证到最近终态任务的 `10` 个条目和最近 `100` 条事件，说明旧失败任务的记录可被新版本直接回放；其中 `71` 条带根因的事件均归类为 `wa_blocked`，取消事件是 WA 拒绝后的清理状态，不是首要失败根因。
 - 本次仅读取既有任务和事件，未创建新任务、未购号、未请求 OTP。
+
+### Goal 2 批量容量与运营商标识发布记录（2026-07-10）
+
+- 批量任务的目标数量和部署并发上限均调整为 `100`；表单仍默认按目标数量的三分之一设置并发，用户可以在部署上限内调整。
+- Dashboard 报价列表和任务条目列表显示“供应商 - 运营商”；运营商会从 HeroSMS 报价保留到申请号码时使用的任务条目。
+- 报价列表下方的“提交任务”按钮固定在批量添加表单底部，长列表滚动时仍可直接提交。
 
 ## 推荐 /goal 文案
 

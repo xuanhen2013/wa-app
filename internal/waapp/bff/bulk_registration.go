@@ -23,7 +23,7 @@ import (
 
 const (
 	bulkRegistrationService          = "whatsapp"
-	bulkRegistrationMaxItems         = 20
+	bulkRegistrationMaxItems         = 100
 	bulkRegistrationEventLimit       = 100
 	bulkRegistrationPollInterval     = 5 * time.Second
 	bulkRegistrationSMSWaitTimeout   = 20 * time.Minute
@@ -907,7 +907,7 @@ func bulkItemsForTask(server *rpc.Server, task bulkregistration.Task, offers []b
 	for _, selection := range task.Selections {
 		offer := offerByID[selection.OfferID]
 		for count := 0; count < selection.Quantity; count++ {
-			items = append(items, bulkregistration.Item{ItemID: server.IDs().NewID("wabulki_"), TaskID: task.TaskID, Status: bulkregistration.ItemStatusQueued, Provider: offer.Provider, OfferID: offer.OfferID, Price: offer.Price, Currency: offer.Currency, CountryISO2: task.CountryISO2, SMSStatus: "QUEUED", CreatedAt: now, UpdatedAt: now})
+			items = append(items, bulkregistration.Item{ItemID: server.IDs().NewID("wabulki_"), TaskID: task.TaskID, Status: bulkregistration.ItemStatusQueued, Provider: offer.Provider, Operator: offer.Operator, OfferID: offer.OfferID, Price: offer.Price, Currency: offer.Currency, CountryISO2: task.CountryISO2, SMSStatus: "QUEUED", CreatedAt: now, UpdatedAt: now})
 		}
 	}
 	return items
@@ -918,7 +918,7 @@ func bulkOfferFromProvider(offer smsotp.Offer) bulkregistration.Offer {
 }
 
 func smsOfferFromItem(item bulkregistration.Item) smsotp.Offer {
-	return smsotp.Offer{OfferID: item.OfferID, Provider: item.Provider, CountryISO2: item.CountryISO2, Service: bulkRegistrationService, Price: item.Price, Currency: item.Currency}
+	return smsotp.Offer{OfferID: item.OfferID, Provider: item.Provider, CountryISO2: item.CountryISO2, Service: bulkRegistrationService, Price: item.Price, Currency: item.Currency, Operator: item.Operator}
 }
 
 func bulkPhoneTarget(e164 string, countryISO2 string) (*waappPhoneTarget, error) {

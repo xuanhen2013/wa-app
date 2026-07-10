@@ -34,8 +34,8 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
   const lastTask = taskQuery.data?.last_task;
   const countries = useMemo(() => countriesQuery.data?.countries || [], [countriesQuery.data?.countries]);
   const offers = offersData?.offers || [];
-  const maxItems = offersData?.max_items || 20;
-  const maxConcurrency = Math.min(targetCount, offersData?.max_concurrency || 20);
+  const maxItems = offersData?.max_items || 100;
+  const maxConcurrency = Math.min(targetCount, offersData?.max_concurrency || 100);
   const selectedCount = useMemo(() => Object.values(quantities).reduce((sum, quantity) => sum + Math.max(0, quantity || 0), 0), [quantities]);
   const createTask = useMutation({
     mutationFn: () => createBulkRegistrationTask({
@@ -96,7 +96,7 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
   function setTarget(nextValue: number) {
     const bounded = Math.max(1, Math.min(maxItems, Number.isFinite(nextValue) ? Math.floor(nextValue) : 1));
     setTargetCount(bounded);
-    setConcurrency(Math.min(defaultBulkConcurrency(bounded), Math.min(bounded, offersData?.max_concurrency || 20)));
+    setConcurrency(Math.min(defaultBulkConcurrency(bounded), Math.min(bounded, offersData?.max_concurrency || 100)));
   }
   function setTaskConcurrency(nextValue: number) {
     const bounded = Math.max(1, Math.min(maxConcurrency, Number.isFinite(nextValue) ? Math.floor(nextValue) : 1));
@@ -140,7 +140,7 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
           <Button type="button" variant="outline" size="sm" disabled={busy || offers.length === 0} onClick={autoSelectLowestPrice}><WandSparkles className="size-4" />自动选择最低价</Button>
         </div>
         <OfferTable offers={offers} quantities={quantities} busy={busy} onQuantityChange={setQuantity} />
-        <Button type="button" disabled={busy || selectedCount !== targetCount || offers.length === 0} onClick={() => void createTask.mutateAsync()}>{createTask.isPending ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}提交任务</Button>
+        <div className="sticky bottom-0 z-20 -mx-6 border-t bg-card/95 px-6 py-3 backdrop-blur"><Button className="w-full" type="button" disabled={busy || selectedCount !== targetCount || offers.length === 0} onClick={() => void createTask.mutateAsync()}>{createTask.isPending ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}提交任务</Button></div>
       </CardContent>
     </Card>
     {lastTask ? <BulkTaskDetail task={lastTask} items={taskQuery.data?.last_items || []} events={taskQuery.data?.last_events || []} canceling={false} onCancel={() => undefined} history /> : null}
@@ -152,9 +152,9 @@ function OfferTable({ offers, quantities, busy, onQuantityChange }: { offers: Bu
   return (
     <div className="overflow-x-auto">
       <Table>
-        <TableHeader><TableRow><TableHead>供应商</TableHead><TableHead>地区</TableHead><TableHead>价格</TableHead><TableHead>库存</TableHead><TableHead>选择数量</TableHead></TableRow></TableHeader>
+        <TableHeader><TableRow><TableHead>供应商 - 运营商</TableHead><TableHead>地区</TableHead><TableHead>价格</TableHead><TableHead>库存</TableHead><TableHead>选择数量</TableHead></TableRow></TableHeader>
         <TableBody>
-          {offers.map((offer) => <TableRow key={offer.offer_id}><TableCell>{offer.provider}</TableCell><TableCell>{offer.country_iso2}</TableCell><TableCell>{formatMoney(offer.price, offer.currency)}</TableCell><TableCell>{offer.available_count.toLocaleString()}</TableCell><TableCell><Input className="h-8 w-24" type="number" min={0} max={offer.available_count} value={quantities[offer.offer_id] || 0} disabled={busy} onChange={(event) => onQuantityChange(offer, Number(event.target.value))} /></TableCell></TableRow>)}
+          {offers.map((offer) => <TableRow key={offer.offer_id}><TableCell>{providerOperatorLabel(offer.provider, offer.operator)}</TableCell><TableCell>{offer.country_iso2}</TableCell><TableCell>{formatMoney(offer.price, offer.currency)}</TableCell><TableCell>{offer.available_count.toLocaleString()}</TableCell><TableCell><Input className="h-8 w-24" type="number" min={0} max={offer.available_count} value={quantities[offer.offer_id] || 0} disabled={busy} onChange={(event) => onQuantityChange(offer, Number(event.target.value))} /></TableCell></TableRow>)}
           {offers.length === 0 ? <TableRow><TableCell colSpan={5} className="h-24 text-center text-muted-foreground">暂无可用报价</TableCell></TableRow> : null}
         </TableBody>
       </Table>
@@ -176,8 +176,8 @@ function BulkTaskDetail({ task, items, events, canceling, onCancel, history = fa
         {task.last_error ? <p className="text-sm text-destructive"><span className="font-medium">最近错误：</span>{formatBulkFailure(task.last_error)}</p> : null}
         <div className="overflow-x-auto">
           <Table>
-            <TableHeader><TableRow><TableHead>#</TableHead><TableHead>供应商</TableHead><TableHead>号码</TableHead><TableHead>阶段</TableHead><TableHead>短信</TableHead><TableHead>WA</TableHead><TableHead>根因</TableHead></TableRow></TableHeader>
-            <TableBody>{items.map((item, index) => <TableRow key={item.item_id}><TableCell>{index + 1}</TableCell><TableCell>{item.provider}</TableCell><TableCell className="font-mono">{item.phone_masked || '-'}</TableCell><TableCell><StatusValue value={item.status} label={itemStatusLabel(item.status, item.cancel_attempt_count)} /></TableCell><TableCell><StatusValue value={item.sms_status} label={smsStatusLabel(item.sms_status)} /></TableCell><TableCell><StatusValue value={waStatus(item)} label={waStatusLabel(waStatus(item))} /></TableCell><TableCell className="max-w-64" title={item.last_error}><span className="line-clamp-2">{formatBulkFailure(item.last_error) || '-'}</span></TableCell></TableRow>)}</TableBody>
+            <TableHeader><TableRow><TableHead>#</TableHead><TableHead>供应商 - 运营商</TableHead><TableHead>号码</TableHead><TableHead>阶段</TableHead><TableHead>短信</TableHead><TableHead>WA</TableHead><TableHead>根因</TableHead></TableRow></TableHeader>
+            <TableBody>{items.map((item, index) => <TableRow key={item.item_id}><TableCell>{index + 1}</TableCell><TableCell>{providerOperatorLabel(item.provider, item.operator)}</TableCell><TableCell className="font-mono">{item.phone_masked || '-'}</TableCell><TableCell><StatusValue value={item.status} label={itemStatusLabel(item.status, item.cancel_attempt_count)} /></TableCell><TableCell><StatusValue value={item.sms_status} label={smsStatusLabel(item.sms_status)} /></TableCell><TableCell><StatusValue value={waStatus(item)} label={waStatusLabel(waStatus(item))} /></TableCell><TableCell className="max-w-64" title={item.last_error}><span className="line-clamp-2">{formatBulkFailure(item.last_error) || '-'}</span></TableCell></TableRow>)}</TableBody>
           </Table>
         </div>
         {events.length > 0 ? <section className="grid gap-3 border-t pt-4"><h2 className="text-sm font-medium">执行日志</h2><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>时间</TableHead><TableHead>#</TableHead><TableHead>事件</TableHead><TableHead>短信</TableHead><TableHead>WA</TableHead><TableHead>根因</TableHead></TableRow></TableHeader><TableBody>{events.map((event) => <TableRow key={event.event_id}><TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatBulkTime(event.created_at)}</TableCell><TableCell>{itemNumbers.get(event.item_id) || '-'}</TableCell><TableCell>{bulkEventLabel(event.event_type)}</TableCell><TableCell>{smsStatusLabel(event.provider_status)}</TableCell><TableCell>{waStatusLabel(event.wa_status)}</TableCell><TableCell className="max-w-80" title={event.message}><span className="line-clamp-2">{formatBulkFailure(event.message) || '-'}</span></TableCell></TableRow>)}</TableBody></Table></div></section> : null}
@@ -247,6 +247,10 @@ function taskFinished(task: BulkRegistrationTask) {
 
 function formatMoney(value: number, currency: string) {
   return new Intl.NumberFormat('en-US', { style: 'currency', currency: currency || 'USD', minimumFractionDigits: 2 }).format(value);
+}
+
+function providerOperatorLabel(provider: string, operator: string) {
+  return `${provider || '供应商'} - ${operator || '不限'}`;
 }
 
 function defaultBulkConcurrency(targetCount: number) {

@@ -189,6 +189,41 @@ func TestBulkTaskCreationDefaultsConcurrencyToOneThird(t *testing.T) {
 	}
 }
 
+func TestBulkRegistrationConfigDefaultsAndLimitsToOneHundred(t *testing.T) {
+	defaults := normalizeBulkRegistrationConfig(BulkRegistrationConfig{})
+	if defaults.MaxItems != 100 || defaults.Concurrency != 100 {
+		t.Fatalf("unexpected default config: %#v", defaults)
+	}
+	limited := normalizeBulkRegistrationConfig(BulkRegistrationConfig{MaxItems: 101, Concurrency: 101})
+	if limited.MaxItems != 100 || limited.Concurrency != 100 {
+		t.Fatalf("unexpected limited config: %#v", limited)
+	}
+	allowed := normalizeBulkRegistrationConfig(BulkRegistrationConfig{MaxItems: 100, Concurrency: 100})
+	if allowed.MaxItems != 100 || allowed.Concurrency != 100 {
+		t.Fatalf("unexpected allowed config: %#v", allowed)
+	}
+}
+
+func TestBulkTaskCreationPreservesOfferOperator(t *testing.T) {
+	provider := &bulkTestProvider{offers: []smsotp.Offer{{OfferID: "fake-offer", Provider: "fake", CountryISO2: "PH", Service: "whatsapp", Price: 0.15, Currency: "USD", AvailableCount: 10, Operator: "Globe"}}}
+	manager, task, _ := newBulkTestManager(t, provider, bulkregistration.ItemStatusQueued)
+	completeBulkTestTask(t, manager, task)
+	detail, existing, err := manager.CreateTask(context.Background(), bulkTaskCreateInput{
+		CountryISO2: "PH",
+		TargetCount: 1,
+		Selections:  []bulkregistration.OfferSelection{{OfferID: "fake-offer", Quantity: 1}},
+	})
+	if err != nil {
+		t.Fatalf("create task: %v", err)
+	}
+	if existing || len(detail.Items) != 1 || detail.Items[0].Operator != "Globe" {
+		t.Fatalf("operator was not persisted on the task item: detail=%#v existing=%t", detail, existing)
+	}
+	if offer := smsOfferFromItem(detail.Items[0]); offer.Operator != "Globe" {
+		t.Fatalf("operator was not retained for number acquisition: %#v", offer)
+	}
+}
+
 func TestBulkTaskCreationRejectsConcurrencyAboveTarget(t *testing.T) {
 	provider := &bulkTestProvider{offers: []smsotp.Offer{{OfferID: "fake-offer", Provider: "fake", CountryISO2: "PH", Service: "whatsapp", Price: 0.15, Currency: "USD", AvailableCount: 10}}}
 	manager, task, _ := newBulkTestManager(t, provider, bulkregistration.ItemStatusQueued)
