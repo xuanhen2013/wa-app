@@ -226,7 +226,7 @@ function taskStatusLabel(value: string) {
 
 function itemStatusLabel(value: string, cancelAttempts: number) {
   const labels: Record<string, string> = { QUEUED: '排队中', ACQUIRING_NUMBER: '申请号码中', NUMBER_ACQUIRED: '号码已获取', WA_PROBING: 'WA 注册中', WA_REQUESTING_OTP: '请求验证码中', WAITING_SMS: '等待短信', SMS_RECEIVED: '收到验证码', SUBMITTING_OTP: '提交验证码中', REGISTERED: '注册成功', CANCELING_NUMBER: '正在取消短信号码', NUMBER_CANCELED: '短信号码已取消', FAILED: '失败', CANCELED: '已取消' };
-  if (value === 'CANCEL_PENDING') return cancelAttempts > 0 ? `短信取消待确认（已尝试 ${cancelAttempts} 次）` : '短信取消待确认';
+  if (value === 'CANCEL_PENDING') return cancelAttempts > 0 ? `短信取消需人工审核（已尝试 ${cancelAttempts} 次）` : '短信取消需人工审核';
   return labels[value] || '未知阶段';
 }
 
@@ -252,14 +252,14 @@ function formatBulkFailure(value?: string) {
     }
     if (part.startsWith('SMS activation cancellation pending') || part === 'SMS activation cancellation is pending') {
       const detail = part.split(':').slice(1).join(':').trim();
-      return detail ? `短信平台取消待确认（${detail}）` : '短信平台取消待确认';
+      return detail ? `短信平台取消需人工审核（${detail}）` : '短信平台取消需人工审核';
     }
     return part;
   }).join('；');
 }
 
 function bulkEventLabel(value: string) {
-  return ({ acquiring_number: '申请短信号码', number_acquired: '已获取短信号码', wa_registration_started: '开始 WA 注册', wa_otp_requested: '已请求验证码', sms_status: '短信状态更新', sms_received: '收到短信验证码', submitting_otp: '提交验证码', registered: '注册成功', failed: '注册失败', canceled: '已取消', canceling_activation: '取消短信激活', activation_canceled: '短信激活已取消', activation_cancel_pending: '短信取消待确认', activation_finish_failed: '短信激活完成确认失败' } as Record<string, string>)[value] || '状态更新';
+  return ({ acquiring_number: '申请短信号码', number_acquired: '已获取短信号码', wa_registration_started: '开始 WA 注册', wa_otp_requested: '已请求验证码', sms_status: '短信状态更新', sms_received: '收到短信验证码', submitting_otp: '提交验证码', registered: '注册成功', failed: '注册失败', canceled: '已取消', canceling_activation: '取消短信激活', activation_canceled: '短信激活已取消', activation_cancel_pending: '短信取消需人工审核', activation_finish_failed: '短信激活完成确认失败' } as Record<string, string>)[value] || '状态更新';
 }
 
 function formatBulkTime(value: string) {

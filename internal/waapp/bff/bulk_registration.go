@@ -829,7 +829,7 @@ func (m *bulkRegistrationManager) cancelItem(ctx context.Context, task *bulkregi
 		return m.saveItem(ctx, task, &item, "canceled", item.SMSStatus, item.WARegistrationStatus)
 	}
 	// Cancellation state belongs in Status. Keep LastError focused on the
-	// registration failure and replace any older pending-cancellation detail.
+	// registration failure and replace any older review detail.
 	item.LastError = bulkFailureReason(item.LastError)
 	item.Status = bulkregistration.ItemStatusCancelingNumber
 	if err := m.saveItem(ctx, task, &item, "canceling_activation", item.SMSStatus, item.WARegistrationStatus); err != nil {
@@ -1148,6 +1148,8 @@ func bulkTaskCounts(items []bulkregistration.Item) (success int, failed int, can
 		case bulkregistration.ItemStatusRegistered:
 			success++
 		case bulkregistration.ItemStatusFailed:
+			failed++
+		case bulkregistration.ItemStatusCancelPending:
 			failed++
 		case bulkregistration.ItemStatusCanceled, bulkregistration.ItemStatusNumberCanceled:
 			canceled++
