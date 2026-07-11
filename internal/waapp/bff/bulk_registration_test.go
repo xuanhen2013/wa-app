@@ -182,29 +182,79 @@ func TestBulkWorkerKeepsCancelPendingWhenSupplierCancelFails(t *testing.T) {
 		t.Fatalf("cancel item: %v", err)
 	}
 	updated := bulkTestItem(t, manager, item.ItemID)
-	if updated.Status != bulkregistration.ItemStatusCancelPending || !bulkregistration.IsTerminalItemStatus(updated.Status) || provider.cancelCalls != 1 {
+	if updated.Status != bulkregistration.ItemStatusCancelPending || bulkregistration.IsTerminalItemStatus(updated.Status) || provider.cancelCalls != 1 {
 		t.Fatalf("unexpected cancellation failure state: item=%#v cancel_calls=%d", updated, provider.cancelCalls)
 	}
 }
 
-func TestBulkWorkerFinishesExistingTaskWhenCancellationRequiresManualReview(t *testing.T) {
+func TestBulkWorkerRetriesExistingPendingCancellationBeforeSMSCode(t *testing.T) {
 	provider := &bulkTestProvider{cancelErr: errors.New("EARLY_CANCEL_DENIED")}
 	manager, task, item := newBulkTestManager(t, provider, bulkregistration.ItemStatusCancelPending)
+	manager.cancelRetryMax = 1
 	item.ActivationID = "act_1"
+	item.SMSStatus = "STATUS_WAIT_CODE"
 	item.LastError = "WA verification request rejected; " + bulkCancellationPendingPrefix + ": EARLY_CANCEL_DENIED"
 	if err := manager.server.Store().SaveItem(context.Background(), item); err != nil {
-		t.Fatalf("save manual-review item: %v", err)
+		t.Fatalf("save pending-cancellation item: %v", err)
 	}
 	if err := manager.processTask(context.Background(), task); err != nil {
-		t.Fatalf("process manual-review task: %v", err)
+		t.Fatalf("process pending-cancellation task: %v", err)
+	}
+	updatedTask, err := manager.server.Store().GetTask(context.Background(), task.TaskID)
+	if err != nil {
+		t.Fatalf("get pending task: %v", err)
+	}
+	updatedItem := bulkTestItem(t, manager, item.ItemID)
+	if updatedTask.Status != bulkregistration.TaskStatusRunning || updatedTask.WaitingCount != 1 || updatedItem.Status != bulkregistration.ItemStatusCancelPending || provider.cancelCalls != 1 {
+		t.Fatalf("pending cancellation did not keep retrying: task=%#v item=%#v cancel_calls=%d", updatedTask, updatedItem, provider.cancelCalls)
+	}
+}
+
+func TestBulkWorkerFinishesTaskWhenReceivedSMSCancellationRequiresManualReview(t *testing.T) {
+	provider := &bulkTestProvider{cancelErr: errors.New("EARLY_CANCEL_DENIED")}
+	manager, task, item := newBulkTestManager(t, provider, bulkregistration.ItemStatusNumberAcquired)
+	manager.cancelRetryMax = 1
+	item.ActivationID = "act_1"
+	item.SMSStatus = "STATUS_OK"
+	item.LastError = "WA verification request rejected"
+	if err := manager.server.Store().SaveItem(context.Background(), item); err != nil {
+		t.Fatalf("save received-SMS item: %v", err)
+	}
+	if err := manager.cancelItem(context.Background(), task, item); err != nil {
+		t.Fatalf("cancel received-SMS item: %v", err)
+	}
+	if err := manager.finishTaskIfDone(context.Background(), task); err != nil {
+		t.Fatalf("finish manual-review task: %v", err)
 	}
 	updatedTask, err := manager.server.Store().GetTask(context.Background(), task.TaskID)
 	if err != nil {
 		t.Fatalf("get completed task: %v", err)
 	}
 	updatedItem := bulkTestItem(t, manager, item.ItemID)
-	if updatedTask.Status != bulkregistration.TaskStatusFailed || updatedTask.FailedCount != 1 || updatedTask.WaitingCount != 0 || updatedItem.Status != bulkregistration.ItemStatusCancelPending || provider.cancelCalls != 0 {
-		t.Fatalf("manual-review cancellation kept task active: task=%#v item=%#v cancel_calls=%d", updatedTask, updatedItem, provider.cancelCalls)
+	if updatedTask.Status != bulkregistration.TaskStatusFailed || updatedTask.FailedCount != 1 || updatedTask.WaitingCount != 0 || updatedItem.Status != bulkregistration.ItemStatusManualReview || !bulkregistration.IsTerminalItemStatus(updatedItem.Status) || provider.cancelCalls != 1 {
+		t.Fatalf("received-SMS cancellation did not require manual review: task=%#v item=%#v cancel_calls=%d", updatedTask, updatedItem, provider.cancelCalls)
+	}
+}
+
+func TestBulkWorkerPromotesExistingReceivedSMSPendingCancellationToManualReview(t *testing.T) {
+	provider := &bulkTestProvider{cancelErr: errors.New("EARLY_CANCEL_DENIED")}
+	manager, task, item := newBulkTestManager(t, provider, bulkregistration.ItemStatusCancelPending)
+	item.ActivationID = "act_1"
+	item.SMSStatus = "STATUS_OK"
+	item.LastError = "WA verification request rejected; " + bulkCancellationPendingPrefix + ": EARLY_CANCEL_DENIED"
+	if err := manager.server.Store().SaveItem(context.Background(), item); err != nil {
+		t.Fatalf("save received-SMS pending item: %v", err)
+	}
+	if err := manager.processTask(context.Background(), task); err != nil {
+		t.Fatalf("process received-SMS pending item: %v", err)
+	}
+	updatedTask, err := manager.server.Store().GetTask(context.Background(), task.TaskID)
+	if err != nil {
+		t.Fatalf("get promoted task: %v", err)
+	}
+	updatedItem := bulkTestItem(t, manager, item.ItemID)
+	if updatedTask.Status != bulkregistration.TaskStatusFailed || updatedItem.Status != bulkregistration.ItemStatusManualReview || !strings.Contains(updatedItem.LastError, bulkCancellationManualReviewPrefix) || strings.Contains(updatedItem.LastError, bulkCancellationPendingPrefix) || provider.cancelCalls != 0 {
+		t.Fatalf("received-SMS pending item was retried instead of promoted: task=%#v item=%#v cancel_calls=%d", updatedTask, updatedItem, provider.cancelCalls)
 	}
 }
 
@@ -245,11 +295,11 @@ func TestBulkWorkerPreservesFailureReasonWhenCancellationIsPending(t *testing.T)
 		t.Fatalf("unexpected cancellation-pending item: %#v", updated)
 	}
 	if err := manager.cancelItem(context.Background(), task, updated); err != nil {
-		t.Fatalf("ignore completed manual-review cancellation: %v", err)
+		t.Fatalf("retry cancellation: %v", err)
 	}
-	unchanged := bulkTestItem(t, manager, item.ItemID)
-	if provider.cancelCalls != 1 || strings.Count(unchanged.LastError, bulkCancellationPendingPrefix) != 1 || strings.Count(unchanged.LastError, "WA verification request rejected") != 1 {
-		t.Fatalf("manual-review cancellation was retried or altered: %#v", unchanged)
+	retried := bulkTestItem(t, manager, item.ItemID)
+	if provider.cancelCalls != 2 || strings.Count(retried.LastError, bulkCancellationPendingPrefix) != 1 || strings.Count(retried.LastError, "WA verification request rejected") != 1 {
+		t.Fatalf("pending cancellation retry altered the failure detail: %#v", retried)
 	}
 }
 

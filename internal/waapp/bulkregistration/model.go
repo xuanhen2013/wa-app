@@ -28,13 +28,13 @@ const (
 	ItemStatusRegistered      = "REGISTERED"
 	ItemStatusCancelingNumber = "CANCELING_NUMBER"
 	ItemStatusNumberCanceled  = "NUMBER_CANCELED"
-	// ItemStatusCancelPending means the supplier did not accept cancellation
-	// after the bounded automatic retries and the activation requires review.
-	// It is terminal so one unresolved supplier activation cannot hold the
-	// single active bulk task indefinitely.
-	ItemStatusCancelPending = "CANCEL_PENDING"
-	ItemStatusFailed        = "FAILED"
-	ItemStatusCanceled      = "CANCELED"
+	ItemStatusCancelPending   = "CANCEL_PENDING"
+	// ItemStatusManualReview is used only after an SMS code was received and
+	// the provider refused cancellation. The activation is already chargeable
+	// and requires a person to resolve it with the provider.
+	ItemStatusManualReview = "MANUAL_REVIEW"
+	ItemStatusFailed       = "FAILED"
+	ItemStatusCanceled     = "CANCELED"
 )
 
 var ErrTaskNotFound = errors.New("bulk registration task not found")
@@ -136,7 +136,7 @@ func IsActiveTaskStatus(status string) bool {
 
 func IsTerminalItemStatus(status string) bool {
 	switch strings.ToUpper(strings.TrimSpace(status)) {
-	case ItemStatusRegistered, ItemStatusFailed, ItemStatusCanceled, ItemStatusNumberCanceled, ItemStatusCancelPending:
+	case ItemStatusRegistered, ItemStatusManualReview, ItemStatusFailed, ItemStatusCanceled, ItemStatusNumberCanceled:
 		return true
 	default:
 		return false

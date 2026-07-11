@@ -203,7 +203,7 @@ function BulkTaskDetail({ task, items, events, canceling, onCancel, history = fa
         <div className="overflow-x-auto">
           <Table>
             <TableHeader><TableRow><TableHead>#</TableHead><TableHead>供应商 - 运营商</TableHead><TableHead>号码</TableHead><TableHead>阶段</TableHead><TableHead>短信</TableHead><TableHead>WA</TableHead><TableHead>根因</TableHead></TableRow></TableHeader>
-            <TableBody>{items.map((item, index) => <TableRow key={item.item_id}><TableCell>{index + 1}</TableCell><TableCell>{providerOperatorLabel(item.provider, item.operator)}</TableCell><TableCell className="font-mono">{item.phone_masked || '-'}</TableCell><TableCell><StatusValue value={item.status} label={itemStatusLabel(item.status, item.cancel_attempt_count)} /></TableCell><TableCell><StatusValue value={item.sms_status} label={smsStatusLabel(item.sms_status)} /></TableCell><TableCell><StatusValue value={waStatus(item)} label={waStatusLabel(waStatus(item))} /></TableCell><TableCell className="max-w-64" title={item.last_error}><span className="line-clamp-2">{formatBulkFailure(item.last_error) || '-'}</span></TableCell></TableRow>)}</TableBody>
+            <TableBody>{items.map((item, index) => <TableRow key={item.item_id}><TableCell>{index + 1}</TableCell><TableCell>{providerOperatorLabel(item.provider, item.operator)}</TableCell><TableCell className="font-mono">{item.phone_masked || '-'}</TableCell><TableCell><StatusValue value={item.status} label={itemStatusLabel(item.status, item.cancel_attempt_count, item.sms_status)} /></TableCell><TableCell><StatusValue value={item.sms_status} label={smsStatusLabel(item.sms_status)} /></TableCell><TableCell><StatusValue value={waStatus(item)} label={waStatusLabel(waStatus(item))} /></TableCell><TableCell className="max-w-64" title={item.last_error}><span className="line-clamp-2">{formatBulkFailure(item.last_error) || '-'}</span></TableCell></TableRow>)}</TableBody>
           </Table>
         </div>
         {events.length > 0 ? <section className="grid gap-3 border-t pt-4"><h2 className="text-sm font-medium">执行日志</h2><div className="overflow-x-auto"><Table><TableHeader><TableRow><TableHead>时间</TableHead><TableHead>#</TableHead><TableHead>事件</TableHead><TableHead>短信</TableHead><TableHead>WA</TableHead><TableHead>根因</TableHead></TableRow></TableHeader><TableBody>{events.map((event) => <TableRow key={event.event_id}><TableCell className="whitespace-nowrap text-xs text-muted-foreground">{formatBulkTime(event.created_at)}</TableCell><TableCell>{itemNumbers.get(event.item_id) || '-'}</TableCell><TableCell>{bulkEventLabel(event.event_type)}</TableCell><TableCell>{smsStatusLabel(event.provider_status)}</TableCell><TableCell>{waStatusLabel(event.wa_status)}</TableCell><TableCell className="max-w-80" title={event.message}><span className="line-clamp-2">{formatBulkFailure(event.message) || '-'}</span></TableCell></TableRow>)}</TableBody></Table></div></section> : null}
@@ -224,9 +224,9 @@ function taskStatusLabel(value: string) {
   return ({ DRAFT: '草稿', RUNNING: '执行中', CANCEL_REQUESTED: '已请求取消', CANCELING: '取消中', COMPLETED: '已完成', PARTIAL_COMPLETED: '部分完成', FAILED: '失败', CANCELED: '已取消', PAUSED: '已暂停' } as Record<string, string>)[value] || '未知状态';
 }
 
-function itemStatusLabel(value: string, cancelAttempts: number) {
-  const labels: Record<string, string> = { QUEUED: '排队中', ACQUIRING_NUMBER: '申请号码中', NUMBER_ACQUIRED: '号码已获取', WA_PROBING: 'WA 注册中', WA_REQUESTING_OTP: '请求验证码中', WAITING_SMS: '等待短信', SMS_RECEIVED: '收到验证码', SUBMITTING_OTP: '提交验证码中', REGISTERED: '注册成功', CANCELING_NUMBER: '正在取消短信号码', NUMBER_CANCELED: '短信号码已取消', FAILED: '失败', CANCELED: '已取消' };
-  if (value === 'CANCEL_PENDING') return cancelAttempts > 0 ? `短信取消需人工审核（已尝试 ${cancelAttempts} 次）` : '短信取消需人工审核';
+function itemStatusLabel(value: string, cancelAttempts: number, smsStatus: string) {
+  const labels: Record<string, string> = { QUEUED: '排队中', ACQUIRING_NUMBER: '申请号码中', NUMBER_ACQUIRED: '号码已获取', WA_PROBING: 'WA 注册中', WA_REQUESTING_OTP: '请求验证码中', WAITING_SMS: '等待短信', SMS_RECEIVED: '收到验证码', SUBMITTING_OTP: '提交验证码中', REGISTERED: '注册成功', CANCELING_NUMBER: '正在取消短信号码', NUMBER_CANCELED: '短信号码已取消', MANUAL_REVIEW: '短信取消需人工审核', FAILED: '失败', CANCELED: '已取消' };
+  if (value === 'CANCEL_PENDING') return smsStatus === 'STATUS_OK' ? '短信取消需人工审核' : cancelAttempts > 0 ? `短信取消待确认（已尝试 ${cancelAttempts} 次）` : '短信取消待确认';
   return labels[value] || '未知阶段';
 }
 
@@ -250,16 +250,20 @@ function formatBulkFailure(value?: string) {
       if (reason === 'blocked') return 'WhatsApp 已拦截此号码或注册请求（blocked）';
       return reason ? `WA 拒绝请求验证码（${reason}）` : 'WA 拒绝请求验证码';
     }
-    if (part.startsWith('SMS activation cancellation pending') || part === 'SMS activation cancellation is pending') {
+    if (part.startsWith('SMS activation cancellation requires manual review')) {
+		const detail = part.split(':').slice(1).join(':').trim();
+		return detail ? `短信平台取消需人工审核（${detail}）` : '短信平台取消需人工审核';
+	}
+	if (part.startsWith('SMS activation cancellation pending') || part === 'SMS activation cancellation is pending') {
       const detail = part.split(':').slice(1).join(':').trim();
-      return detail ? `短信平台取消需人工审核（${detail}）` : '短信平台取消需人工审核';
+		return detail ? `短信平台取消待确认（${detail}）` : '短信平台取消待确认';
     }
     return part;
   }).join('；');
 }
 
 function bulkEventLabel(value: string) {
-  return ({ acquiring_number: '申请短信号码', number_acquired: '已获取短信号码', wa_registration_started: '开始 WA 注册', wa_otp_requested: '已请求验证码', sms_status: '短信状态更新', sms_received: '收到短信验证码', submitting_otp: '提交验证码', registered: '注册成功', failed: '注册失败', canceled: '已取消', canceling_activation: '取消短信激活', activation_canceled: '短信激活已取消', activation_cancel_pending: '短信取消需人工审核', activation_finish_failed: '短信激活完成确认失败' } as Record<string, string>)[value] || '状态更新';
+  return ({ acquiring_number: '申请短信号码', number_acquired: '已获取短信号码', wa_registration_started: '开始 WA 注册', wa_otp_requested: '已请求验证码', sms_status: '短信状态更新', sms_received: '收到短信验证码', submitting_otp: '提交验证码', registered: '注册成功', failed: '注册失败', canceled: '已取消', canceling_activation: '取消短信激活', activation_canceled: '短信激活已取消', activation_cancel_pending: '短信取消待确认', activation_cancel_manual_review: '短信取消需人工审核', activation_finish_failed: '短信激活完成确认失败' } as Record<string, string>)[value] || '状态更新';
 }
 
 function formatBulkTime(value: string) {

@@ -23,14 +23,15 @@ import (
 )
 
 const (
-	bulkRegistrationService          = "whatsapp"
-	bulkRegistrationMaxItems         = 100
-	bulkRegistrationEventLimit       = 100
-	bulkRegistrationPollInterval     = 5 * time.Second
-	bulkRegistrationSMSWaitTimeout   = 20 * time.Minute
-	bulkRegistrationCancelRetryMax   = 5
-	bulkRegistrationIdlePollInterval = 2 * time.Second
-	bulkCancellationPendingPrefix    = "SMS activation cancellation pending"
+	bulkRegistrationService            = "whatsapp"
+	bulkRegistrationMaxItems           = 100
+	bulkRegistrationEventLimit         = 100
+	bulkRegistrationPollInterval       = 5 * time.Second
+	bulkRegistrationSMSWaitTimeout     = 20 * time.Minute
+	bulkRegistrationCancelRetryMax     = 5
+	bulkRegistrationIdlePollInterval   = 2 * time.Second
+	bulkCancellationPendingPrefix      = "SMS activation cancellation pending"
+	bulkCancellationManualReviewPrefix = "SMS activation cancellation requires manual review"
 )
 
 type BulkRegistrationConfig struct {
@@ -564,7 +565,12 @@ func (m *bulkRegistrationManager) processItem(ctx context.Context, task *bulkreg
 		return m.startWARegistration(ctx, task, item, nil)
 	case bulkregistration.ItemStatusWaitingSMS, bulkregistration.ItemStatusSMSReceived, bulkregistration.ItemStatusSubmittingOTP:
 		return m.waitForSMSAndSubmit(ctx, task, item)
-	case bulkregistration.ItemStatusCancelPending, bulkregistration.ItemStatusCancelingNumber:
+	case bulkregistration.ItemStatusCancelPending:
+		if hasReceivedBulkSMSCode(item) {
+			return m.promoteCancellationPendingToManualReview(ctx, task, item)
+		}
+		return m.cancelItem(ctx, task, item)
+	case bulkregistration.ItemStatusCancelingNumber:
 		return m.cancelItem(ctx, task, item)
 	default:
 		return m.failItem(ctx, task, item, "unknown item state", true)
@@ -837,9 +843,7 @@ func (m *bulkRegistrationManager) cancelItem(ctx context.Context, task *bulkregi
 	}
 	provider, err := m.providerForItem(*task, item)
 	if err != nil {
-		item.Status = bulkregistration.ItemStatusCancelPending
-		item.LastError = bulkCancellationPendingError(item.LastError, err)
-		return m.saveItem(ctx, task, &item, "activation_cancel_pending", item.SMSStatus, item.WARegistrationStatus)
+		return m.saveCancellationUnresolved(ctx, task, item, err)
 	}
 	var cancelErr error
 	for attempt := 1; attempt <= m.cancelRetryMax; attempt++ {
@@ -863,9 +867,34 @@ func (m *bulkRegistrationManager) cancelItem(ctx context.Context, task *bulkregi
 			return ctx.Err()
 		}
 	}
+	return m.saveCancellationUnresolved(ctx, task, item, cancelErr)
+}
+
+func (m *bulkRegistrationManager) saveCancellationUnresolved(ctx context.Context, task *bulkregistration.Task, item bulkregistration.Item, cancelErr error) error {
+	if hasReceivedBulkSMSCode(item) {
+		item.Status = bulkregistration.ItemStatusManualReview
+		item.LastError = bulkCancellationManualReviewError(item.LastError, cancelErr)
+		item.FinishedAt = timePointer(time.Now().UTC())
+		return m.saveItem(ctx, task, &item, "activation_cancel_manual_review", item.SMSStatus, item.WARegistrationStatus)
+	}
 	item.Status = bulkregistration.ItemStatusCancelPending
 	item.LastError = bulkCancellationPendingError(item.LastError, cancelErr)
 	return m.saveItem(ctx, task, &item, "activation_cancel_pending", item.SMSStatus, item.WARegistrationStatus)
+}
+
+func (m *bulkRegistrationManager) promoteCancellationPendingToManualReview(ctx context.Context, task *bulkregistration.Task, item bulkregistration.Item) error {
+	item.Status = bulkregistration.ItemStatusManualReview
+	if strings.Contains(item.LastError, bulkCancellationPendingPrefix) {
+		item.LastError = strings.Replace(item.LastError, bulkCancellationPendingPrefix, bulkCancellationManualReviewPrefix, 1)
+	} else {
+		item.LastError = bulkCancellationManualReviewError(item.LastError, nil)
+	}
+	item.FinishedAt = timePointer(time.Now().UTC())
+	return m.saveItem(ctx, task, &item, "activation_cancel_manual_review", item.SMSStatus, item.WARegistrationStatus)
+}
+
+func hasReceivedBulkSMSCode(item bulkregistration.Item) bool {
+	return item.SMSStatus == "STATUS_OK"
 }
 
 func (m *bulkRegistrationManager) finishTaskIfDone(ctx context.Context, task *bulkregistration.Task) error {
@@ -1149,7 +1178,7 @@ func bulkTaskCounts(items []bulkregistration.Item) (success int, failed int, can
 			success++
 		case bulkregistration.ItemStatusFailed:
 			failed++
-		case bulkregistration.ItemStatusCancelPending:
+		case bulkregistration.ItemStatusManualReview:
 			failed++
 		case bulkregistration.ItemStatusCanceled, bulkregistration.ItemStatusNumberCanceled:
 			canceled++
@@ -1191,6 +1220,8 @@ func bulkFailureKind(message string) string {
 		return "registration_proxy"
 	case strings.Contains(message, "timed out waiting for the sms"):
 		return "sms_timeout"
+	case strings.Contains(message, "requires manual review"):
+		return "sms_cancel_manual_review"
 	case strings.Contains(message, "sms activation cancellation"):
 		return "sms_cancel_pending"
 	case strings.Contains(message, "no_numbers"), strings.Contains(message, "no numbers"):
@@ -1210,7 +1241,7 @@ func bulkFailureReason(value string) string {
 	seen := map[string]struct{}{}
 	for _, part := range parts {
 		part = strings.TrimSpace(part)
-		if part == "" || strings.HasPrefix(part, bulkCancellationPendingPrefix) || part == "SMS activation cancellation is pending" {
+		if part == "" || strings.HasPrefix(part, bulkCancellationPendingPrefix) || strings.HasPrefix(part, bulkCancellationManualReviewPrefix) || part == "SMS activation cancellation is pending" {
 			continue
 		}
 		if _, ok := seen[part]; ok {
@@ -1223,8 +1254,16 @@ func bulkFailureReason(value string) string {
 }
 
 func bulkCancellationPendingError(failureReason string, cancelErr error) string {
+	return bulkCancellationError(failureReason, bulkCancellationPendingPrefix, cancelErr)
+}
+
+func bulkCancellationManualReviewError(failureReason string, cancelErr error) string {
+	return bulkCancellationError(failureReason, bulkCancellationManualReviewPrefix, cancelErr)
+}
+
+func bulkCancellationError(failureReason string, prefix string, cancelErr error) string {
 	failureReason = bulkFailureReason(failureReason)
-	detail := bulkCancellationPendingPrefix
+	detail := prefix
 	if message := compactBulkError(cancelErr); message != "" {
 		detail += ": " + message
 	}
