@@ -172,8 +172,14 @@ func (m *bulkRegistrationManager) runNext(ctx context.Context) error {
 		return nil
 	}
 	task, err := m.server.Store().GetActiveTask(ctx)
-	if err != nil || task == nil {
+	if err != nil {
 		return err
+	}
+	if task == nil {
+		task, err = m.resumeFailedUnreceivedCancellationTask(ctx)
+		if err != nil || task == nil {
+			return err
+		}
 	}
 	if err := m.processTask(ctx, task); err != nil {
 		if ctx.Err() == nil {
@@ -189,6 +195,50 @@ func (m *bulkRegistrationManager) runNext(ctx context.Context) error {
 		return err
 	}
 	return nil
+}
+
+// resumeFailedUnreceivedCancellationTask repairs tasks completed by the brief
+// cancellation-state regression where pre-code CANCEL_PENDING items were
+// treated as terminal. Only the newest FAILED task is eligible, never an
+// actively running or user-canceled task.
+func (m *bulkRegistrationManager) resumeFailedUnreceivedCancellationTask(ctx context.Context) (*bulkregistration.Task, error) {
+	m.taskMu.Lock()
+	defer m.taskMu.Unlock()
+	active, err := m.server.Store().GetActiveTask(ctx)
+	if err != nil || active != nil {
+		return active, err
+	}
+	task, err := m.server.Store().GetLatestTask(ctx)
+	if err != nil || task == nil || task.Status != bulkregistration.TaskStatusFailed {
+		return nil, err
+	}
+	items, err := m.server.Store().ListItems(ctx, task.TaskID)
+	if err != nil {
+		return nil, err
+	}
+	resume := false
+	for _, item := range items {
+		if item.Status == bulkregistration.ItemStatusCancelPending && !hasReceivedBulkSMSCode(item) {
+			resume = true
+			break
+		}
+	}
+	if !resume {
+		return nil, nil
+	}
+	success, failed, canceled, waiting := bulkTaskCounts(items)
+	now := time.Now().UTC()
+	task.Status = bulkregistration.TaskStatusRunning
+	task.SuccessCount = success
+	task.FailedCount = failed
+	task.CanceledCount = canceled
+	task.WaitingCount = waiting
+	task.FinishedAt = nil
+	task.UpdatedAt = now
+	if err := m.server.Store().SaveTask(ctx, *task); err != nil {
+		return nil, err
+	}
+	return task, nil
 }
 
 func (m *bulkRegistrationManager) ListProviders() []string {

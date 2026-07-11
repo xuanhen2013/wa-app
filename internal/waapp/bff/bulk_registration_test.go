@@ -258,6 +258,59 @@ func TestBulkWorkerPromotesExistingReceivedSMSPendingCancellationToManualReview(
 	}
 }
 
+func TestBulkWorkerResumesFailedTaskWithUnreceivedPendingCancellation(t *testing.T) {
+	provider := &bulkTestProvider{cancelErr: errors.New("EARLY_CANCEL_DENIED")}
+	manager, task, item := newBulkTestManager(t, provider, bulkregistration.ItemStatusCancelPending)
+	manager.cancelRetryMax = 1
+	task.Status = bulkregistration.TaskStatusFailed
+	task.FinishedAt = timePointer(time.Now().UTC())
+	item.ActivationID = "act_1"
+	item.SMSStatus = "STATUS_WAIT_CODE"
+	item.LastError = "WA verification request rejected; " + bulkCancellationPendingPrefix + ": EARLY_CANCEL_DENIED"
+	if err := manager.server.Store().SaveTask(context.Background(), *task); err != nil {
+		t.Fatalf("save failed task: %v", err)
+	}
+	if err := manager.server.Store().SaveItem(context.Background(), item); err != nil {
+		t.Fatalf("save unreceived pending item: %v", err)
+	}
+	if err := manager.runNext(context.Background()); err != nil {
+		t.Fatalf("resume failed task: %v", err)
+	}
+	updatedTask, err := manager.server.Store().GetTask(context.Background(), task.TaskID)
+	if err != nil {
+		t.Fatalf("get resumed task: %v", err)
+	}
+	updatedItem := bulkTestItem(t, manager, item.ItemID)
+	if updatedTask.Status != bulkregistration.TaskStatusRunning || updatedTask.WaitingCount != 1 || updatedItem.Status != bulkregistration.ItemStatusCancelPending || provider.cancelCalls != 1 {
+		t.Fatalf("failed task was not resumed for pre-code cancellation: task=%#v item=%#v cancel_calls=%d", updatedTask, updatedItem, provider.cancelCalls)
+	}
+}
+
+func TestBulkWorkerDoesNotResumeFailedTaskWithManualReview(t *testing.T) {
+	provider := &bulkTestProvider{cancelErr: errors.New("EARLY_CANCEL_DENIED")}
+	manager, task, item := newBulkTestManager(t, provider, bulkregistration.ItemStatusManualReview)
+	task.Status = bulkregistration.TaskStatusFailed
+	task.FinishedAt = timePointer(time.Now().UTC())
+	item.ActivationID = "act_1"
+	item.SMSStatus = "STATUS_OK"
+	if err := manager.server.Store().SaveTask(context.Background(), *task); err != nil {
+		t.Fatalf("save failed manual-review task: %v", err)
+	}
+	if err := manager.server.Store().SaveItem(context.Background(), item); err != nil {
+		t.Fatalf("save manual-review item: %v", err)
+	}
+	if err := manager.runNext(context.Background()); err != nil {
+		t.Fatalf("process failed manual-review task: %v", err)
+	}
+	updatedTask, err := manager.server.Store().GetTask(context.Background(), task.TaskID)
+	if err != nil {
+		t.Fatalf("get manual-review task: %v", err)
+	}
+	if updatedTask.Status != bulkregistration.TaskStatusFailed || provider.cancelCalls != 0 {
+		t.Fatalf("manual-review task was incorrectly resumed: task=%#v cancel_calls=%d", updatedTask, provider.cancelCalls)
+	}
+}
+
 func TestBulkWorkerRejectsAndCancelsNumberFromWrongCountry(t *testing.T) {
 	provider := &bulkTestProvider{activation: smsotp.Activation{ActivationID: "act_1", PhoneE164: "+14155550123", CountryISO2: "US", Price: 0.15, Currency: "USD"}}
 	manager, task, item := newBulkTestManager(t, provider, bulkregistration.ItemStatusQueued)
