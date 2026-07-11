@@ -34,6 +34,37 @@ func TestBulkWorkerFailsWhenSupplierHasNoNumber(t *testing.T) {
 	}
 }
 
+func TestBulkRegistrationProviderRouterUsesTaskProvider(t *testing.T) {
+	selected := &bulkTestProvider{name: "smsbower"}
+	manager, task, item := newBulkTestManager(t, selected, bulkregistration.ItemStatusQueued)
+	other := &bulkTestProvider{name: "hero-sms"}
+	manager.providers = map[string]smsotp.Provider{selected.Name(): selected, other.Name(): other}
+	provider, err := manager.providerForItem(*task, item)
+	if err != nil || provider != selected {
+		t.Fatalf("expected task provider to be selected, provider=%#v err=%v", provider, err)
+	}
+}
+
+func TestBulkRegistrationProviderRouterUsesItemProviderForLegacyTask(t *testing.T) {
+	selected := &bulkTestProvider{name: "hero-sms"}
+	manager, task, item := newBulkTestManager(t, selected, bulkregistration.ItemStatusQueued)
+	task.Provider = ""
+	provider, err := manager.providerForItem(*task, item)
+	if err != nil || provider != selected {
+		t.Fatalf("expected legacy item provider to be selected, provider=%#v err=%v", provider, err)
+	}
+}
+
+func TestBulkRegistrationProviderRouterRejectsMismatchedTaskAndItem(t *testing.T) {
+	selected := &bulkTestProvider{name: "hero-sms"}
+	manager, task, item := newBulkTestManager(t, selected, bulkregistration.ItemStatusQueued)
+	task.Provider = "hero-sms"
+	item.Provider = "smsbower"
+	if _, err := manager.providerForItem(*task, item); err == nil || !strings.Contains(err.Error(), "do not match") {
+		t.Fatalf("expected provider mismatch error, got %v", err)
+	}
+}
+
 func TestBulkWorkerFailsBeforePurchasingWhenDedicatedProxyIsUnavailable(t *testing.T) {
 	provider := &bulkTestProvider{}
 	manager, task, item := newBulkTestManager(t, provider, bulkregistration.ItemStatusQueued)
@@ -168,6 +199,18 @@ func TestBulkWorkerRejectsAndCancelsNumberFromWrongCountry(t *testing.T) {
 	}
 }
 
+func TestBulkWorkerCancelsActivationAboveSelectedPriceBeforeWARequest(t *testing.T) {
+	provider := &bulkTestProvider{activation: smsotp.Activation{ActivationID: "act_1", PhoneE164: "+639171234567", CountryISO2: "PH", Price: 0.16, Currency: "USD"}}
+	manager, task, item := newBulkTestManager(t, provider, bulkregistration.ItemStatusQueued)
+	if err := manager.processTask(context.Background(), task); err != nil {
+		t.Fatalf("process above-price activation: %v", err)
+	}
+	updated := bulkTestItem(t, manager, item.ItemID)
+	if updated.Status != bulkregistration.ItemStatusFailed || updated.ActivationID != "act_1" || provider.cancelCalls != 1 || provider.markReadyCalls != 0 || updated.WAAccountID != "" {
+		t.Fatalf("unexpected above-price cleanup: item=%#v cancel_calls=%d mark_ready_calls=%d", updated, provider.cancelCalls, provider.markReadyCalls)
+	}
+}
+
 func TestBulkWorkerPreservesFailureReasonWhenCancellationIsPending(t *testing.T) {
 	provider := &bulkTestProvider{cancelErr: errors.New("EARLY_CANCEL_DENIED")}
 	manager, task, item := newBulkTestManager(t, provider, bulkregistration.ItemStatusNumberAcquired)
@@ -192,7 +235,7 @@ func TestBulkWorkerPreservesFailureReasonWhenCancellationIsPending(t *testing.T)
 func TestBulkTaskCreationReturnsTheExistingActiveTask(t *testing.T) {
 	provider := &bulkTestProvider{offers: []smsotp.Offer{{OfferID: "fake-offer", Provider: "fake", CountryISO2: "PH", Service: "whatsapp", Price: 0.15, Currency: "USD", AvailableCount: 10}}}
 	manager, task, _ := newBulkTestManager(t, provider, bulkregistration.ItemStatusQueued)
-	detail, existing, err := manager.CreateTask(context.Background(), bulkTaskCreateInput{CountryISO2: "PH", TargetCount: 1})
+	detail, existing, err := manager.CreateTask(context.Background(), bulkTaskCreateInput{Provider: "fake", CountryISO2: "PH", TargetCount: 1})
 	if err != nil {
 		t.Fatalf("create duplicate active task: %v", err)
 	}
@@ -205,11 +248,11 @@ func TestBulkTaskCreationDefaultsConcurrencyToOneThird(t *testing.T) {
 	provider := &bulkTestProvider{offers: []smsotp.Offer{{OfferID: "fake-offer", Provider: "fake", CountryISO2: "PH", Service: "whatsapp", Price: 0.15, Currency: "USD", AvailableCount: 10}}}
 	manager, task, _ := newBulkTestManager(t, provider, bulkregistration.ItemStatusQueued)
 	completeBulkTestTask(t, manager, task)
-	detail, existing, err := manager.CreateTask(context.Background(), bulkTaskCreateInput{CountryISO2: "PH", TargetCount: 10})
+	detail, existing, err := manager.CreateTask(context.Background(), bulkTaskCreateInput{Provider: "fake", CountryISO2: "PH", TargetCount: 10})
 	if err != nil {
 		t.Fatalf("create task: %v", err)
 	}
-	if existing || detail.Task == nil || detail.Task.Concurrency != 3 {
+	if existing || detail.Task == nil || detail.Task.Provider != "fake" || detail.Task.Concurrency != 3 {
 		t.Fatalf("unexpected task concurrency: detail=%#v existing=%t", detail, existing)
 	}
 }
@@ -234,6 +277,7 @@ func TestBulkTaskCreationPreservesOfferOperator(t *testing.T) {
 	manager, task, _ := newBulkTestManager(t, provider, bulkregistration.ItemStatusQueued)
 	completeBulkTestTask(t, manager, task)
 	detail, existing, err := manager.CreateTask(context.Background(), bulkTaskCreateInput{
+		Provider:    "fake",
 		CountryISO2: "PH",
 		TargetCount: 1,
 		Selections:  []bulkregistration.OfferSelection{{OfferID: "fake-offer", Quantity: 1}},
@@ -257,6 +301,7 @@ func TestBulkTaskCreationRejectsSelectionsAboveSharedPriceTierStock(t *testing.T
 	manager, task, _ := newBulkTestManager(t, provider, bulkregistration.ItemStatusQueued)
 	completeBulkTestTask(t, manager, task)
 	_, _, err := manager.CreateTask(context.Background(), bulkTaskCreateInput{
+		Provider:    "fake",
 		CountryISO2: "PH",
 		TargetCount: 11,
 		Selections: []bulkregistration.OfferSelection{
@@ -273,7 +318,7 @@ func TestBulkTaskCreationRejectsConcurrencyAboveTarget(t *testing.T) {
 	provider := &bulkTestProvider{offers: []smsotp.Offer{{OfferID: "fake-offer", Provider: "fake", CountryISO2: "PH", Service: "whatsapp", Price: 0.15, Currency: "USD", AvailableCount: 10}}}
 	manager, task, _ := newBulkTestManager(t, provider, bulkregistration.ItemStatusQueued)
 	completeBulkTestTask(t, manager, task)
-	_, _, err := manager.CreateTask(context.Background(), bulkTaskCreateInput{CountryISO2: "PH", TargetCount: 2, Concurrency: 3})
+	_, _, err := manager.CreateTask(context.Background(), bulkTaskCreateInput{Provider: "fake", CountryISO2: "PH", TargetCount: 2, Concurrency: 3})
 	if err == nil || !strings.Contains(err.Error(), "concurrency must not exceed target_count") {
 		t.Fatalf("expected concurrency validation error, got %v", err)
 	}
@@ -352,6 +397,18 @@ func TestBulkTaskEndpointReturnsLatestTerminalEvents(t *testing.T) {
 	}
 }
 
+func TestBulkErrorRedactsProviderRequestCredentials(t *testing.T) {
+	recorder := httptest.NewRecorder()
+	bulkError(recorder, errors.New("SMS provider request failed: https://supplier.invalid/api?api_key=not-for-dashboard"))
+	response := map[string]string{}
+	if err := json.Unmarshal(recorder.Body.Bytes(), &response); err != nil {
+		t.Fatalf("decode bulk error: %v", err)
+	}
+	if recorder.Code != http.StatusBadRequest || strings.Contains(response["error"], "not-for-dashboard") || !strings.Contains(response["error"], "api_key=<redacted>") {
+		t.Fatalf("bulk error exposed credentials: status=%d response=%#v", recorder.Code, response)
+	}
+}
+
 func TestBulkWorkerProcessesItemsAtTaskConcurrency(t *testing.T) {
 	provider := &parallelBulkTestProvider{pollStarted: make(chan struct{}, 2), releasePoll: make(chan struct{})}
 	manager, task, item := newBulkTestManager(t, provider, bulkregistration.ItemStatusWaitingSMS)
@@ -401,7 +458,7 @@ func TestBulkCountriesUseHeroSMSAnd1024ProxyIntersection(t *testing.T) {
 		{CountryISO2: "CN", Name: "中国"},
 	}}
 	manager, _, _ := newBulkTestManager(t, provider, bulkregistration.ItemStatusQueued)
-	countries, err := manager.ListCountries(context.Background())
+	countries, err := manager.ListCountries(context.Background(), "fake")
 	if err != nil {
 		t.Fatalf("list countries: %v", err)
 	}
@@ -417,7 +474,7 @@ func TestBulkCountriesUseHeroSMSAnd1024ProxyIntersection(t *testing.T) {
 func TestBulkOffersRejectCountriesOutsideTheCurrentIntersection(t *testing.T) {
 	provider := &bulkTestProvider{countries: []smsotp.Country{{CountryISO2: "PH", Name: "菲律宾"}}}
 	manager, _, _ := newBulkTestManager(t, provider, bulkregistration.ItemStatusQueued)
-	_, err := manager.ListOffers(context.Background(), "US", bulkRegistrationService)
+	_, err := manager.ListOffers(context.Background(), "fake", "US", bulkRegistrationService)
 	if err == nil || provider.offerCalls != 0 {
 		t.Fatalf("unsupported country must fail before the provider offer request: err=%v calls=%d", err, provider.offerCalls)
 	}
@@ -442,11 +499,11 @@ func newBulkTestManager(t *testing.T, provider smsotp.Provider, itemStatus strin
 		t.Fatalf("new engine: %v", err)
 	}
 	server := rpc.NewServer(persistentStore, runtimeState, nativeEngine, shared.SystemClock{}, shared.RandomIDGenerator{})
-	manager := newBulkRegistrationManager(server, RegistrationProxyConfig{}, BulkRegistrationConfig{Enabled: true, HeroSMSKey: "test"})
-	manager.provider = provider
+	manager := newBulkRegistrationManager(server, RegistrationProxyConfig{}, BulkRegistrationConfig{Enabled: true})
+	manager.providers = map[string]smsotp.Provider{provider.Name(): provider}
 	now := time.Now().UTC()
-	task := &bulkregistration.Task{TaskID: "wabulk_test", Status: bulkregistration.TaskStatusRunning, CountryISO2: "PH", TargetCount: 1, CreatedAt: now, UpdatedAt: now}
-	item := bulkregistration.Item{ItemID: "wabulki_test", TaskID: task.TaskID, Status: itemStatus, Provider: "fake", OfferID: "fake-offer", Price: 0.15, Currency: "USD", CreatedAt: now, UpdatedAt: now}
+	task := &bulkregistration.Task{TaskID: "wabulk_test", Status: bulkregistration.TaskStatusRunning, Provider: provider.Name(), CountryISO2: "PH", TargetCount: 1, CreatedAt: now, UpdatedAt: now}
+	item := bulkregistration.Item{ItemID: "wabulki_test", TaskID: task.TaskID, Status: itemStatus, Provider: provider.Name(), OfferID: "fake-offer", Price: 0.15, Currency: "USD", CreatedAt: now, UpdatedAt: now}
 	created, existing, err := persistentStore.CreateTask(ctx, *task, []bulkregistration.Item{item})
 	if err != nil || existing || created == nil {
 		t.Fatalf("create test task: task=%#v existing=%t err=%v", created, existing, err)
@@ -480,14 +537,16 @@ func completeBulkTestTask(t *testing.T, manager *bulkRegistrationManager, task *
 }
 
 type bulkTestProvider struct {
-	acquireErr   error
-	cancelErr    error
-	activation   smsotp.Activation
-	offers       []smsotp.Offer
-	countries    []smsotp.Country
-	offerCalls   int
-	acquireCalls int
-	cancelCalls  int
+	name           string
+	acquireErr     error
+	cancelErr      error
+	activation     smsotp.Activation
+	offers         []smsotp.Offer
+	countries      []smsotp.Country
+	offerCalls     int
+	acquireCalls   int
+	markReadyCalls int
+	cancelCalls    int
 }
 
 type roundTripper func(*http.Request) (*http.Response, error)
@@ -496,7 +555,12 @@ func (roundTrip roundTripper) RoundTrip(request *http.Request) (*http.Response, 
 	return roundTrip(request)
 }
 
-func (p *bulkTestProvider) Name() string { return "fake" }
+func (p *bulkTestProvider) Name() string {
+	if p.name != "" {
+		return p.name
+	}
+	return "fake"
+}
 
 func (p *bulkTestProvider) ListOffers(context.Context, string, string) ([]smsotp.Offer, error) {
 	p.offerCalls++
@@ -521,7 +585,10 @@ func (p *bulkTestProvider) AcquireNumber(context.Context, smsotp.AcquireInput) (
 	return smsotp.Activation{ActivationID: "act_1", PhoneE164: "+639171234567", CountryISO2: "PH", Price: 0.15, Currency: "USD"}, nil
 }
 
-func (p *bulkTestProvider) MarkReady(context.Context, string) error { return nil }
+func (p *bulkTestProvider) MarkReady(context.Context, string) error {
+	p.markReadyCalls++
+	return nil
+}
 
 func (p *bulkTestProvider) PollCode(context.Context, string) (smsotp.ActivationStatus, error) {
 	return smsotp.ActivationStatus{Status: "STATUS_WAIT_CODE"}, nil

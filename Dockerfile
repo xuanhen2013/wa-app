@@ -19,7 +19,8 @@ RUN sed -i 's/\r$//' /app/wa-app/scripts/generate-web-proto.sh \
 FROM docker.m.daocloud.io/library/golang:1.26-alpine AS builder
 
 WORKDIR /app/wa-app
-ENV GOPROXY=https://proxy.golang.org,direct
+ENV GOPROXY=https://goproxy.cn,direct \
+    GOSUMDB=sum.golang.google.cn
 RUN apk add --no-cache git ca-certificates protobuf-dev
 
 COPY . /src

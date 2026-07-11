@@ -12,13 +12,15 @@ import { DEFAULT_WA_INTEGRITY_MODE, type WaIntegrityMode } from './wa-integrity'
 import { WaIntegrityModeSelect } from './wa-integrity-mode-select';
 import { waPlayIntegrityAvailable } from './wa-dashboard-config';
 import { useWaDashboardHealth, useWaPlayIntegrityAPIStatus } from './wa-dashboard-hooks';
-import { cancelBulkRegistrationTask, createBulkRegistrationTask, getBulkRegistrationCountries, getBulkRegistrationOffers, getBulkRegistrationTask, type BulkRegistrationEvent, type BulkRegistrationItem, type BulkRegistrationOffer, type BulkRegistrationTask, waKeys } from './wa-api';
+import { cancelBulkRegistrationTask, createBulkRegistrationTask, getBulkRegistrationCountries, getBulkRegistrationOffers, getBulkRegistrationProviders, getBulkRegistrationTask, type BulkRegistrationEvent, type BulkRegistrationItem, type BulkRegistrationOffer, type BulkRegistrationTask, waKeys } from './wa-api';
 
 type Props = { disabled?: boolean; onChanged: () => void | Promise<void>; onDone: (message: string) => void; onError: (message: string) => void };
 
 export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props) {
   const queryClient = useQueryClient();
+  const [providerName, setProviderName] = useState('');
   const [countryISO2, setCountryISO2] = useState('');
+  const [countrySearch, setCountrySearch] = useState('');
   const [targetCount, setTargetCount] = useState(10);
   const [concurrency, setConcurrency] = useState(defaultBulkConcurrency(10));
   const [integrityMode, setIntegrityMode] = useState<WaIntegrityMode>(DEFAULT_WA_INTEGRITY_MODE);
@@ -27,18 +29,26 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
   const playIntegrityAvailable = waPlayIntegrityAvailable(health);
   const { status: integrityStatus, loading: integrityStatusLoading } = useWaPlayIntegrityAPIStatus(playIntegrityAvailable, integrityMode);
   const taskQuery = useQuery({ queryKey: waKeys.bulkRegistrationTask(), queryFn: getBulkRegistrationTask, refetchInterval: (query) => query.state.data?.task && !taskFinished(query.state.data.task) ? 2000 : false });
-  const countriesQuery = useQuery({ queryKey: waKeys.bulkRegistrationCountries(), queryFn: getBulkRegistrationCountries, staleTime: 5 * 60 * 1000 });
-  const offersQuery = useQuery({ queryKey: ['wa', 'bulk-registration', 'offers', countryISO2], queryFn: () => getBulkRegistrationOffers(countryISO2), enabled: false });
-  const { data: offersData, isError: offersFailed, isFetching: offersFetching, refetch: refetchOffers } = offersQuery;
+  const providersQuery = useQuery({ queryKey: waKeys.bulkRegistrationProviders(), queryFn: getBulkRegistrationProviders, staleTime: 5 * 60 * 1000 });
+  const countriesQuery = useQuery({ queryKey: waKeys.bulkRegistrationCountries(providerName), queryFn: () => getBulkRegistrationCountries(providerName), enabled: Boolean(providerName), staleTime: 5 * 60 * 1000 });
+  const offersQuery = useQuery({ queryKey: waKeys.bulkRegistrationOffers(providerName, countryISO2), queryFn: () => getBulkRegistrationOffers(providerName, countryISO2), enabled: Boolean(providerName && countryISO2) });
+  const { data: offersData, isFetching: offersFetching, refetch: refetchOffers } = offersQuery;
   const task = taskQuery.data?.task;
   const lastTask = taskQuery.data?.last_task;
+  const providers = providersQuery.data?.providers || [];
   const countries = useMemo(() => countriesQuery.data?.countries || [], [countriesQuery.data?.countries]);
+  const visibleCountries = useMemo(() => {
+    const search = countrySearch.trim().toLowerCase();
+    if (!search) return countries;
+    return countries.filter((country) => `${country.name} ${country.country_iso2}`.toLowerCase().includes(search));
+  }, [countries, countrySearch]);
   const offers = offersData?.offers || [];
   const maxItems = offersData?.max_items || 100;
   const maxConcurrency = Math.min(targetCount, offersData?.max_concurrency || 100);
   const selectedCount = useMemo(() => Object.values(quantities).reduce((sum, quantity) => sum + Math.max(0, quantity || 0), 0), [quantities]);
   const createTask = useMutation({
     mutationFn: () => createBulkRegistrationTask({
+      provider: providerName,
       country_iso2: countryISO2,
       target_count: targetCount,
       concurrency,
@@ -62,13 +72,8 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
   });
 
   useEffect(() => {
-    if (task || !countryISO2 || offersData || offersFetching || offersFailed) return;
-    void refetchOffers();
-  }, [countryISO2, offersData, offersFailed, offersFetching, refetchOffers, task]);
-
-  useEffect(() => {
-    if (countries.length === 0 || countries.some((country) => country.country_iso2 === countryISO2)) return;
-    setCountryISO2(countries[0].country_iso2);
+    if (!countryISO2 || countries.some((country) => country.country_iso2 === countryISO2)) return;
+    setCountryISO2('');
     setQuantities({});
   }, [countries, countryISO2]);
 
@@ -91,8 +96,15 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
     const bounded = Math.max(0, Math.min(maximum, Number.isFinite(nextValue) ? Math.floor(nextValue) : 0));
     setQuantities((current) => ({ ...current, [offer.offer_id]: bounded }));
   }
+  function selectProvider(nextProviderName: string) {
+    setProviderName(nextProviderName);
+    setCountryISO2('');
+    setCountrySearch('');
+    setQuantities({});
+  }
   function selectCountry(nextCountryISO2: string) {
     setCountryISO2(nextCountryISO2);
+    setCountrySearch('');
     setQuantities({});
   }
   function refreshOffers() {
@@ -124,7 +136,7 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
     setQuantities(next);
     if (remaining > 0) onError('当前报价库存不足以满足目标数量');
   }
-  const busy = Boolean(disabled || countriesQuery.isLoading || offersQuery.isFetching || createTask.isPending);
+  const busy = Boolean(disabled || providersQuery.isLoading || countriesQuery.isLoading || offersQuery.isFetching || createTask.isPending);
   return (
     <div className="grid gap-4">
     <Card>
@@ -134,16 +146,20 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
       </CardHeader>
       <CardContent className="grid gap-4">
         <FieldGroup>
-          <div className="grid gap-3 sm:grid-cols-[1fr_1fr_1fr_auto]">
-            <Field><FieldLabel>地区</FieldLabel><Select value={countryISO2} onValueChange={selectCountry} disabled={busy || countries.length === 0}><SelectTrigger className="w-full"><SelectValue placeholder={countriesQuery.isLoading ? '加载地区...' : '选择地区'} /></SelectTrigger><SelectContent>{countries.map((country) => <SelectItem key={country.country_iso2} value={country.country_iso2}>{country.name} ({country.country_iso2})</SelectItem>)}</SelectContent></Select></Field>
+          <div className="grid gap-3 md:grid-cols-2 xl:grid-cols-6">
+            <Field><FieldLabel>供应商</FieldLabel><Select value={providerName} onValueChange={selectProvider} disabled={busy || providers.length === 0}><SelectTrigger className="w-full"><SelectValue placeholder={providersQuery.isLoading ? '加载供应商...' : '选择供应商'} /></SelectTrigger><SelectContent>{providers.map((provider) => <SelectItem key={provider} value={provider}>{providerLabel(provider)}</SelectItem>)}</SelectContent></Select></Field>
+            <Field><FieldLabel>搜索地区</FieldLabel><Input value={countrySearch} onChange={(event) => setCountrySearch(event.target.value)} disabled={busy || !providerName} placeholder={providerName ? '名称或 ISO2' : '先选择供应商'} /></Field>
+            <Field><FieldLabel>地区</FieldLabel><Select value={countryISO2} onValueChange={selectCountry} disabled={busy || !providerName || countries.length === 0}><SelectTrigger className="w-full"><SelectValue placeholder={countriesQuery.isLoading ? '加载地区...' : providerName ? '选择地区' : '先选择供应商'} /></SelectTrigger><SelectContent>{visibleCountries.map((country) => <SelectItem key={country.country_iso2} value={country.country_iso2}>{country.name} ({country.country_iso2})</SelectItem>)}{visibleCountries.length === 0 ? <div className="px-2 py-1.5 text-sm text-muted-foreground">没有匹配的地区</div> : null}</SelectContent></Select></Field>
             <Field><FieldLabel>目标数量</FieldLabel><Input type="number" min={1} max={maxItems} value={targetCount} onChange={(event) => setTarget(Number(event.target.value))} disabled={busy} /></Field>
             <Field><FieldLabel>并发数</FieldLabel><Input type="number" min={1} max={maxConcurrency} value={concurrency} onChange={(event) => setTaskConcurrency(Number(event.target.value))} disabled={busy} /></Field>
-            <Field className="justify-end"><FieldLabel className="sr-only">刷新报价</FieldLabel><Button type="button" size="icon" variant="outline" title="刷新报价" aria-label="刷新报价" disabled={busy} onClick={refreshOffers}><RefreshCw className={offersFetching ? 'size-4 animate-spin' : 'size-4'} /></Button></Field>
+            <Field className="justify-end"><FieldLabel className="sr-only">刷新报价</FieldLabel><Button type="button" size="icon" variant="outline" title="刷新报价" aria-label="刷新报价" disabled={busy || !providerName || !countryISO2} onClick={refreshOffers}><RefreshCw className={offersFetching ? 'size-4 animate-spin' : 'size-4'} /></Button></Field>
           </div>
         </FieldGroup>
         <WaIntegrityModeSelect available={playIntegrityAvailable} disabled={busy} status={integrityStatus} statusLoading={integrityStatusLoading} value={integrityMode} onChange={setIntegrityMode} />
-        {countriesQuery.error ? <p className="text-sm text-destructive">{countriesQuery.error instanceof Error ? countriesQuery.error.message : '加载地区失败'}</p> : null}
-        {countriesQuery.data && countries.length === 0 ? <p className="text-sm text-muted-foreground">当前暂无可用地区</p> : null}
+        {providersQuery.error ? <p className="text-sm text-destructive">{providersQuery.error instanceof Error ? providersQuery.error.message : '加载供应商失败'}</p> : null}
+        {providersQuery.data && providers.length === 0 ? <p className="text-sm text-muted-foreground">当前没有可用供应商</p> : null}
+        {providerName && countriesQuery.error ? <p className="text-sm text-destructive">{countriesQuery.error instanceof Error ? countriesQuery.error.message : '加载地区失败'}</p> : null}
+        {providerName && countriesQuery.data && countries.length === 0 ? <p className="text-sm text-muted-foreground">所选供应商当前没有可用地区</p> : null}
         {offersQuery.error ? <p className="text-sm text-destructive">{offersQuery.error instanceof Error ? offersQuery.error.message : '加载报价失败'}</p> : null}
         <div className="flex items-center justify-between gap-3 border-b pb-3">
           <span className="text-sm text-muted-foreground">已选择 {selectedCount} / {targetCount}</span>
@@ -152,7 +168,7 @@ export function WaBulkAccountAdd({ disabled, onChanged, onDone, onError }: Props
         <OfferTable offers={offers} quantities={quantities} busy={busy} onQuantityChange={setQuantity} />
       </CardContent>
     </Card>
-    <div className="sticky bottom-0 z-30 border-y border-border bg-background/95 py-3 shadow-[0_-8px_18px_-16px_rgb(15_23_42_/_0.55)] backdrop-blur"><Button className="w-full" type="button" disabled={busy || selectedCount !== targetCount || offers.length === 0} onClick={() => void createTask.mutateAsync()}>{createTask.isPending ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}提交任务</Button></div>
+    <div className="sticky bottom-0 z-30 border-y border-border bg-background/95 py-3 shadow-[0_-8px_18px_-16px_rgb(15_23_42_/_0.55)] backdrop-blur"><Button className="w-full" type="button" disabled={busy || !providerName || !countryISO2 || selectedCount !== targetCount || offers.length === 0} onClick={() => void createTask.mutateAsync()}>{createTask.isPending ? <Loader2 className="size-4 animate-spin" /> : <CheckCircle2 className="size-4" />}提交任务</Button></div>
     {lastTask ? <BulkTaskDetail task={lastTask} items={taskQuery.data?.last_items || []} events={taskQuery.data?.last_events || []} canceling={false} onCancel={() => undefined} history /> : null}
     </div>
   );
@@ -178,7 +194,7 @@ function BulkTaskDetail({ task, items, events, canceling, onCancel, history = fa
   return (
     <Card>
       <CardHeader className="flex flex-row items-start justify-between gap-3">
-        <div className="grid gap-1"><CardTitle className="text-base">{history ? '最近完成任务' : '批量注册任务'}</CardTitle><span className="font-mono text-xs text-muted-foreground">{task.task_id}</span></div>
+        <div className="grid gap-1"><CardTitle className="text-base">{history ? '最近完成任务' : '批量注册任务'}</CardTitle><span className="text-xs text-muted-foreground">{providerLabel(task.provider)}</span><span className="font-mono text-xs text-muted-foreground">{task.task_id}</span></div>
         <div className="flex items-center gap-2"><Badge variant={task.status === 'RUNNING' ? 'default' : 'secondary'} title={task.status}>{taskStatusLabel(task.status)}</Badge>{cancelable ? <Button type="button" variant="destructive" size="sm" disabled={canceling} onClick={onCancel}>{canceling ? <Loader2 className="size-4 animate-spin" /> : <Ban className="size-4" />}取消任务</Button> : null}</div>
       </CardHeader>
       <CardContent className="grid gap-4">
@@ -260,13 +276,21 @@ function formatMoney(value: number, currency: string) {
 }
 
 function providerOperatorLabel(provider: string, operator: string) {
-  return `${provider || '供应商'} - ${heroSMSOperatorLabel(provider, operator)}`;
+	return `${providerLabel(provider)} - ${providerOperatorName(provider, operator)}`;
 }
 
-function heroSMSOperatorLabel(provider: string, operator: string) {
-  const normalized = operator.trim().toLowerCase();
-  if (provider === 'hero-sms') return ({ tm: 'TM（Globe）', globe_telecom: 'Globe Telecom', smart: 'Smart', dito: 'DITO', any: '不限' } as Record<string, string>)[normalized] || normalized || '不限';
-  return operator || '不限';
+function providerLabel(provider: string) {
+	return ({ 'hero-sms': 'HeroSMS', smsbower: 'SMSBower' } as Record<string, string>)[provider] || provider || '供应商';
+}
+
+function providerOperatorName(provider: string, operator: string) {
+	const normalized = operator.trim().toLowerCase();
+	if (provider === 'hero-sms') return ({ tm: 'TM（Globe）', globe_telecom: 'Globe Telecom', smart: 'Smart', dito: 'DITO', any: '不限' } as Record<string, string>)[normalized] || normalized || '不限';
+	if (provider === 'smsbower') {
+		const channel = operator.match(/^channel:(.+)$/i)?.[1];
+		return channel ? `渠道 #${channel}（运营商待分配）` : operator || '运营商待分配';
+	}
+	return operator || '不限';
 }
 
 function offerPriceTierKey(offer: BulkRegistrationOffer) {

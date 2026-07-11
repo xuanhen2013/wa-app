@@ -77,6 +77,7 @@ func main() {
 		MaxItems:    cfg.BulkRegistrationMaxItems,
 		Concurrency: cfg.BulkRegistrationConcurrency,
 		HeroSMSKey:  cfg.HeroSMSAPIKey,
+		SMSBowerKey: cfg.SMSBowerAPIKey,
 	})
 	authConfig := newDashboardAuthConfig(cfg.DashboardAuthPass)
 	grpcListenAddr := configValue(cfg.GRPCListenAddr, defaultGRPCListenAddr)

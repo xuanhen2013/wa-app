@@ -3,6 +3,7 @@ package smsotp
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -331,18 +332,31 @@ func (p *HeroSMSProvider) configured() bool {
 func (p *HeroSMSProvider) doJSON(req *http.Request) (any, int, error) {
 	resp, err := p.client.Do(req)
 	if err != nil {
-		return nil, 0, err
+		return nil, 0, providerTransportError(err)
 	}
 	defer resp.Body.Close()
 	data, err := io.ReadAll(io.LimitReader(resp.Body, 128<<10))
 	if err != nil {
-		return nil, resp.StatusCode, err
+		return nil, resp.StatusCode, providerTransportError(err)
 	}
 	value := any(strings.TrimSpace(string(data)))
 	if len(data) > 0 {
 		_ = json.Unmarshal(data, &value)
 	}
 	return value, resp.StatusCode, nil
+}
+
+func providerTransportError(err error) error {
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, context.Canceled) {
+		return context.Canceled
+	}
+	if errors.Is(err, context.DeadlineExceeded) {
+		return fmt.Errorf("SMS provider request timed out")
+	}
+	return fmt.Errorf("SMS provider request failed due to a network error")
 }
 
 func heroSMSOffers(value any, countryISO2 string, mapping heroSMSMapping) []Offer {

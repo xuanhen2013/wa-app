@@ -28,7 +28,7 @@ type RandomIDGenerator struct{}
 
 var (
 	urlCredentialPattern       = regexp.MustCompile(`([A-Za-z][A-Za-z0-9+.-]*://)([^/@\s]+)@`)
-	sensitiveAssignmentPattern = regexp.MustCompile(`(?i)\b(authkey|token|cookie|password|passwd|secret|otp)=([^&\s]+)`)
+	sensitiveAssignmentPattern = regexp.MustCompile(`(?i)\b(api[_-]?key|authkey|token|cookie|password|passwd|secret|otp)=([^&\s]+)`)
 )
 
 func (RandomIDGenerator) NewID(prefix string) string {

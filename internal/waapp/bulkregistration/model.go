@@ -56,6 +56,7 @@ type OfferSelection struct {
 type Task struct {
 	TaskID            string           `json:"task_id"`
 	Status            string           `json:"status"`
+	Provider          string           `json:"provider"`
 	CountryISO2       string           `json:"country_iso2"`
 	TargetCount       int              `json:"target_count"`
 	Concurrency       int              `json:"concurrency"`

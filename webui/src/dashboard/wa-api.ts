@@ -12,12 +12,13 @@ export type WaPhoneInput = { region: string; phone: string; e164_number: string;
 export type WaWorkflowResponse = { success?: boolean; passed?: boolean; request_failed?: boolean; retry_after_seconds?: number; status?: string; error_message?: string; reject_reason?: string; wa_account_id?: string; client_profile_id?: string; protocol_profile_id?: string; verification_request_id?: string; delivery_method?: string; method?: string; registration_phase?: string; method_statuses?: unknown[]; phone_status?: Record<string, unknown>; account_probe?: Record<string, unknown>; sms_probe?: Record<string, unknown>; phone?: Record<string, unknown>; proxy?: Record<string, unknown>; verification_request?: Record<string, unknown>; account_transfer_challenge?: Record<string, unknown>; registration?: Record<string, unknown>; login_state?: Record<string, unknown>; check?: Record<string, unknown> };
 export type BulkRegistrationOffer = { offer_id: string; provider: string; country_iso2: string; service: string; price: number; currency: string; available_count: number; price_tier: string; operator: string };
 export type BulkRegistrationCountry = { country_iso2: string; name: string };
-export type BulkRegistrationTask = { task_id: string; status: string; country_iso2: string; target_count: number; concurrency: number; integrity_mode: string; success_count: number; failed_count: number; canceled_count: number; waiting_count: number; created_at: string; updated_at: string; started_at?: string; finished_at?: string; cancel_requested_at?: string; last_error?: string };
+export type BulkRegistrationTask = { task_id: string; status: string; provider: string; country_iso2: string; target_count: number; concurrency: number; integrity_mode: string; success_count: number; failed_count: number; canceled_count: number; waiting_count: number; created_at: string; updated_at: string; started_at?: string; finished_at?: string; cancel_requested_at?: string; last_error?: string };
 export type BulkRegistrationItem = { item_id: string; status: string; provider: string; operator: string; offer_id: string; price: number; currency: string; phone_masked: string; wa_account_id?: string; verification_request_id?: string; sms_status: string; wa_probe_status: string; wa_verification_status: string; wa_registration_status: string; attempt_count: number; cancel_attempt_count: number; created_at: string; updated_at: string; finished_at?: string; last_error?: string };
 export type BulkRegistrationEvent = { event_id: string; task_id: string; item_id: string; provider: string; event_type: string; provider_status: string; wa_status: string; message: string; created_at: string };
 export type BulkRegistrationTaskResponse = { success: boolean; existing?: boolean; task?: BulkRegistrationTask; items: BulkRegistrationItem[]; events: BulkRegistrationEvent[]; last_task?: BulkRegistrationTask; last_items?: BulkRegistrationItem[]; last_events?: BulkRegistrationEvent[]; max_items?: number; max_concurrency?: number };
-export type BulkRegistrationOffersResponse = { success: boolean; country_iso2: string; service: string; offers: BulkRegistrationOffer[]; max_items: number; max_concurrency: number };
-export type BulkRegistrationCountriesResponse = { success: boolean; countries: BulkRegistrationCountry[] };
+export type BulkRegistrationProvidersResponse = { success: boolean; providers: string[] };
+export type BulkRegistrationOffersResponse = { success: boolean; provider: string; country_iso2: string; service: string; offers: BulkRegistrationOffer[]; max_items: number; max_concurrency: number };
+export type BulkRegistrationCountriesResponse = { success: boolean; provider: string; countries: BulkRegistrationCountry[] };
 export type WaConnectionState = LongConnectionState;
 export type WaConnectionFilters = { login_state_id?: string; wa_account_id?: string; client_profile_id?: string; registered_identity_id?: string };
 export type WaAccountProjection = WAAccount;
@@ -32,7 +33,9 @@ export const waKeys = {
   otpMessages: (waAccountId: string) => ['wa', 'otp-messages', waAccountId] as const,
   connections: (filters: WaConnectionFilters = {}) => ['wa', 'connections', filters.login_state_id || '', filters.wa_account_id || '', filters.client_profile_id || '', filters.registered_identity_id || ''] as const,
 	bulkRegistrationTask: () => ['wa', 'bulk-registration', 'task'] as const,
-	bulkRegistrationCountries: () => ['wa', 'bulk-registration', 'countries'] as const,
+	bulkRegistrationProviders: () => ['wa', 'bulk-registration', 'providers'] as const,
+	bulkRegistrationCountries: (provider: string) => ['wa', 'bulk-registration', 'countries', provider] as const,
+	bulkRegistrationOffers: (provider: string, countryISO2: string) => ['wa', 'bulk-registration', 'offers', provider, countryISO2] as const,
 };
 
 export async function api<T>(path: string, init?: RequestInit): Promise<T> {
@@ -125,17 +128,21 @@ export const probeWaPhoneSMS = (input: WaPhoneInput) => api<WaWorkflowResponse>(
 export const registerWaPhone = (input: WaPhoneInput, deliveryMethod: VerificationDeliveryMethod, integrityMode?: WaIntegrityMode) => api<WaWorkflowResponse>('/api/wa/register', { method: 'POST', body: JSON.stringify({ ...input, delivery_method: deliveryMethod, ...(integrityMode ? { integrity_mode: integrityMode } : {}) }) });
 export const checkWaLoginState = (input: { login_state_id?: string; registered_identity_id?: string; wa_account_id?: string; client_profile_id?: string; remote_timeout_seconds?: number }) => api<WaWorkflowResponse>('/api/wa/login-state-check', { method: 'POST', body: JSON.stringify(input) });
 
-export function getBulkRegistrationOffers(countryISO2: string) {
-	const params = new URLSearchParams({ country_iso2: countryISO2, service: 'whatsapp' });
+export function getBulkRegistrationProviders() {
+	return api<BulkRegistrationProvidersResponse>('/api/wa/bulk-registration/providers');
+}
+export function getBulkRegistrationOffers(provider: string, countryISO2: string) {
+	const params = new URLSearchParams({ provider, country_iso2: countryISO2, service: 'whatsapp' });
 	return api<BulkRegistrationOffersResponse>(`/api/wa/bulk-registration/offers?${params}`);
 }
-export function getBulkRegistrationCountries() {
-	return api<BulkRegistrationCountriesResponse>('/api/wa/bulk-registration/countries');
+export function getBulkRegistrationCountries(provider: string) {
+	const params = new URLSearchParams({ provider });
+	return api<BulkRegistrationCountriesResponse>(`/api/wa/bulk-registration/countries?${params}`);
 }
 export function getBulkRegistrationTask() {
 	return api<BulkRegistrationTaskResponse>('/api/wa/bulk-registration/task');
 }
-export function createBulkRegistrationTask(input: { country_iso2: string; target_count: number; concurrency: number; integrity_mode: string; offers: { offer_id: string; quantity: number; max_price: number }[] }) {
+export function createBulkRegistrationTask(input: { provider: string; country_iso2: string; target_count: number; concurrency: number; integrity_mode: string; offers: { offer_id: string; quantity: number; max_price: number }[] }) {
 	return api<BulkRegistrationTaskResponse>('/api/wa/bulk-registration/task', { method: 'POST', body: JSON.stringify(input) });
 }
 export function cancelBulkRegistrationTask() {

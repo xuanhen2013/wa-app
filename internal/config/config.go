@@ -25,6 +25,7 @@ type Config struct {
 	BulkRegistrationMaxItems                    int    `env:"WA_BULK_REGISTRATION_MAX_ITEMS"`
 	BulkRegistrationConcurrency                 int    `env:"WA_BULK_REGISTRATION_CONCURRENCY"`
 	HeroSMSAPIKey                               string `env:"WA_HERO_SMS_API_KEY"`
+	SMSBowerAPIKey                              string `env:"WA_SMS_BOWER_API_KEY"`
 	PGDSN                                       string `env:"WA_APP_PG_DSN"`
 	RedisURL                                    string `env:"WA_APP_REDIS_URL"`
 	DeviceProfilesFile                          string `env:"WA_APP_DEVICE_PROFILES_FILE"`

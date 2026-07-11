@@ -38,6 +38,7 @@ type BulkRegistrationConfig struct {
 	MaxItems    int
 	Concurrency int
 	HeroSMSKey  string
+	SMSBowerKey string
 }
 
 func normalizeBulkRegistrationConfig(config BulkRegistrationConfig) BulkRegistrationConfig {
@@ -60,7 +61,7 @@ type bulkRegistrationManager struct {
 	server            *rpc.Server
 	registrationProxy RegistrationProxyConfig
 	config            BulkRegistrationConfig
-	provider          smsotp.Provider
+	providers         map[string]smsotp.Provider
 	wake              chan struct{}
 	taskMu            sync.Mutex
 	proxyPoolMu       sync.Mutex
@@ -77,7 +78,7 @@ func newBulkRegistrationManager(server *rpc.Server, registrationProxy Registrati
 		server:            server,
 		registrationProxy: registrationProxy,
 		config:            config,
-		provider:          smsotp.NewHeroSMSProvider(config.HeroSMSKey),
+		providers:         newBulkRegistrationProviders(config),
 		wake:              make(chan struct{}, 1),
 		proxyPools:        map[string]*bulkRegistrationProxyPool{},
 		proxyResolver:     newRegistrationProxyResolver,
@@ -85,6 +86,63 @@ func newBulkRegistrationManager(server *rpc.Server, registrationProxy Registrati
 		smsWaitTimeout:    bulkRegistrationSMSWaitTimeout,
 		cancelRetryMax:    bulkRegistrationCancelRetryMax,
 	}
+}
+
+func newBulkRegistrationProviders(config BulkRegistrationConfig) map[string]smsotp.Provider {
+	providers := map[string]smsotp.Provider{}
+	if strings.TrimSpace(config.HeroSMSKey) != "" {
+		provider := smsotp.NewHeroSMSProvider(config.HeroSMSKey)
+		providers[provider.Name()] = provider
+	}
+	if strings.TrimSpace(config.SMSBowerKey) != "" {
+		provider := smsotp.NewSMSBowerProvider(config.SMSBowerKey)
+		providers[provider.Name()] = provider
+	}
+	return providers
+}
+
+func normalizeBulkProvider(value string) string {
+	switch strings.ToLower(strings.TrimSpace(value)) {
+	case "hero", "herosms", "hero-sms":
+		return "hero-sms"
+	case "sms-bower", "sms_bower", "smsbower":
+		return "smsbower"
+	default:
+		return strings.ToLower(strings.TrimSpace(value))
+	}
+}
+
+func (m *bulkRegistrationManager) provider(name string) (smsotp.Provider, error) {
+	if m == nil {
+		return nil, fmt.Errorf("bulk registration is unavailable")
+	}
+	name = normalizeBulkProvider(name)
+	if name == "" {
+		return nil, fmt.Errorf("SMS provider is required")
+	}
+	provider := m.providers[name]
+	if provider == nil {
+		return nil, fmt.Errorf("SMS provider is not configured")
+	}
+	return provider, nil
+}
+
+func (m *bulkRegistrationManager) providerForItem(task bulkregistration.Task, item bulkregistration.Item) (smsotp.Provider, error) {
+	taskProvider := normalizeBulkProvider(task.Provider)
+	itemProvider := normalizeBulkProvider(item.Provider)
+	if taskProvider != "" && itemProvider != "" && taskProvider != itemProvider {
+		return nil, fmt.Errorf("task and SMS activation providers do not match")
+	}
+	providerName := taskProvider
+	if providerName == "" {
+		providerName = itemProvider
+	}
+	if providerName == "" && len(m.providers) == 1 {
+		for name := range m.providers {
+			providerName = name
+		}
+	}
+	return m.provider(providerName)
 }
 
 func (m *bulkRegistrationManager) Run(ctx context.Context) error {
@@ -132,15 +190,31 @@ func (m *bulkRegistrationManager) runNext(ctx context.Context) error {
 	return nil
 }
 
-func (m *bulkRegistrationManager) ListOffers(ctx context.Context, countryISO2 string, service string) ([]bulkregistration.Offer, error) {
+func (m *bulkRegistrationManager) ListProviders() []string {
+	if m == nil {
+		return []string{}
+	}
+	result := make([]string, 0, len(m.providers))
+	for name := range m.providers {
+		result = append(result, name)
+	}
+	sort.Strings(result)
+	return result
+}
+
+func (m *bulkRegistrationManager) ListOffers(ctx context.Context, providerName string, countryISO2 string, service string) ([]bulkregistration.Offer, error) {
 	if !m.enabled() {
 		return nil, fmt.Errorf("bulk registration is disabled")
 	}
-	countryISO2 = normalizeBulkCountry(countryISO2)
-	if err := m.requireSupportedCountry(ctx, countryISO2); err != nil {
+	provider, err := m.provider(providerName)
+	if err != nil {
 		return nil, err
 	}
-	offers, err := m.provider.ListOffers(ctx, countryISO2, service)
+	countryISO2 = normalizeBulkCountry(countryISO2)
+	if err := m.requireSupportedCountry(ctx, provider.Name(), countryISO2); err != nil {
+		return nil, err
+	}
+	offers, err := provider.ListOffers(ctx, countryISO2, service)
 	if err != nil {
 		return nil, err
 	}
@@ -154,16 +228,19 @@ func (m *bulkRegistrationManager) ListOffers(ctx context.Context, countryISO2 st
 	return result, nil
 }
 
-// ListCountries returns only countries that HeroSMS currently exposes and
-// 1024proxy supports as a country-level registration exit. Rand and all
-// provider subnational locations are deliberately absent.
-func (m *bulkRegistrationManager) ListCountries(ctx context.Context) ([]smsotp.Country, error) {
+// ListCountries returns only countries that the selected SMS provider exposes
+// and 1024proxy supports as a country-level registration exit.
+func (m *bulkRegistrationManager) ListCountries(ctx context.Context, providerName string) ([]smsotp.Country, error) {
 	if !m.enabled() {
 		return nil, fmt.Errorf("bulk registration is disabled")
 	}
-	lister, ok := m.provider.(smsotp.CountryLister)
+	provider, err := m.provider(providerName)
+	if err != nil {
+		return nil, err
+	}
+	lister, ok := provider.(smsotp.CountryLister)
 	if !ok {
-		return nil, fmt.Errorf("bulk registration provider does not expose countries")
+		return nil, fmt.Errorf("SMS provider does not expose countries")
 	}
 	providerCountries, err := lister.ListCountries(ctx)
 	if err != nil {
@@ -195,12 +272,12 @@ func (m *bulkRegistrationManager) ListCountries(ctx context.Context) ([]smsotp.C
 	return result, nil
 }
 
-func (m *bulkRegistrationManager) requireSupportedCountry(ctx context.Context, countryISO2 string) error {
+func (m *bulkRegistrationManager) requireSupportedCountry(ctx context.Context, providerName string, countryISO2 string) error {
 	countryISO2 = normalizeBulkCountry(countryISO2)
 	if countryISO2 == "" || !countrycatalog.SupportsRegistrationProxy1024Country(countryISO2) {
 		return fmt.Errorf("country is not supported by the registration proxy")
 	}
-	countries, err := m.ListCountries(ctx)
+	countries, err := m.ListCountries(ctx, providerName)
 	if err != nil {
 		return err
 	}
@@ -209,12 +286,16 @@ func (m *bulkRegistrationManager) requireSupportedCountry(ctx context.Context, c
 			return nil
 		}
 	}
-	return fmt.Errorf("country is not currently available from HeroSMS")
+	return fmt.Errorf("country is not currently available from the selected SMS provider")
 }
 
 func (m *bulkRegistrationManager) CreateTask(ctx context.Context, input bulkTaskCreateInput) (*bulkregistration.TaskDetail, bool, error) {
 	if !m.enabled() {
 		return nil, false, fmt.Errorf("bulk registration is disabled")
+	}
+	providerName := normalizeBulkProvider(input.Provider)
+	if _, err := m.provider(providerName); err != nil {
+		return nil, false, err
 	}
 	countryISO2 := normalizeBulkCountry(input.CountryISO2)
 	if countryISO2 == "" {
@@ -227,11 +308,11 @@ func (m *bulkRegistrationManager) CreateTask(ctx context.Context, input bulkTask
 	if err != nil {
 		return nil, false, err
 	}
-	offers, err := m.ListOffers(ctx, countryISO2, bulkRegistrationService)
+	offers, err := m.ListOffers(ctx, providerName, countryISO2, bulkRegistrationService)
 	if err != nil {
 		return nil, false, err
 	}
-	selections, err := normalizeBulkSelections(input.Selections, input.TargetCount, offers)
+	selections, err := normalizeBulkSelections(input.Selections, input.TargetCount, providerName, offers)
 	if err != nil {
 		return nil, false, err
 	}
@@ -239,6 +320,7 @@ func (m *bulkRegistrationManager) CreateTask(ctx context.Context, input bulkTask
 	task := bulkregistration.Task{
 		TaskID:        m.server.IDs().NewID("wabulk_"),
 		Status:        bulkregistration.TaskStatusRunning,
+		Provider:      providerName,
 		CountryISO2:   countryISO2,
 		TargetCount:   input.TargetCount,
 		Concurrency:   concurrency,
@@ -330,6 +412,8 @@ func (m *bulkRegistrationManager) CancelTask(ctx context.Context) (*bulkregistra
 func (m *bulkRegistrationManager) HandleHTTP(w http.ResponseWriter, r *http.Request) {
 	path := strings.Trim(strings.TrimPrefix(r.URL.Path, "/api/wa/bulk-registration/"), "/")
 	switch path {
+	case "providers":
+		m.handleProviders(w, r)
 	case "countries":
 		m.handleCountries(w, r)
 	case "offers":
@@ -343,17 +427,26 @@ func (m *bulkRegistrationManager) HandleHTTP(w http.ResponseWriter, r *http.Requ
 	}
 }
 
+func (m *bulkRegistrationManager) handleProviders(w http.ResponseWriter, r *http.Request) {
+	if r.Method != http.MethodGet {
+		bulkMethodNotAllowed(w, http.MethodGet)
+		return
+	}
+	bulkJSON(w, http.StatusOK, map[string]any{"success": true, "providers": m.ListProviders()})
+}
+
 func (m *bulkRegistrationManager) handleCountries(w http.ResponseWriter, r *http.Request) {
 	if r.Method != http.MethodGet {
 		bulkMethodNotAllowed(w, http.MethodGet)
 		return
 	}
-	countries, err := m.ListCountries(r.Context())
+	providerName := normalizeBulkProvider(r.URL.Query().Get("provider"))
+	countries, err := m.ListCountries(r.Context(), providerName)
 	if err != nil {
 		bulkError(w, err)
 		return
 	}
-	bulkJSON(w, http.StatusOK, map[string]any{"success": true, "countries": countries})
+	bulkJSON(w, http.StatusOK, map[string]any{"success": true, "provider": providerName, "countries": countries})
 }
 
 func (m *bulkRegistrationManager) handleOffers(w http.ResponseWriter, r *http.Request) {
@@ -362,13 +455,14 @@ func (m *bulkRegistrationManager) handleOffers(w http.ResponseWriter, r *http.Re
 		return
 	}
 	countryISO2 := normalizeBulkCountry(r.URL.Query().Get("country_iso2"))
+	providerName := normalizeBulkProvider(r.URL.Query().Get("provider"))
 	service := shared.FirstNonEmpty(r.URL.Query().Get("service"), bulkRegistrationService)
-	offers, err := m.ListOffers(r.Context(), countryISO2, service)
+	offers, err := m.ListOffers(r.Context(), providerName, countryISO2, service)
 	if err != nil {
 		bulkError(w, err)
 		return
 	}
-	bulkJSON(w, http.StatusOK, map[string]any{"success": true, "country_iso2": countryISO2, "service": bulkRegistrationService, "offers": offers, "max_items": m.config.MaxItems, "max_concurrency": m.config.Concurrency})
+	bulkJSON(w, http.StatusOK, map[string]any{"success": true, "provider": providerName, "country_iso2": countryISO2, "service": bulkRegistrationService, "offers": offers, "max_items": m.config.MaxItems, "max_concurrency": m.config.Concurrency})
 }
 
 func (m *bulkRegistrationManager) handleTask(w http.ResponseWriter, r *http.Request) {
@@ -487,9 +581,17 @@ func (m *bulkRegistrationManager) acquireAndStart(ctx context.Context, task *bul
 	if err := m.saveItem(ctx, task, &item, "acquiring_number", "", ""); err != nil {
 		return err
 	}
-	activation, err := m.provider.AcquireNumber(ctx, smsotp.AcquireInput{CountryISO2: task.CountryISO2, Offer: smsOfferFromItem(item)})
+	provider, err := m.providerForItem(*task, item)
 	if err != nil {
 		return m.failItem(ctx, task, item, compactBulkError(err), false)
+	}
+	activation, err := provider.AcquireNumber(ctx, smsotp.AcquireInput{CountryISO2: task.CountryISO2, Offer: smsOfferFromItem(item)})
+	if err != nil {
+		return m.failItem(ctx, task, item, compactBulkError(err), false)
+	}
+	if activation.Price > item.Price+0.000001 {
+		item.ActivationID = activation.ActivationID
+		return m.failItem(ctx, task, item, "SMS provider returned an activation above the selected price", true)
 	}
 	phone, err := bulkPhoneTarget(activation.PhoneE164, task.CountryISO2)
 	if err != nil {
@@ -511,7 +613,7 @@ func (m *bulkRegistrationManager) acquireAndStart(ctx context.Context, task *bul
 	if err := m.saveItem(ctx, task, &item, "number_acquired", item.SMSStatus, ""); err != nil {
 		return err
 	}
-	if err := m.provider.MarkReady(ctx, item.ActivationID); err != nil {
+	if err := provider.MarkReady(ctx, item.ActivationID); err != nil {
 		return m.failItem(ctx, task, item, "could not prepare the SMS activation", true)
 	}
 	return m.startWARegistration(ctx, task, item, route)
@@ -607,12 +709,16 @@ func (m *bulkRegistrationManager) startWARegistration(ctx context.Context, task 
 }
 
 func (m *bulkRegistrationManager) waitForSMSAndSubmit(ctx context.Context, task *bulkregistration.Task, item bulkregistration.Item) error {
+	provider, err := m.providerForItem(*task, item)
+	if err != nil {
+		return m.failItem(ctx, task, item, compactBulkError(err), true)
+	}
 	deadline := time.Now().UTC().Add(m.smsWaitTimeout)
 	for time.Now().UTC().Before(deadline) {
 		if taskCancelRequested(ctx, m.server, task.TaskID) {
 			return m.cancelItem(ctx, task, item)
 		}
-		status, err := m.provider.PollCode(ctx, item.ActivationID)
+		status, err := provider.PollCode(ctx, item.ActivationID)
 		if err != nil {
 			return m.failItem(ctx, task, item, "could not read the SMS activation", true)
 		}
@@ -658,7 +764,12 @@ func (m *bulkRegistrationManager) submitOTP(ctx context.Context, task *bulkregis
 	if err := m.saveItem(ctx, task, &item, "registered", item.SMSStatus, item.WARegistrationStatus); err != nil {
 		return err
 	}
-	if err := m.provider.Complete(ctx, item.ActivationID); err != nil {
+	provider, providerErr := m.providerForItem(*task, item)
+	completeErr := providerErr
+	if completeErr == nil {
+		completeErr = provider.Complete(ctx, item.ActivationID)
+	}
+	if completeErr != nil {
 		item.LastError = "registered, but the SMS activation could not be finalized"
 		item.UpdatedAt = time.Now().UTC()
 		_ = m.server.Store().SaveItem(context.Background(), item)
@@ -724,10 +835,16 @@ func (m *bulkRegistrationManager) cancelItem(ctx context.Context, task *bulkregi
 	if err := m.saveItem(ctx, task, &item, "canceling_activation", item.SMSStatus, item.WARegistrationStatus); err != nil {
 		return err
 	}
+	provider, err := m.providerForItem(*task, item)
+	if err != nil {
+		item.Status = bulkregistration.ItemStatusCancelPending
+		item.LastError = bulkCancellationPendingError(item.LastError, err)
+		return m.saveItem(ctx, task, &item, "activation_cancel_pending", item.SMSStatus, item.WARegistrationStatus)
+	}
 	var cancelErr error
 	for attempt := 1; attempt <= m.cancelRetryMax; attempt++ {
 		item.CancelAttemptCount = attempt
-		cancelErr = m.provider.Cancel(ctx, item.ActivationID)
+		cancelErr = provider.Cancel(ctx, item.ActivationID)
 		if cancelErr == nil {
 			if item.WAAccountID != "" {
 				gateway := &actionGateway{server: m.server, registrationProxy: newRegistrationProxyResolver(m.registrationProxy)}
@@ -857,7 +974,7 @@ func (m *bulkRegistrationManager) appendEvent(ctx context.Context, task *bulkreg
 }
 
 func (m *bulkRegistrationManager) enabled() bool {
-	return m != nil && m.server != nil && m.config.Enabled && m.provider != nil && m.config.HeroSMSKey != ""
+	return m != nil && m.server != nil && m.config.Enabled && len(m.providers) > 0
 }
 
 func (m *bulkRegistrationManager) signal() {
@@ -871,6 +988,7 @@ func (m *bulkRegistrationManager) signal() {
 }
 
 type bulkTaskCreateInput struct {
+	Provider      string                            `json:"provider"`
 	CountryISO2   string                            `json:"country_iso2"`
 	TargetCount   int                               `json:"target_count"`
 	Concurrency   int                               `json:"concurrency"`
@@ -917,7 +1035,7 @@ func taskConcurrency(task bulkregistration.Task, maximum int) int {
 	return task.Concurrency
 }
 
-func normalizeBulkSelections(input []bulkregistration.OfferSelection, targetCount int, offers []bulkregistration.Offer) ([]bulkregistration.OfferSelection, error) {
+func normalizeBulkSelections(input []bulkregistration.OfferSelection, targetCount int, expectedProvider string, offers []bulkregistration.Offer) ([]bulkregistration.OfferSelection, error) {
 	byID := map[string]bulkregistration.Offer{}
 	for _, offer := range offers {
 		byID[offer.OfferID] = offer
@@ -935,6 +1053,9 @@ func normalizeBulkSelections(input []bulkregistration.OfferSelection, targetCoun
 		offer, ok := byID[selection.OfferID]
 		if !ok {
 			return nil, fmt.Errorf("the selected SMS price tier is no longer available")
+		}
+		if normalizeBulkProvider(offer.Provider) != normalizeBulkProvider(expectedProvider) {
+			return nil, fmt.Errorf("the selected SMS offer does not belong to the selected provider")
 		}
 		if selection.Quantity <= 0 || selection.Quantity > offer.AvailableCount {
 			return nil, fmt.Errorf("selected quantity exceeds the available SMS stock")
@@ -1142,5 +1263,5 @@ func bulkError(w http.ResponseWriter, err error) {
 		bulkJSON(w, http.StatusNotFound, map[string]string{"error": "bulk registration task not found"})
 		return
 	}
-	bulkJSON(w, http.StatusBadRequest, map[string]string{"error": compactBulkError(err)})
+	bulkJSON(w, http.StatusBadRequest, map[string]string{"error": compactBulkError(errors.New(shared.SafeInternalErrorMessage(err)))})
 }
